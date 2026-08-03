@@ -1,5 +1,5 @@
 import { IPaymentRepository } from './IPaymentRepository';
-import { CreatePaymentDTO } from '@repo/core';
+import { CreatePaymentDTO, SelectPaymentMethodDTO, ReopenPaymentDTO } from '@repo/core';
 
 export class PaymentService {
   constructor(private readonly paymentRepository: IPaymentRepository) {}
@@ -18,4 +18,17 @@ export class PaymentService {
     
     return { payment, invoiceUpdate: invoiceUpdate || null };
   }
+
+  async selectPaymentMethod(tenantId: string, userId: string, data: SelectPaymentMethodDTO) {
+    return this.paymentRepository.selectPaymentMethod(tenantId, userId, data);
+  }
+
+  async reopenPayment(tenantId: string, adminUserId: string, data: ReopenPaymentDTO) {
+    return this.paymentRepository.reopenPayment(tenantId, adminUserId, data.bookingId, data.reason);
+  }
+
+  async verifyCashPayment(tenantId: string, adminUserId: string, paymentId: string, remarks?: string) {
+    return this.paymentRepository.verifyCashPayment(tenantId, adminUserId, paymentId, remarks);
+  }
 }
+

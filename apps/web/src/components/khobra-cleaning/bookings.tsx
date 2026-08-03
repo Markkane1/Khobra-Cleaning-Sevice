@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck } from 'lucide-react'
+import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck } from 'lucide-react'
+import { calculateBookingFinancials } from '@repo/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -90,6 +91,24 @@ const statusDisplayLabels: Record<string, string> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
   no_show: 'No Show',
+}
+
+const paymentStatusColors: Record<string, string> = {
+  payment_pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300',
+  cash_selected: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-300',
+  bank_transfer_submitted: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border-purple-300',
+  under_verification: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300',
+  paid: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300',
+  rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-300',
+}
+
+const paymentStatusLabels: Record<string, string> = {
+  payment_pending: 'Payment Pending',
+  cash_selected: 'Cash Selected',
+  bank_transfer_submitted: 'Bank Transfer Submitted',
+  under_verification: 'Under Verification',
+  paid: 'Paid',
+  rejected: 'Payment Rejected',
 }
 
 const pipelineSteps = [
@@ -275,6 +294,108 @@ export function Bookings() {
       toast.error(err.message || 'Rating failed')
     },
   })
+
+  const [paymentBooking, setPaymentBooking] = useState<any | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash')
+  const [paymentFields, setPaymentFields] = useState({ referenceNo: '', customerBankName: '', accountHolderName: '', proofUrl: '', notes: '' })
+  const [isUploadingProof, setIsUploadingProof] = useState(false)
+
+  const { data: bankAccountData } = useQuery({
+    queryKey: ['bankAccount'],
+    queryFn: () => fetch('/api/khobra-cleaning/bookings/bank-transfer').then(r => r.json()),
+    enabled: Boolean(paymentBooking && paymentMethod === 'bank_transfer'),
+  })
+
+  const selectPaymentMut = useMutation({
+    mutationFn: (d: any) =>
+      fetch('/api/khobra-cleaning/bookings/payment-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Payment selection failed')
+        return res
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success('Payment method selected successfully!')
+      setPaymentBooking(null)
+      setPaymentFields({ referenceNo: '', customerBankName: '', accountHolderName: '', proofUrl: '', notes: '' })
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Payment selection failed')
+    },
+  })
+
+  const reopenPaymentMut = useMutation({
+    mutationFn: (d: { bookingId: string; reason?: string }) =>
+      fetch('/api/khobra-cleaning/bookings/reopen-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Reopen payment failed')
+        return res
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success('Payment reopened! Customer can now re-select payment method.')
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Reopen payment failed')
+    },
+  })
+
+  const verifyCashMut = useMutation({
+    mutationFn: (d: { paymentId: string; remarks?: string }) =>
+      fetch('/api/khobra-cleaning/bookings/payment-method', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Cash verification failed')
+        return res
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success('Cash payment verified!')
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Cash verification failed')
+    },
+  })
+
+  const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploadingProof(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', 'payment-proofs')
+      const res = await fetch('/api/khobra-cleaning/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setPaymentFields(prev => ({ ...prev, proofUrl: data.url }))
+      toast.success('Payment proof uploaded successfully!')
+    } catch (err: any) {
+      toast.error(err.message || 'Payment proof upload failed')
+    } finally {
+      setIsUploadingProof(false)
+    }
+  }
 
   const { data: assignAvailability } = useQuery({
     queryKey: ['availability', assigningBooking?.scheduledDate, assigningBooking?.startTime, assigningBooking?.endTime],
@@ -1029,17 +1150,33 @@ export function Bookings() {
                               <TableCell className="hidden md:table-cell text-sm font-medium text-emerald-700 dark:text-emerald-400">{b.duration}h</TableCell>
                               <TableCell className="font-semibold">AED {b.netAmount.toLocaleString()}</TableCell>
                               <TableCell>
-                                  {b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount ? (
-                                  <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 font-semibold text-xs">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 inline-block animate-pulse" />
-                                    Pending Assignment
-                                  </Badge>
-                                ) : (
-                                  <Badge className={`${statusColors [b.status] || ''} text-xs`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${statusDotColors [b.status]} mr-1.5 inline-block`} />
-                                    {statusDisplayLabels[b.status] || b.status.replace(/_/g, ' ')}
-                                  </Badge>
-                                )}
+                                {(() => {
+                                  const fin = calculateBookingFinancials(b)
+                                  return (
+                                    <div className="space-y-1">
+                                      <div>
+                                        {b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount ? (
+                                          <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 font-semibold text-xs">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 inline-block animate-pulse" />
+                                            Pending Assignment
+                                          </Badge>
+                                        ) : (
+                                          <Badge className={`${statusColors[b.status] || ''} text-xs`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${statusDotColors[b.status]} mr-1.5 inline-block`} />
+                                            {statusDisplayLabels[b.status] || b.status.replace(/_/g, ' ')}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      {b.status === 'completed' && (
+                                        <div>
+                                          <Badge className={`${paymentStatusColors[fin.paymentStatus] || 'bg-muted'} text-[10px] font-semibold border px-1.5 py-0.5`}>
+                                            {paymentStatusLabels[fin.paymentStatus] || fin.paymentStatus.replace(/_/g, ' ')}
+                                          </Badge>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
                               </TableCell>
                               <TableCell className="hidden xl:table-cell text-sm">
                                 {b.assignments?.length > 0 ? (
@@ -1049,46 +1186,75 @@ export function Bookings() {
                                 )}
                               </TableCell>
                               <TableCell>
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => handleRowClick(b)}>
-                                    <Eye className="h-3.5 w-3.5" />
-                                  </Button>
-                                   {currentRole === 'admin' && (b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount) && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-xs h-7 px-2 border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-medium"
-                                      onClick={() => {
-                                        setAssigningBooking(b)
-                                        setSelectedAssignEmpIds(b.assignments?.map((a: any) => a.employeeId) || [])
-                                      }}
-                                    >
-                                      <UserCheck className="h-3.5 w-3.5 mr-1" />
-                                      Assign Staff
-                                    </Button>
-                                  )}
-                                   {b.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
-                                     <>
-                                       <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => updateMut.mutate({ id: b.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}`, cancelledBy: currentRole })}>Cancel</Button>
-                                     </>
-                                   )}
-                                   {currentRole === 'admin' && b.status === 'assigned' && (
-                                     <Button size="sm" variant="outline" disabled={(b.assignments?.length || 0) < b.employeeCount} className="text-xs h-7 px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleStatusChange(b.id, 'scheduled')}>Confirm</Button>
-                                   )}
-                                   {(currentRole === 'admin' || currentRole === 'driver') && (b.status === 'scheduled' || b.status === 'confirmed') && (
-                                     <>
-                                       <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleStatusChange(b.id, 'on_the_way')}>On the Way</Button>
-                                       {currentRole === 'admin' && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50" onClick={() => updateMut.mutate({ id: b.id, status: 'no_show', noShowReason: 'Customer did not attend', noShowParty: 'customer' })}>No Show</Button>}
-                                     </>
-                                   )}
-                                  {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'on_the_way' && (
-                                    <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => handleStatusChange(b.id, 'in_progress')}>Start</Button>
-                                  )}
-                                  {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'in_progress' && (
-                                    <Button size="sm" variant="outline" className="text-xs h-7 px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100" onClick={() => handleStatusChange(b.id, 'completed')}>Complete</Button>
-                                  )}
-                                   {b.status === 'completed' && <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRatingBooking(b)}><Star className="h-3 w-3 mr-1" />Rate</Button>}
-                                   {(b.status === 'cancelled' || b.status === 'no_show') && <span className="text-xs text-muted-foreground px-1">Ended</span>}
+                                {(() => {
+                                  const fin = calculateBookingFinancials(b)
+                                  return (
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => handleRowClick(b)}>
+                                        <Eye className="h-3.5 w-3.5" />
+                                      </Button>
+                                      {currentRole === 'admin' && (b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount) && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-xs h-7 px-2 border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-medium"
+                                          onClick={() => {
+                                            setAssigningBooking(b)
+                                            setSelectedAssignEmpIds(b.assignments?.map((a: any) => a.employeeId) || [])
+                                          }}
+                                        >
+                                          <UserCheck className="h-3.5 w-3.5 mr-1" />
+                                          Assign Staff
+                                        </Button>
+                                      )}
+                                      {b.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
+                                        <>
+                                          <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => updateMut.mutate({ id: b.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}`, cancelledBy: currentRole })}>Cancel</Button>
+                                        </>
+                                      )}
+                                      {currentRole === 'admin' && b.status === 'assigned' && (
+                                        <Button size="sm" variant="outline" disabled={(b.assignments?.length || 0) < b.employeeCount} className="text-xs h-7 px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleStatusChange(b.id, 'scheduled')}>Confirm</Button>
+                                      )}
+                                      {(currentRole === 'admin' || currentRole === 'driver') && (b.status === 'scheduled' || b.status === 'confirmed') && (
+                                        <>
+                                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleStatusChange(b.id, 'on_the_way')}>On the Way</Button>
+                                          {currentRole === 'admin' && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50" onClick={() => updateMut.mutate({ id: b.id, status: 'no_show', noShowReason: 'Customer did not attend', noShowParty: 'customer' })}>No Show</Button>}
+                                        </>
+                                      )}
+                                      {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'on_the_way' && (
+                                        <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => handleStatusChange(b.id, 'in_progress')}>Start</Button>
+                                      )}
+                                      {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'in_progress' && (
+                                        <Button size="sm" variant="outline" className="text-xs h-7 px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100" onClick={() => handleStatusChange(b.id, 'completed')}>Complete</Button>
+                                      )}
+                                      {b.status === 'completed' && (
+                                        <>
+                                          {currentRole === 'customer' && fin.canSelectPaymentMethod && (
+                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-semibold" onClick={() => { setPaymentBooking(b); setPaymentMethod('cash'); }}>
+                                              <CreditCard className="h-3.5 w-3.5 mr-1" />
+                                              Pay / Select Method
+                                            </Button>
+                                          )}
+                                          {currentRole === 'admin' && fin.paymentStatus === 'cash_selected' && (
+                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-400 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 font-semibold" onClick={() => verifyCashMut.mutate({ paymentId: b.invoices?.[0]?.payments?.[0]?.id })}>
+                                              <Banknote className="h-3.5 w-3.5 mr-1" />
+                                              Verify Cash
+                                            </Button>
+                                          )}
+                                          {currentRole === 'admin' && fin.paymentStatus !== 'payment_pending' && (
+                                            <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-amber-700 hover:bg-amber-50" title="Reopen payment to allow customer re-selection" onClick={() => reopenPaymentMut.mutate({ bookingId: b.id })}>
+                                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                              Reopen Pay
+                                            </Button>
+                                          )}
+                                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRatingBooking(b)}><Star className="h-3 w-3 mr-1" />Rate</Button>
+                                        </>
+                                      )}
+                                      {(b.status === 'cancelled' || b.status === 'no_show') && <span className="text-xs text-muted-foreground px-1">Ended</span>}
+                                    </div>
+                                  )
+                                })()}
+                              </TableCell>
                                   {currentRole === 'admin' && <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                       <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
@@ -1745,8 +1911,183 @@ export function Bookings() {
             </Button>
           </DialogFooter>
         </DialogContent>
+      {/* Payment Method Selection Dialog */}
+      <Dialog open={Boolean(paymentBooking)} onOpenChange={(open) => { if (!open) setPaymentBooking(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+              <CreditCard className="h-5 w-5 text-emerald-600" />
+              Select Payment Method — {paymentBooking?.bookingNo}
+            </DialogTitle>
+          </DialogHeader>
+
+          {paymentBooking && (() => {
+            const financials = calculateBookingFinancials(paymentBooking)
+            return (
+              <div className="space-y-4 py-2">
+                {/* Financial Summary Card */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-950/30 dark:via-teal-950/30 dark:to-cyan-950/30 border border-emerald-200/60 dark:border-emerald-800/40 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Financial Summary</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Booking Amount</span>
+                      <span className="font-medium text-foreground">AED {financials.bookingAmount.toLocaleString()}</span>
+                    </div>
+                    {financials.discount > 0 && (
+                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                        <span>Applicable Discount</span>
+                        <span className="font-medium">-AED {financials.discount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {financials.taxAmount > 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Tax</span>
+                        <span className="font-medium text-foreground">AED {financials.taxAmount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Amount Already Paid</span>
+                      <span className="font-medium text-foreground">AED {financials.paidAmount.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold text-emerald-800 dark:text-emerald-200 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/40">
+                      <span>Remaining Payable</span>
+                      <span className="text-base text-emerald-600 dark:text-emerald-400">AED {financials.remainingPayableAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Selection Mode choices */}
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase">Choose Payment Option</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      type="button"
+                      variant={paymentMethod === 'cash' ? 'default' : 'outline'}
+                      className={`h-20 flex-col gap-1.5 rounded-xl border-2 ${paymentMethod === 'cash' ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600' : 'hover:border-emerald-300'}`}
+                      onClick={() => setPaymentMethod('cash')}
+                    >
+                      <Banknote className="h-6 w-6" />
+                      <span className="font-bold text-xs">Pay Cash</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={paymentMethod === 'bank_transfer' ? 'default' : 'outline'}
+                      className={`h-20 flex-col gap-1.5 rounded-xl border-2 ${paymentMethod === 'bank_transfer' ? 'bg-teal-600 hover:bg-teal-700 text-white border-teal-600' : 'hover:border-teal-300'}`}
+                      onClick={() => setPaymentMethod('bank_transfer')}
+                    >
+                      <Building2 className="h-6 w-6" />
+                      <span className="font-bold text-xs">Bank Transfer</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Pay Cash Info */}
+                {paymentMethod === 'cash' && (
+                  <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 text-xs text-amber-900 dark:text-amber-300 space-y-1">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <Banknote className="h-4 w-4 text-amber-600" />
+                      Cash Payment Selection
+                    </p>
+                    <p>Cash will be collected by cleaner/driver upon completion or paid directly at the service counter.</p>
+                  </div>
+                )}
+
+                {/* Bank Transfer Inputs & Info */}
+                {paymentMethod === 'bank_transfer' && (
+                  <div className="space-y-3 pt-1">
+                    {bankAccountData?.bankAccount && (
+                      <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs space-y-1">
+                        <p className="font-semibold text-emerald-700 dark:text-emerald-400">Company Bank Details</p>
+                        <p><span className="text-muted-foreground">Bank:</span> {bankAccountData.bankAccount.bankName || 'N/A'}</p>
+                        <p><span className="text-muted-foreground">Title:</span> {bankAccountData.bankAccount.accountTitle || 'N/A'}</p>
+                        <p><span className="text-muted-foreground">Account #:</span> {bankAccountData.bankAccount.accountNumber || 'N/A'}</p>
+                        <p><span className="text-muted-foreground">IBAN:</span> {bankAccountData.bankAccount.iban || 'N/A'}</p>
+                        {bankAccountData.bankAccount.instructions && (
+                          <p className="text-[11px] text-muted-foreground pt-1 italic">{bankAccountData.bankAccount.instructions}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-xs">Transaction / Reference # *</span>
+                        <input
+                          className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                          placeholder="e.g. TRX98765432"
+                          value={paymentFields.referenceNo}
+                          onChange={e => setPaymentFields({ ...paymentFields, referenceNo: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs">Customer Bank Name *</span>
+                        <input
+                          className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                          placeholder="e.g. Emirates NBD"
+                          value={paymentFields.customerBankName}
+                          onChange={e => setPaymentFields({ ...paymentFields, customerBankName: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs">Account Holder Name *</span>
+                        <input
+                          className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                          placeholder="Name on bank account"
+                          value={paymentFields.accountHolderName}
+                          onChange={e => setPaymentFields({ ...paymentFields, accountHolderName: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs">Payment Proof (Screenshot/PDF) *</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            onChange={handleProofUpload}
+                            disabled={isUploadingProof}
+                            className="text-xs"
+                          />
+                          {isUploadingProof && <span className="text-xs text-muted-foreground animate-pulse">Uploading...</span>}
+                        </div>
+                        {paymentFields.proofUrl && (
+                          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-medium truncate">
+                            ✓ Proof attached
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              disabled={selectPaymentMut.isPending || isUploadingProof}
+              onClick={() => {
+                if (!paymentBooking) return
+                if (paymentMethod === 'bank_transfer') {
+                  if (!paymentFields.referenceNo || !paymentFields.customerBankName || !paymentFields.accountHolderName || !paymentFields.proofUrl) {
+                    toast.error('Please fill in all bank transfer fields including payment proof')
+                    return
+                  }
+                }
+                selectPaymentMut.mutate({
+                  bookingId: paymentBooking.id,
+                  method: paymentMethod,
+                  ...paymentFields,
+                })
+              }}
+            >
+              {selectPaymentMut.isPending ? 'Recording Selection...' : paymentMethod === 'cash' ? 'Confirm Pay Cash' : 'Submit Bank Transfer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
+  )
   )
 }
 

@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { useRealtime } from '@/hooks/use-realtime'
 
 const Dashboard = dynamic(() => import('@/components/khobra-cleaning/dashboard').then(m => ({ default: m.Dashboard })), { loading: () => <PageSkeleton />, ssr: false })
 const Services = dynamic(() => import('@/components/khobra-cleaning/services').then(m => ({ default: m.Services })), { loading: () => <PageSkeleton />, ssr: false })
@@ -325,6 +326,8 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const qc = useQueryClient()
+  const { subscribe, onEvent } = useRealtime()
+  useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['notifications'] })) }, [onEvent, qc, subscribe])
   const { data: notifications = [] } = useQuery<any[]>({
     queryKey: ['notifications'],
     queryFn: () => fetch('/api/khobra-cleaning/notifications').then(r => r.json()),

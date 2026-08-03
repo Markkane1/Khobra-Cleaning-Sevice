@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, startOfDay } from 'date-fns'
 import { motion } from 'framer-motion'
 import {
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppStore } from '@/store/app-store'
 import { ServiceCards } from './public-site'
+import { useRealtime } from '@/hooks/use-realtime'
 
 const statusColors : Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
@@ -27,6 +28,9 @@ const statusColors : Record<string, string> = {
 }
 export function CustomerPortal() {
   const setView = useAppStore(s => s.setView)
+  const qc = useQueryClient()
+  const { subscribe, onEvent } = useRealtime()
+  useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['bookings'] })) }, [onEvent, qc, subscribe])
 
   const { data: bookings = [], isLoading: bLoading } = useQuery({
     queryKey: ['bookings'],

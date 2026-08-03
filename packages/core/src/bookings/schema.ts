@@ -411,12 +411,27 @@ export const BOOKING_STATUS_KEYS = [
 
 export type BookingStatusKey = typeof BOOKING_STATUS_KEYS[number];
 
+const normalizeBookingStatus = (status: string) => status === 'pending' ? 'pending_assignment' : status === 'confirmed' ? 'scheduled' : status;
+
+export function canDriverTransitionToOnTheWay(currentStatus: string, targetStatus: string | undefined, assignedDriverId: string | null, actingDriverId: string | undefined): boolean {
+  return Boolean(actingDriverId && assignedDriverId === actingDriverId && normalizeBookingStatus(currentStatus) === 'scheduled' && targetStatus === 'on_the_way');
+}
+
+export function canCleanerStartWork(currentStatus: string, targetStatus: string | undefined, assignedCleanerIds: string[], actingCleanerId: string | undefined): boolean {
+  return Boolean(actingCleanerId && assignedCleanerIds.includes(actingCleanerId) && currentStatus === 'on_the_way' && targetStatus === 'in_progress');
+}
+
+export function canCleanerSubmitCompletionTiming(currentStatus: string, assignedCleanerIds: string[], actingCleanerId: string | undefined): boolean {
+  return Boolean(actingCleanerId && assignedCleanerIds.includes(actingCleanerId) && currentStatus === 'in_progress');
+}
+
+export const shouldGeneratePickupAlert = (previous: boolean | undefined, current: boolean) => current && previous !== true;
+
 export function isValidStatusTransition(currentStatus: string, targetStatus: string): boolean {
   if (currentStatus === targetStatus) return true;
 
-  const normalize = (s: string) => (s === 'pending' ? 'pending_assignment' : s === 'confirmed' ? 'scheduled' : s);
-  const curr = normalize(currentStatus);
-  const target = normalize(targetStatus);
+  const curr = normalizeBookingStatus(currentStatus);
+  const target = normalizeBookingStatus(targetStatus);
 
   if (curr === target) return true;
 
@@ -437,6 +452,7 @@ export function isValidStatusTransition(currentStatus: string, targetStatus: str
 export const UpdateBookingSchema = z.object({
   id: z.string(),
   customerId: z.string().optional(),
+  driverId: z.string().nullable().optional(),
   serviceId: z.string().optional(),
   serviceIds: z.array(z.string()).optional(),
   preferredEmployeeId: z.string().optional(),
@@ -486,6 +502,11 @@ export const UpdateBookingSchema = z.object({
 
 export type CreateBookingDTO = z.infer<typeof CreateBookingSchema>;
 export type UpdateBookingDTO = z.infer<typeof UpdateBookingSchema>;
+
+export const CompletionTimingResponseSchema = z.object({
+  bookingId: z.string().min(1, 'Booking ID is required'),
+  withinScheduledTime: z.boolean(),
+});
 
 export const AssignEmployeesSchema = z.object({
   bookingId: z.string().min(1, 'Booking ID is required'),

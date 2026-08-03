@@ -4,9 +4,14 @@ export interface Notification {
   id: string;
   tenantId: string;
   userId: string | null;
+  statusHistoryId?: string | null;
   title: string;
   message: string;
   type: string;
+  channel?: string;
+  deliveryStatus?: string;
+  deliveryAttemptedAt?: Date | null;
+  deliveryError?: string | null;
   read: boolean;
   createdAt: Date;
   updatedAt: Date;

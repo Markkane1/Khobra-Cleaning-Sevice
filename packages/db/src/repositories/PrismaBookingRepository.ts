@@ -2,29 +2,54 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { IBookingRepository, Booking } from '@repo/application';
 import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, isValidRating, validateBookingConfirmationDTO, validateBookingHours, employeeHasRequiredSkills, getRequiredSkills } from '@repo/core';
 
-async function notifyStatusChange(db: any, bookingId: string, status: string) {
-  const booking = await db.booking.findUnique({
-    where: { id: bookingId },
-    select: {
-      tenantId: true,
-      bookingNo: true,
-      customer: { select: { userId: true } },
-      assignments: { select: { employee: { select: { userId: true } } } },
-    },
-  });
-  if (!booking) return;
-  const userIds = [...new Set([booking.customer.userId, ...booking.assignments.map((a: any) => a.employee.userId)].filter(Boolean))] as string[];
-  if (!userIds.length) return;
-  const label = status.split('_').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ');
-  await db.notification.createMany({
-    data: userIds.map(userId => ({
-      tenantId: booking.tenantId,
-      userId,
-      title: `Booking ${label}`,
-      message: `${booking.bookingNo} is now ${label}.`,
-      type: 'booking_status',
-    })),
-  });
+type StatusTransition = { id: string; previousStatus: string; newStatus: string; createdAt: Date };
+
+async function notifyStatusChange(db: PrismaClient, bookingId: string, transition?: StatusTransition) {
+  if (!transition) return;
+  try {
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      select: {
+        tenantId: true,
+        bookingNo: true,
+        customer: { select: { userId: true } },
+        assignments: { select: { employee: { select: { userId: true } } } },
+      },
+    });
+    if (!booking) return;
+    const recipients = new Map<string, 'customer' | 'cleaner'>();
+    if (booking.customer.userId) recipients.set(booking.customer.userId, 'customer');
+    booking.assignments.forEach(assignment => {
+      if (assignment.employee.userId && !recipients.has(assignment.employee.userId)) recipients.set(assignment.employee.userId, 'cleaner');
+    });
+    const label = (status: string) => status.split('_').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ');
+    const previousLabel = label(transition.previousStatus);
+    const newLabel = label(transition.newStatus);
+    const changedAt = transition.createdAt.toISOString();
+    const customerExplanation: Record<string, string> = {
+      scheduled: `Your booking ${booking.bookingNo} is scheduled.`,
+      on_the_way: 'Your service team is now on the way.',
+      in_progress: `Work has started for booking ${booking.bookingNo}.`,
+      completed: `Your service for booking ${booking.bookingNo} has been completed.`,
+      cancelled: `Booking ${booking.bookingNo} has been cancelled.`,
+    };
+    await db.notification.createMany({
+      skipDuplicates: true,
+      data: [...recipients].map(([userId, audience]) => ({
+        tenantId: booking.tenantId,
+        userId,
+        statusHistoryId: transition.id,
+        title: `Booking ${booking.bookingNo}: ${newLabel}`,
+        message: `${audience === 'customer' ? customerExplanation[transition.newStatus] || `Booking ${booking.bookingNo} is now ${newLabel}.` : `Booking ${booking.bookingNo} has been marked ${newLabel}.`} Previous status: ${previousLabel}. New status: ${newLabel}. Changed at: ${changedAt}.`,
+        type: 'booking_status',
+        channel: 'in_app',
+        deliveryStatus: 'sent',
+        deliveryAttemptedAt: new Date(),
+      })),
+    });
+  } catch (error) {
+    console.error(`Booking ${bookingId} notification delivery failed`, error);
+  }
 }
 
 export class PrismaBookingRepository implements IBookingRepository {
@@ -35,11 +60,15 @@ export class PrismaBookingRepository implements IBookingRepository {
       where: { tenantId },
       include: {
         customer: { include: { user: { select: { name: true } } } },
+        driver: { include: { user: { select: { name: true } } } },
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
+        completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
+        pickupAlerts: { orderBy: { generatedAt: 'desc' } },
+        invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
       },
       orderBy: { scheduledDate: 'desc' },
     }) as unknown as Booking[];
@@ -50,11 +79,15 @@ export class PrismaBookingRepository implements IBookingRepository {
       where: { id },
       include: {
         customer: { include: { user: { select: { name: true } } } },
+        driver: { include: { user: { select: { name: true } } } },
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
+        completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
+        pickupAlerts: { orderBy: { generatedAt: 'desc' } },
+        invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
       }
     }) as unknown as Booking | null;
   }
@@ -256,7 +289,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       // A direct preferred assignment is assigned; confirmation moves it to scheduled.
       const initialStatus = isPreferredAssignedForThisDate ? 'assigned' : 'pending_assignment';
 
-      const bookingObj = await this.db.$transaction(async tx => {
+      const result = await this.db.$transaction(async tx => {
         // ponytail: tenant-wide booking lock; use a database sequence for booking numbers if booking throughput grows.
         await tx.$queryRaw(Prisma.sql`SELECT id FROM "Tenant" WHERE id = ${tenantId} FOR UPDATE`);
         const count = await tx.booking.count({ where: { tenantId } });
@@ -329,15 +362,19 @@ export class PrismaBookingRepository implements IBookingRepository {
         },
         include: {
           customer: { include: { user: { select: { name: true } } } },
+          driver: { include: { user: { select: { name: true } } } },
           service: { select: { id: true, name: true, baseRate: true } },
           items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
           materials: { include: { inventoryItem: true } },
           assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
           statusHistory: { orderBy: { createdAt: 'asc' } },
+          completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
+          pickupAlerts: { orderBy: { generatedAt: 'desc' } },
+          invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
         },
         }) as unknown as Booking;
 
-        await tx.bookingStatusHistory.create({
+        const transition = await tx.bookingStatusHistory.create({
         data: {
           bookingId: created.id,
           previousStatus: 'none',
@@ -346,30 +383,38 @@ export class PrismaBookingRepository implements IBookingRepository {
           reason: 'Initial booking creation',
         },
         });
-        return created;
+        return { booking: created, transition };
       });
 
-      createdBookings.push(bookingObj);
+      await notifyStatusChange(this.db, result.booking.id, result.transition);
+      createdBookings.push(result.booking);
     }
 
     return createdBookings[0]!;
   }
 
-  async update(id: string, data: UpdateBookingDTO): Promise<Booking> {
-    return this.db.$transaction(tx => this.updateWithDb(tx, id, data));
+  async update(id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
+    const result = await this.db.$transaction(tx => this.updateWithDb(tx, id, data, changedBy, requiredDriverId, requiredEmployeeId));
+    await notifyStatusChange(this.db, id, result.transition);
+    return result.booking;
   }
 
-  private async updateWithDb(db: any, id: string, data: UpdateBookingDTO): Promise<Booking> {
+  private async updateWithDb(db: any, id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<{ booking: Booking; transition?: StatusTransition }> {
+    await db.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${id} FOR UPDATE`);
     const existing = await db.booking.findUnique({
       where: { id },
       include: { items: true, materials: true, assignments: { include: { employee: { include: { user: { select: { name: true } } } } } } },
     });
     if (!existing) throw new Error('Booking not found');
+    if (requiredDriverId && existing.driverId !== requiredDriverId) throw new Error('Only the driver assigned to this booking may update its status');
+    if (requiredEmployeeId && !existing.assignments.some((assignment: any) => assignment.employeeId === requiredEmployeeId)) throw new Error('Only a cleaner assigned to this booking may update its status');
 
     const { id: _id, ...rest } = data;
     const updateData: any = { ...rest };
+    let transition: StatusTransition | undefined;
 
     if (rest.status && rest.status !== existing.status) {
+      const statusChangedAt = new Date();
       if (!isValidStatusTransition(existing.status, rest.status)) {
         throw new Error(`Invalid status transition from '${existing.status}' to '${rest.status}'`);
       }
@@ -387,22 +432,47 @@ export class PrismaBookingRepository implements IBookingRepository {
           where: { bookingId: id },
           data: {
             status: rest.status,
-            ...(rest.status === 'in_progress' ? { startedAt: new Date() } : {}),
             ...(rest.status === 'completed' ? { completedAt: new Date() } : {}),
           },
         });
+        if (rest.status === 'in_progress' && requiredEmployeeId) {
+          await db.assignment.updateMany({ where: { bookingId: id, employeeId: requiredEmployeeId }, data: { startedAt: statusChangedAt } });
+        }
+        if (rest.status === 'completed') {
+          const existingInvoice = await db.invoice.findFirst({ where: { bookingId: id } });
+          if (!existingInvoice) {
+            const invCount = await db.invoice.count({ where: { tenantId: existing.tenantId } });
+            const invoiceNo = `INV-${String(1000 + invCount).padStart(5, '0')}`;
+            await db.invoice.create({
+              data: {
+                tenantId: existing.tenantId,
+                invoiceNo,
+                bookingId: id,
+                customerId: existing.customerId,
+                status: 'issued',
+                issuedAt: new Date(),
+                subtotal: existing.netAmount,
+                totalAmount: existing.netAmount,
+                paidAmount: 0,
+                discount: existing.discount || 0,
+              },
+            });
+          }
+        }
       }
 
       // Append Audit Log History (Prompt 12 Requirement)
-      await db.bookingStatusHistory.create({
+      const history = await db.bookingStatusHistory.create({
         data: {
           bookingId: id,
           previousStatus: existing.status,
           newStatus: rest.status,
-          changedBy: rest.cancelledBy || rest.noShowParty || 'user',
-          reason: rest.cancellationReason || rest.noShowReason || 'Status update',
+          changedBy: changedBy || rest.cancelledBy || rest.noShowParty || 'user',
+          reason: rest.cancellationReason || rest.noShowReason || (rest.status === 'in_progress' ? 'Work started' : 'Status update'),
+          createdAt: statusChangedAt,
         },
       });
+      transition = history;
     }
 
     const scheduledDate = rest.scheduledDate ? new Date(rest.scheduledDate) : new Date(existing.scheduledDate);
@@ -577,15 +647,18 @@ export class PrismaBookingRepository implements IBookingRepository {
       data: updateData,
       include: {
         customer: { include: { user: { select: { name: true } } } },
+        driver: { include: { user: { select: { name: true } } } },
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
+        completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
+        pickupAlerts: { orderBy: { generatedAt: 'desc' } },
+        invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
       },
     }) as unknown as Booking;
-    if (rest.status && rest.status !== existing.status) await notifyStatusChange(db, id, rest.status);
-    return updated;
+    return { booking: updated, transition };
   }
 
   async assignEmployees(bookingId: string, employeeIds: string[], autoAssign: boolean = false): Promise<Booking> {
@@ -765,7 +838,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       targetEmpIds = employeeIds;
     }
 
-    return this.db.$transaction(async tx => {
+    const result = await this.db.$transaction(async tx => {
     // Lock the selected employees before the final check so concurrent assignments serialize.
     await tx.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join([...new Set(targetEmpIds)])}) FOR UPDATE`);
 
@@ -849,8 +922,8 @@ export class PrismaBookingRepository implements IBookingRepository {
       })),
     });
 
-    // Append Audit Log History
-    await tx.bookingStatusHistory.create({
+    // Append Audit Log History only when assignment changes the booking status.
+    const transition = existing.status === 'assigned' ? undefined : await tx.bookingStatusHistory.create({
       data: {
         bookingId,
         previousStatus: existing.status,
@@ -860,9 +933,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       },
     });
 
-    await notifyStatusChange(tx, bookingId, 'assigned');
-
-    return tx.booking.update({
+    const booking = await tx.booking.update({
       where: { id: bookingId },
       data: {
         employeeCount: newEmployeeCount,
@@ -873,14 +944,20 @@ export class PrismaBookingRepository implements IBookingRepository {
       },
       include: {
         customer: { include: { user: { select: { name: true } } } },
+        driver: { include: { user: { select: { name: true } } } },
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
+        completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
+        pickupAlerts: { orderBy: { generatedAt: 'desc' } },
       },
     }) as unknown as Booking;
+    return { booking, transition };
     });
+    await notifyStatusChange(this.db, bookingId, result.transition);
+    return result.booking;
   }
 
   async rateBookingEmployees(bookingId: string, ratings: RateEmployeeInput[]): Promise<Booking> {

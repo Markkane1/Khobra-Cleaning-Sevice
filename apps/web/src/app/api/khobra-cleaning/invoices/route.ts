@@ -11,13 +11,17 @@ const invoiceService = new InvoiceService(invoiceRepository)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin', 'accountant', 'manager', 'customer'])
     if ('response' in auth) return auth.response
 
     const tenant = await db.tenant.findFirst()
     if (!tenant) return NextResponse.json([])
     
-    const items = await invoiceService.getInvoices(tenant.id)
+    let items = await invoiceService.getInvoices(tenant.id)
+    if (auth.session.role === 'customer') {
+      const customer = await db.customer.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
+      items = items.filter((item: any) => item.customerId === customer?.id)
+    }
     return NextResponse.json(items)
   } catch {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -47,6 +51,8 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin', 'accountant', 'manager'])
+    if ('response' in auth) return auth.response
     const body = await req.json()
     const validatedData = UpdateInvoiceSchema.parse(body)
     

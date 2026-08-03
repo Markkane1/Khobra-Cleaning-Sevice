@@ -7,7 +7,7 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
   async getInvoices(tenantId: string): Promise<any[]> {
     return this.prisma.invoice.findMany({
       where: { tenantId },
-      include: { customer: { include: { user: { select: { name: true } } } }, payments: true },
+      include: { customer: { include: { user: { select: { name: true } } } }, booking: { select: { id: true, bookingNo: true, status: true } }, payments: { orderBy: { createdAt: 'desc' } } },
       orderBy: { createdAt: 'desc' },
     });
   }

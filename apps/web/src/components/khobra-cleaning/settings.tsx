@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
@@ -50,6 +51,13 @@ export function Settings() {
   const [companyTaxRate, setCompanyTaxRate] = useState('0')
   const [companyPhone, setCompanyPhone] = useState('+971-4-1234567')
   const [companyAddress, setCompanyAddress] = useState('Block 9, Clifton, Dubai')
+  const [bankAccountActive, setBankAccountActive] = useState(false)
+  const [bankAccountTitle, setBankAccountTitle] = useState('')
+  const [bankName, setBankName] = useState('')
+  const [bankAccountNumber, setBankAccountNumber] = useState('')
+  const [bankIban, setBankIban] = useState('')
+  const [bankBranch, setBankBranch] = useState('')
+  const [bankPaymentInstructions, setBankPaymentInstructions] = useState('')
 
   const [firstBookingTime, setFirstBookingTime] = useState('08:00')
   const [lastWorkingTime, setLastWorkingTime] = useState('20:00')
@@ -80,7 +88,14 @@ export function Settings() {
     setLastWorkingTime(tenant.lastWorkingTime || '20:00')
     setCompanyPhone(savedSettings.phone || '')
     setCompanyAddress(savedSettings.address || '')
-  }, [tenant, savedSettings.phone, savedSettings.address])
+    setBankAccountActive(savedSettings.bankAccountActive === 'true')
+    setBankAccountTitle(savedSettings.bankAccountTitle || '')
+    setBankName(savedSettings.bankName || '')
+    setBankAccountNumber(savedSettings.bankAccountNumber || '')
+    setBankIban(savedSettings.bankIban || '')
+    setBankBranch(savedSettings.bankBranch || '')
+    setBankPaymentInstructions(savedSettings.bankPaymentInstructions || '')
+  }, [tenant, savedSettings.phone, savedSettings.address, savedSettings.bankAccountActive, savedSettings.bankAccountTitle, savedSettings.bankName, savedSettings.bankAccountNumber, savedSettings.bankIban, savedSettings.bankBranch, savedSettings.bankPaymentInstructions])
 
   // DB stats query
   const { data: dbStats } = useQuery({
@@ -142,7 +157,7 @@ export function Settings() {
       taxRate: Number(companyTaxRate),
       firstBookingTime,
       lastWorkingTime,
-      settings: { phone: companyPhone, address: companyAddress },
+      settings: { phone: companyPhone, address: companyAddress, bankAccountActive, bankAccountTitle, bankName, bankAccountNumber, bankIban, bankBranch, bankPaymentInstructions },
     })
   }
 
@@ -272,6 +287,21 @@ export function Settings() {
                         </div>
                       </div>
                     ))}
+                    <Separator />
+                    <div className="space-y-4 rounded-xl border p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div><Label className="font-semibold">Bank Transfer Account</Label><p className="text-xs text-muted-foreground">Only active account details are shown to customers.</p></div>
+                        <Switch checked={bankAccountActive} onCheckedChange={setBankAccountActive} aria-label="Bank account active" />
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5"><Label>Account title</Label><Input value={bankAccountTitle} onChange={event => setBankAccountTitle(event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label>Bank name</Label><Input value={bankName} onChange={event => setBankName(event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label>Account number</Label><Input value={bankAccountNumber} onChange={event => setBankAccountNumber(event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label>IBAN</Label><Input value={bankIban} onChange={event => setBankIban(event.target.value)} /></div>
+                        <div className="space-y-1.5"><Label>Branch name or code</Label><Input value={bankBranch} onChange={event => setBankBranch(event.target.value)} /></div>
+                      </div>
+                      <div className="space-y-1.5"><Label>Payment instructions</Label><Textarea value={bankPaymentInstructions} onChange={event => setBankPaymentInstructions(event.target.value)} /></div>
+                    </div>
                     <Separator />
                     <div className="flex justify-end pt-2">
                       <Button

@@ -11,13 +11,14 @@ const paymentService = new PaymentService(paymentRepository)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin', 'accountant', 'manager', 'customer'])
     if ('response' in auth) return auth.response
 
     const tenant = await db.tenant.findFirst()
     if (!tenant) return NextResponse.json([])
     
-    const items = await paymentService.getPayments(tenant.id)
+    let items = await paymentService.getPayments(tenant.id)
+    if (auth.session.role === 'customer') items = items.filter((item: any) => item.invoice?.customer?.userId === auth.session.userId)
     return NextResponse.json(items)
   } catch {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })

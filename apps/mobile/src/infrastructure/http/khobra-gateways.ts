@@ -1,6 +1,6 @@
 import type { AuthGateway, BookingGateway, DashboardGateway, OperationsGateway } from '../../application/ports'
 import type { Session } from '../../domain/auth/types'
-import type { Booking, CreateBookingInput } from '../../domain/bookings/types'
+import type { Booking, CompletionTimingResponse, CreateBookingInput, PickupAlert } from '../../domain/bookings/types'
 import type { OperationModule, OperationRecord } from '../../domain/operations/types'
 import type { DashboardStats } from '../../domain/dashboard/types'
 import { request } from './api-client'
@@ -32,6 +32,14 @@ export const khobraBookingGateway: BookingGateway = {
   updateStatus: (id, status, token) => request<Booking>('/api/khobra-cleaning/bookings', {
     method: 'PUT',
     body: JSON.stringify({ id, status }),
+  }, token),
+  submitCompletionTiming: (bookingId, withinScheduledTime, token) => request<CompletionTimingResponse>('/api/khobra-cleaning/bookings/completion-timing', {
+    method: 'POST',
+    body: JSON.stringify({ bookingId, withinScheduledTime }),
+  }, token),
+  getPickupAlerts: (token) => request<PickupAlert[]>('/api/khobra-cleaning/bookings/pickup-alerts', {}, token),
+  markPickupAlertViewed: (id, token) => request<PickupAlert>('/api/khobra-cleaning/bookings/pickup-alerts', {
+    method: 'PUT', body: JSON.stringify({ id }),
   }, token),
 }
 

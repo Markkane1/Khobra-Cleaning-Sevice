@@ -26,7 +26,17 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
     keyExtractor={(booking) => booking.id}
     ListHeaderComponent={<PageHeading title="Bookings" subtitle="Your upcoming and recent cleaning visits." action={['admin', 'customer'].includes(session.user.role) ? <Pressable accessibilityRole="button" onPress={onNewBooking} style={styles.addButton}><Ionicons name="add" size={22} color="#fff" /></Pressable> : undefined} />}
     ListEmptyComponent={<MessageState icon="calendar-outline" title="No bookings yet" detail="Your scheduled cleaning visits will appear here." action={session.user.role === 'customer' ? <Pressable onPress={onNewBooking} style={styles.emptyAction}><Text style={styles.emptyActionText}>Book a service</Text></Pressable> : undefined} />}
-    renderItem={({ item }) => <BookingCard booking={item} role={session.user.role} updating={updating === item.id} onStatus={async status => {
+    renderItem={({ item }) => <BookingCard booking={item} role={session.user.role} updating={updating === item.id} onTiming={async withinScheduledTime => {
+      try {
+        setUpdating(item.id)
+        const response = await khobraBookingGateway.submitCompletionTiming(item.id, withinScheduledTime, session.token)
+        setBookings(current => current.map(booking => booking.id === item.id ? { ...booking, completionTimingResponses: [response, ...(booking.completionTimingResponses || [])] } : booking))
+      } catch (error) {
+        Alert.alert('Response not recorded', error instanceof Error ? error.message : 'Try again.')
+      } finally {
+        setUpdating(null)
+      }
+    }} onStatus={async status => {
       try {
         setUpdating(item.id)
         const updated = await khobraBookingGateway.updateStatus(item.id, status, session.token)
@@ -40,7 +50,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   />
 }
 
-function BookingCard({ booking, role, updating, onStatus }: { booking: Booking; role: Session['user']['role']; updating: boolean; onStatus: (status: string) => void }) {
+function BookingCard({ booking, role, updating, onStatus, onTiming }: { booking: Booking; role: Session['user']['role']; updating: boolean; onStatus: (status: string) => void; onTiming: (withinScheduledTime: boolean) => void }) {
   const date = new Date(booking.scheduledDate).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' })
   const tone = statusTones[booking.status.toLowerCase()] || statusTones.default
   return <View style={styles.card}>
@@ -53,9 +63,12 @@ function BookingCard({ booking, role, updating, onStatus }: { booking: Booking; 
     <View style={styles.detailRow}><Ionicons name="calendar-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{date}</Text></View>
     <View style={styles.detailRow}><Ionicons name="time-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{booking.startTime} – {booking.endTime}</Text></View>
     {booking.customer?.name ? <View style={styles.detailRow}><Ionicons name="person-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{booking.customer.name}</Text></View> : null}
-    {(role === 'driver' || role === 'admin') && ['scheduled', 'confirmed'].includes(booking.status) ? <Pressable disabled={updating} onPress={() => onStatus('on_the_way')} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Mark On the Way'}</Text></Pressable> : null}
-    {(role === 'cleaner' || role === 'admin') && booking.status === 'on_the_way' ? <Pressable disabled={updating} onPress={() => onStatus('in_progress')} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Start Service'}</Text></Pressable> : null}
+    {role === 'driver' && ['scheduled', 'confirmed'].includes(booking.status) ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm On the Way', 'Confirm that you are now on the way to this booking?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', onPress: () => onStatus('on_the_way') }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Mark On the Way'}</Text></Pressable> : null}
+    {role === 'cleaner' && booking.status === 'on_the_way' ? <Pressable disabled={updating} onPress={() => onStatus('in_progress')} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Start Work'}</Text></Pressable> : null}
+    {role === 'cleaner' && booking.status === 'in_progress' ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Completion Within Scheduled Time', 'Select the expected completion timing.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Yes — within scheduled time', onPress: () => onTiming(true) }, { text: 'No — additional time required', onPress: () => onTiming(false) }])} style={styles.timingAction}><Text style={styles.timingActionText}>Confirm Completion Within Scheduled Time</Text></Pressable> : null}
+    {(role === 'admin' || role === 'driver') && booking.completionTimingResponses?.[0] ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Latest completion timing</Text><Text style={styles.timingResultText}>{booking.completionTimingResponses[0].withinScheduledTime ? 'Yes — expected within scheduled time' : 'No — additional time may be required'}</Text><Text style={styles.timingResultMeta}>{booking.completionTimingResponses[0].employee?.user?.name || 'Cleaner'} · {new Date(booking.completionTimingResponses[0].createdAt).toLocaleString('en-AE')}</Text></View> : null}
     {(role === 'cleaner' || role === 'admin') && booking.status === 'in_progress' ? <Pressable disabled={updating} onPress={() => onStatus('completed')} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Mark Completed'}</Text></Pressable> : null}
+    {booking.status === 'completed' && role === 'customer' ? <Pressable disabled={updating} onPress={() => Alert.alert('Select Payment Method', `Booking Amount: AED ${booking.netAmount}\n\nChoose your preferred payment method:`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Pay Cash', onPress: async () => { try { const res = await fetch('/api/khobra-cleaning/bookings/payment-method', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bookingId: booking.id, method: 'cash' }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Failed'); Alert.alert('Success', 'Cash payment option selected.') } catch (err: any) { Alert.alert('Error', err.message) } } }])} style={styles.statusAction}><Text style={styles.statusActionText}>Select Payment Method</Text></Pressable> : null}
   </View>
 }
 
@@ -88,6 +101,12 @@ const styles = StyleSheet.create({
   detail: { color: palette.muted, fontSize: 13 },
   statusAction: { alignSelf: 'flex-start', backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9, marginTop: 2 },
   statusActionText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  timingAction: { alignSelf: 'stretch', borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 10, marginTop: 2 },
+  timingActionText: { color: '#1d4ed8', fontWeight: '800', fontSize: 12, textAlign: 'center' },
+  timingResult: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 11, gap: 3 },
+  timingResultTitle: { color: palette.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  timingResultText: { color: palette.ink, fontSize: 13, fontWeight: '700' },
+  timingResultMeta: { color: palette.muted, fontSize: 11 },
   emptyAction: { backgroundColor: palette.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11 },
   emptyActionText: { color: '#fff', fontWeight: '700' },
 })

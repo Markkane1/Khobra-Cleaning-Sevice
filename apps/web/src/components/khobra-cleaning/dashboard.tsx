@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, startOfDay, addDays, startOfWeek, endOfWeek } from 'date-fns'
 import {
   CalendarDays, UserPlus, CreditCard, MessageSquarePlus, MessageSquareWarning, Sparkles,
   CalendarCheck, Users, DollarSign, Clock, AlertTriangle, PackageX, UserCheck,
-  Briefcase, TrendingUp, ArrowUpRight, ArrowDownRight, MapPin, Activity,
+  Briefcase, TrendingUp, ArrowUpRight, ArrowDownRight, MapPin, Activity, Truck,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { useAppStore } from '@/store/app-store'
+import { useRealtime } from '@/hooks/use-realtime'
 
 /* ------------------------------------------------------------------ */
 /*  Animation Variants                                                 */
@@ -185,6 +186,28 @@ function AedTooltip({ active, payload, label }: any) {
 /* ------------------------------------------------------------------ */
 
 export function Dashboard() {
+  const currentRole = useAppStore(s => s.currentRole)
+  const qc = useQueryClient()
+  const { subscribe, onEvent } = useRealtime()
+  useEffect(() => { subscribe('dispatch:updated'); onEvent('dispatch:updated', () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] })) }, [onEvent, qc, subscribe])
+  const { data: pickupAlerts = [] } = useQuery<any[]>({
+    queryKey: ['pickup-alerts'],
+    queryFn: () => fetch('/api/khobra-cleaning/bookings/pickup-alerts').then(async response => {
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'Could not load pickup alerts')
+      return body
+    }),
+    enabled: currentRole === 'driver',
+    refetchInterval: currentRole === 'driver' ? 10000 : false,
+  })
+  const markPickupViewed = useMutation({
+    mutationFn: (id: string) => fetch('/api/khobra-cleaning/bookings/pickup-alerts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then(async response => {
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'Could not acknowledge pickup alert')
+      return body
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] }),
+  })
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()),
@@ -372,6 +395,23 @@ export function Dashboard() {
       </motion.div>
 
       {/* ── Welcome Banner (with real next-booking) ── */}
+      {currentRole === 'driver' && pickupAlerts.filter((alert: any) => !alert.viewedAt).map((alert: any) => (
+        <Card key={alert.id} className="border-2 border-red-500 bg-red-50 shadow-lg dark:bg-red-950/30">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <Badge className="bg-red-600 text-white"><Truck className="mr-1 h-3.5 w-3.5" />High Priority Pickup</Badge>
+                <h2 className="text-lg font-bold">Proceed or prepare for pickup — {alert.booking.bookingNo}</h2>
+                <p className="flex items-start gap-2 text-sm"><MapPin className="mt-0.5 h-4 w-4 shrink-0" />{alert.customerLocation}</p>
+                <p className="text-sm"><strong>Scheduled end:</strong> {alert.scheduledEndTime || 'Not provided'} · <strong>Cleaners:</strong> {alert.assignedCleanerNames || 'Not provided'}</p>
+                <p className="text-xs text-muted-foreground">Generated {format(parseISO(alert.generatedAt), 'dd MMM yyyy, hh:mm a')}</p>
+              </div>
+              <Button variant="destructive" disabled={markPickupViewed.isPending} onClick={() => markPickupViewed.mutate(alert.id)}>Acknowledge</Button>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
       <motion.div custom={1} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="rounded-2xl border-0 shadow-sm bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-emerald-950/30 overflow-hidden">
           <CardContent className="p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

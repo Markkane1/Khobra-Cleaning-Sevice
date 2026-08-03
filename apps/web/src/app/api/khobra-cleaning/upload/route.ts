@@ -20,12 +20,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 })
     }
 
+    const purpose = String(formData.get('folder') || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'general'
     const validation = FileValidationSchema.safeParse({ name: file.name, type: file.type, size: file.size })
     if (!validation.success) {
       return NextResponse.json({ error: validation.error.issues[0]?.message || 'Invalid file.' }, { status: 400 })
     }
+    if (purpose === 'payment-proofs') {
+      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const validSignature =
+        (file.type === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+        (file.type === 'image/png' && bytes.slice(0, 8).every((byte, index) => byte === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index])) ||
+        (file.type === 'image/webp' && new TextDecoder().decode(bytes.slice(0, 4)) === 'RIFF' && new TextDecoder().decode(bytes.slice(8, 12)) === 'WEBP') ||
+        (file.type === 'application/pdf' && new TextDecoder().decode(bytes.slice(0, 5)) === '%PDF-')
+      if (!allowed.includes(file.type) || !validSignature) return NextResponse.json({ error: 'Payment proof must be a genuine JPG, PNG, WEBP, or PDF file.' }, { status: 400 })
+    }
 
-    const purpose = String(formData.get('folder') || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'general'
     const folder = `${process.env.CLOUDINARY_FOLDER || 'khobra'}/${auth.session.tenantId}/${purpose}`
     const upload = new FormData()
     upload.append('file', file)

@@ -14,10 +14,10 @@ export class BookingService {
     return this.bookingRepository.create(tenantId, data);
   }
 
-  async updateBooking(data: UpdateBookingDTO): Promise<Booking> {
+  async updateBooking(data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
     const existing = await this.bookingRepository.findById(data.id);
     if (!existing) throw new Error('Booking not found');
-    return this.bookingRepository.update(data.id, data);
+    return this.bookingRepository.update(data.id, data, changedBy, requiredDriverId, requiredEmployeeId);
   }
 
   async assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean): Promise<Booking> {

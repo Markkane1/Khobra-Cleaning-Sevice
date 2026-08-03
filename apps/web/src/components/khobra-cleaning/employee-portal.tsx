@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, subDays } from 'date-fns'
 import { motion } from 'framer-motion'
 import {
@@ -11,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAppStore } from '@/store/app-store'
+import { useRealtime } from '@/hooks/use-realtime'
 
 const attStatusColors : Record<string, string> = {
   present: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -21,6 +23,9 @@ const attStatusColors : Record<string, string> = {
 
 export function EmployeePortal() {
   const setView = useAppStore(s => s.setView)
+  const qc = useQueryClient()
+  const { subscribe, onEvent } = useRealtime()
+  useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['bookings'] })) }, [onEvent, qc, subscribe])
 
   const { data: attendance = [], isLoading: aLoading } = useQuery({
     queryKey: ['attendance'],

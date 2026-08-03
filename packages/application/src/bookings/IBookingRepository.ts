@@ -5,6 +5,7 @@ export interface Booking {
   tenantId: string;
   bookingNo: string;
   customerId: string;
+  driverId?: string | null;
   serviceId?: string;
   preferredEmployeeId?: string;
   employeeCount?: number;
@@ -35,7 +36,7 @@ export interface IBookingRepository {
   findManyByTenant(tenantId: string): Promise<Booking[]>;
   findById(id: string): Promise<Booking | null>;
   create(tenantId: string, data: CreateBookingDTO): Promise<Booking>;
-  update(id: string, data: UpdateBookingDTO): Promise<Booking>;
+  update(id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
   assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean): Promise<Booking>;
   rateBookingEmployees(bookingId: string, ratings: RateEmployeeInput[]): Promise<Booking>;
   delete(id: string): Promise<void>;

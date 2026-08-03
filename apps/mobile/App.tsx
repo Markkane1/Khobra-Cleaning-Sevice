@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { loadDashboard } from './src/application/dashboard'
 import type { Session } from './src/domain/auth/types'
 import type { DashboardStats } from './src/domain/dashboard/types'
-import { khobraDashboardGateway } from './src/infrastructure/http/khobra-gateways'
+import type { PickupAlert } from './src/domain/bookings/types'
+import { khobraBookingGateway, khobraDashboardGateway } from './src/infrastructure/http/khobra-gateways'
 import { secureSessionStore } from './src/infrastructure/storage/secure-session-store'
 import { AuthScreen } from './src/presentation/auth-screen'
 import { BookingsScreen } from './src/presentation/bookings-screen'
@@ -46,6 +47,7 @@ export default function App() {
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
   const [screen, setScreen] = useState<Screen>('overview')
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [pickupAlerts, setPickupAlerts] = useState<PickupAlert[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = () => {
@@ -56,13 +58,21 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       .finally(() => setLoading(false))
   }
 
+  const refreshPickupAlerts = () => session.user.role === 'driver' && khobraBookingGateway.getPickupAlerts(session.token).then(setPickupAlerts).catch(() => undefined)
+
   useEffect(refresh, [session.token])
+  useEffect(() => {
+    if (session.user.role !== 'driver') return
+    void refreshPickupAlerts()
+    const timer = setInterval(refreshPickupAlerts, 10000)
+    return () => clearInterval(timer)
+  }, [session.token, session.user.role])
 
   return <SafeAreaView style={styles.screen}>
     <View style={styles.glow} />
     <AppHeader session={session} onSignOut={onSignOut} />
     <View style={styles.body}>
-      {screen === 'overview' ? <Overview stats={stats} loading={loading} onRefresh={refresh} /> : null}
+      {screen === 'overview' ? <Overview stats={stats} loading={loading} pickupAlerts={pickupAlerts.filter(alert => !alert.viewedAt)} onRefresh={refresh} onPickupViewed={async id => { await khobraBookingGateway.markPickupAlertViewed(id, session.token); setPickupAlerts(current => current.filter(alert => alert.id !== id)) }} /> : null}
       {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
       {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} /> : null}
       {screen === 'operations' ? <OperationsScreen session={session} /> : null}
@@ -82,10 +92,20 @@ function AppHeader({ session, onSignOut }: { session: Session; onSignOut: () => 
   </View>
 }
 
-function Overview({ stats, loading, onRefresh }: { stats: DashboardStats | null; loading: boolean; onRefresh: () => void }) {
+function Overview({ stats, loading, pickupAlerts, onRefresh, onPickupViewed }: { stats: DashboardStats | null; loading: boolean; pickupAlerts: PickupAlert[]; onRefresh: () => void; onPickupViewed: (id: string) => Promise<void> }) {
   if (loading) return <LoadingState label="Refreshing your overview..." />
   return <ScrollView contentContainerStyle={styles.overview}>
     <PageHeading title="Overview" subtitle="A quick look at today’s cleaning operations." action={<Pressable accessibilityLabel="Refresh overview" onPress={onRefresh} style={styles.refresh}><Ionicons name="refresh" size={20} color={palette.primaryDark} /></Pressable>} />
+
+    {pickupAlerts.map(alert => <View key={alert.id} style={styles.pickupAlert}>
+      <Text style={styles.pickupPriority}>HIGH PRIORITY PICKUP</Text>
+      <Text style={styles.pickupTitle}>Proceed or prepare for pickup — {alert.booking.bookingNo}</Text>
+      <Text style={styles.pickupDetail}>{alert.customerLocation}</Text>
+      <Text style={styles.pickupDetail}>Scheduled end: {alert.scheduledEndTime || 'Not provided'}</Text>
+      <Text style={styles.pickupDetail}>Cleaners: {alert.assignedCleanerNames || 'Not provided'}</Text>
+      <Text style={styles.pickupTime}>Generated {new Date(alert.generatedAt).toLocaleString('en-AE')}</Text>
+      <Pressable accessibilityRole="button" onPress={() => void onPickupViewed(alert.id)} style={styles.pickupButton}><Text style={styles.pickupButtonText}>Acknowledge</Text></Pressable>
+    </View>)}
 
     <View style={styles.hero}>
       <View style={styles.heroGlow} />
@@ -158,6 +178,13 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
   overview: { padding: 20, paddingBottom: 112 },
   refresh: { width: 44, height: 44, borderRadius: 15, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, alignItems: 'center', justifyContent: 'center' },
+  pickupAlert: { borderWidth: 2, borderColor: '#dc2626', backgroundColor: '#fef2f2', borderRadius: 20, padding: 17, gap: 6, marginBottom: 16 },
+  pickupPriority: { color: '#b91c1c', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  pickupTitle: { color: '#7f1d1d', fontSize: 16, fontWeight: '800' },
+  pickupDetail: { color: '#991b1b', fontSize: 12 },
+  pickupTime: { color: '#b45309', fontSize: 10 },
+  pickupButton: { alignSelf: 'flex-start', backgroundColor: '#dc2626', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9, marginTop: 5 },
+  pickupButtonText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   hero: { overflow: 'hidden', backgroundColor: '#064e3b', borderRadius: 24, padding: 20, marginBottom: 24, shadowColor: '#064e3b', shadowOpacity: 0.22, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   heroGlow: { position: 'absolute', width: 180, height: 180, borderRadius: 90, backgroundColor: '#10b981', opacity: 0.24, top: -85, right: -50 },
   heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },

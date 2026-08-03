@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
 import { BookingService } from '@repo/application'
-import { CreateBookingSchema, UpdateBookingSchema, generateBookingOccurrenceDates, parseTimeToMinutes } from '@repo/core'
+import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, parseTimeToMinutes } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
 const bookingRepository = new PrismaBookingRepository(db)
@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
     } else if (auth.session.role === 'cleaner') {
       const cleaner = await db.employee.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
       bookings = bookings.filter(booking => booking.assignments?.some(assignment => assignment.employeeId === cleaner?.id))
+    } else if (auth.session.role === 'driver') {
+      const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
+      bookings = bookings.filter(booking => booking.driverId === driver?.id)
     }
     return NextResponse.json(bookings)
   } catch {
@@ -77,18 +80,36 @@ export async function PUT(req: NextRequest) {
     if ('response' in auth) return auth.response
     const body = await req.json()
     const validatedData = UpdateBookingSchema.parse(body)
-    const booking = await db.booking.findUnique({ where: { id: validatedData.id }, include: { customer: true } })
+    const booking = await db.booking.findUnique({ where: { id: validatedData.id }, include: { customer: true, assignments: { select: { employeeId: true } } } })
     if (!booking || booking.tenantId !== auth.session.tenantId) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     const role = auth.session.role
+    let authorizedDriverId: string | undefined
+    let authorizedEmployeeId: string | undefined
+    if (validatedData.driverId !== undefined && role === 'admin' && validatedData.driverId !== null) {
+      const driver = await db.driver.findFirst({ where: { id: validatedData.driverId, tenantId: booking.tenantId, status: { in: ['active', 'AVAILABLE'] } } })
+      if (!driver) return NextResponse.json({ error: 'Select an active driver from this tenant' }, { status: 400 })
+    }
+    if (validatedData.status === 'on_the_way' && role !== 'driver')
+      return NextResponse.json({ error: 'Only the assigned driver may change a Scheduled booking to On the Way' }, { status: 403 })
+    if (validatedData.status === 'in_progress' && role !== 'cleaner')
+      return NextResponse.json({ error: 'Only an assigned cleaner may start work on an On the Way booking' }, { status: 403 })
     if (role === 'customer' && (booking.customer.userId !== auth.session.userId || validatedData.status !== 'cancelled'))
       return NextResponse.json({ error: 'Customers may only cancel their own bookings' }, { status: 403 })
-    if (role === 'driver' && (!(booking.status === 'scheduled' || booking.status === 'confirmed') || validatedData.status !== 'on_the_way'))
-      return NextResponse.json({ error: "Drivers may only change Scheduled bookings to On the Way" }, { status: 403 })
+    if (role === 'driver') {
+      const driver = await db.driver.findFirst({ where: { tenantId: booking.tenantId, userId: auth.session.userId } })
+      if (!driver || booking.driverId !== driver.id)
+        return NextResponse.json({ error: 'Only the driver assigned to this booking may update its status' }, { status: 403 })
+      authorizedDriverId = driver.id
+      if (!canDriverTransitionToOnTheWay(booking.status, validatedData.status, booking.driverId, driver.id))
+        return NextResponse.json({ error: 'Drivers may only change Scheduled bookings to On the Way' }, { status: 403 })
+    }
     if (role === 'cleaner') {
       const cleaner = await db.employee.findFirst({ where: { tenantId: booking.tenantId, userId: auth.session.userId } })
-      const assigned = cleaner && await db.assignment.findFirst({ where: { bookingId: booking.id, employeeId: cleaner.id } })
-      const allowed = (booking.status === 'on_the_way' && validatedData.status === 'in_progress') || (booking.status === 'in_progress' && validatedData.status === 'completed')
-      if (!assigned || !allowed) return NextResponse.json({ error: 'Cleaners may only progress their assigned booking from On the Way to In Progress, then Completed' }, { status: 403 })
+      const assignedCleanerIds = booking.assignments.map(assignment => assignment.employeeId)
+      if (!cleaner || !assignedCleanerIds.includes(cleaner.id)) return NextResponse.json({ error: 'Only a cleaner assigned to this booking may update its status' }, { status: 403 })
+      const allowed = canCleanerStartWork(booking.status, validatedData.status, assignedCleanerIds, cleaner.id) || (booking.status === 'in_progress' && validatedData.status === 'completed')
+      if (!allowed) return NextResponse.json({ error: 'Start Work is only available when an assigned booking is On the Way' }, { status: 403 })
+      authorizedEmployeeId = cleaner.id
     }
     if (!['admin', 'customer', 'driver', 'cleaner'].includes(role))
       return NextResponse.json({ error: 'You are not authorized to update booking status' }, { status: 403 })
@@ -98,7 +119,7 @@ export async function PUT(req: NextRequest) {
       : role === 'customer'
         ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason, cancelledBy: 'customer' as const }
         : { id: validatedData.id, status: validatedData.status }
-    const updated = await bookingService.updateBooking(updateData)
+    const updated = await bookingService.updateBooking(updateData, `${role}: ${auth.session.name} (${auth.session.userId})`, authorizedDriverId, authorizedEmployeeId)
     
     broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status })
     return NextResponse.json(updated)

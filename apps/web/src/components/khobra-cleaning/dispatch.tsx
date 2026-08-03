@@ -182,6 +182,7 @@ export function Dispatch() {
   const { sorted: sortedTrips, SortableHeader } = useSortable(tripsWithDriverName, 'driverName')
 
   const handleKanbanMove = (bookingId: string, newStatus: string) => {
+    if (newStatus === 'on_the_way' && !window.confirm('Confirm that you are now on the way to this booking?')) return
     updateBookingMut.mutate({ id: bookingId, status: newStatus })
   }
 
@@ -369,17 +370,12 @@ export function Dispatch() {
                               </div>
                               {/* Quick action buttons to move status */}
                               <div className="flex gap-1 pt-1">
-                                {(currentRole === 'admin' || currentRole === 'driver') && col.id === 'scheduled' && (
+                                {currentRole === 'driver' && col.id === 'scheduled' && (
                                   <>
                                     <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleKanbanMove(b.id, 'on_the_way')}>
                                       On the Way
                                     </Button>
                                   </>
-                                )}
-                                {currentRole === 'admin' && col.id === 'on_the_way' && (
-                                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => handleKanbanMove(b.id, 'in_progress')}>
-                                    Start
-                                  </Button>
                                 )}
                                 {currentRole === 'admin' && col.id === 'in_progress' && (
                                   <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleKanbanMove(b.id, 'completed')}>
