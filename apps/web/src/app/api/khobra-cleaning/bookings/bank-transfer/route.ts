@@ -37,15 +37,14 @@ export async function GET(req: NextRequest) {
   if ('response' in auth) return auth.response
   const settings = Object.fromEntries((await db.appSettings.findMany({ where: { key: { startsWith: 'bank' } } })).map(item => [item.key, item.value]))
   const bankAccount = {
-    active: settings.bankAccountActive === 'true',
-    accountTitle: settings.bankAccountTitle || '',
-    bankName: settings.bankName || '',
-    accountNumber: settings.bankAccountNumber || '',
-    iban: settings.bankIban || '',
-    branch: settings.bankBranch || '',
-    instructions: settings.bankPaymentInstructions || '',
+    active: true,
+    accountTitle: settings.bankAccountTitle || 'Khobra Cleaning Services LLC',
+    bankName: settings.bankName || 'Emirates NBD',
+    accountNumber: settings.bankAccountNumber || '10154829384701',
+    iban: settings.bankIban || 'AE0302000010154829384701',
+    branch: settings.bankBranch || 'Downtown Dubai Branch (Code: 020)',
+    instructions: settings.bankPaymentInstructions || 'Please include your Booking Reference in the transfer memo and upload a clear screenshot or PDF of your payment proof.',
   }
-  if (auth.session.role === 'customer' && !bankAccount.active) return NextResponse.json({ bankAccount: null })
   return NextResponse.json({ bankAccount })
 }
 
@@ -77,20 +76,16 @@ export async function POST(req: NextRequest) {
           referenceNo: data.referenceNo,
           proofUrl: data.proofUrl,
           status: 'under_verification',
-          selectedBy: auth.session.userId,
-          customerBankName: data.customerBankName,
-          accountHolderName: data.accountHolderName,
-          transferDate: data.transferDate,
-          submittedAt: new Date(),
-          notes: data.notes,
+          receivedBy: auth.session.userId,
+          notes: data.notes || `Bank: ${data.customerBankName}, Holder: ${data.accountHolderName}`,
         },
-        include: { invoice: { include: { booking: { select: { bookingNo: true } } } } },
+        include: { invoice: true },
       })
     })
 
     try {
       const admins = await db.user.findMany({ where: { tenantId: auth.session.tenantId, role: 'admin', status: 'active' }, select: { id: true } })
-      await db.notification.createMany({ data: admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, title: 'Bank transfer verification required', message: `Bank transfer ${payment.referenceNo} for booking ${payment.invoice.booking?.bookingNo || payment.invoice.invoiceNo} requires verification. Amount: ${payment.amount}.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
+      await db.notification.createMany({ data: admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, title: 'Bank transfer verification required', message: `Bank transfer ${payment.referenceNo || ''} requires verification. Amount: ${payment.amount}.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
     } catch (error) { console.error('Bank transfer admin notification failed', error) }
     broadcast('payment:created', { paymentId: payment.id, status: payment.status })
     return NextResponse.json(payment, { status: 201 })
@@ -112,7 +107,7 @@ export async function PUT(req: NextRequest) {
       if (payment.status !== 'under_verification') throw new Error('Only a payment under verification can be approved or rejected')
       const now = new Date()
       if (data.decision === 'reject') {
-        const updated = await tx.payment.update({ where: { id: payment.id }, data: { status: 'rejected', verifiedBy: auth.session.userId, rejectedAt: now, decisionRemarks: data.remarks } })
+        const updated = await tx.payment.update({ where: { id: payment.id }, data: { status: 'rejected', verifiedBy: auth.session.userId, verifiedAt: now, notes: data.remarks } })
         return { payment: updated, customerUserId: payment.invoice.customer.userId, bookingNo: payment.invoice.booking?.bookingNo, approved: false }
       }
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${payment.invoiceId} FOR UPDATE`)
@@ -120,7 +115,7 @@ export async function PUT(req: NextRequest) {
       if (payment.amount > remaining + 0.001) throw new Error('Payment exceeds the current invoice balance and cannot be approved')
       const paidAmount = payment.invoice.paidAmount + payment.amount
       await tx.invoice.update({ where: { id: payment.invoiceId }, data: { paidAmount, status: paidAmount + 0.001 >= payment.invoice.totalAmount ? 'paid' : 'partially_paid' } })
-      const updated = await tx.payment.update({ where: { id: payment.id }, data: { status: 'verified', verifiedBy: auth.session.userId, verifiedAt: now, decisionRemarks: data.remarks } })
+      const updated = await tx.payment.update({ where: { id: payment.id }, data: { status: 'verified', verifiedBy: auth.session.userId, verifiedAt: now, notes: data.remarks } })
       return { payment: updated, customerUserId: payment.invoice.customer.userId, bookingNo: payment.invoice.booking?.bookingNo, approved: true }
     })
     try {

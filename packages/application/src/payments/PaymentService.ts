@@ -30,5 +30,37 @@ export class PaymentService {
   async verifyCashPayment(tenantId: string, adminUserId: string, paymentId: string, remarks?: string) {
     return this.paymentRepository.verifyCashPayment(tenantId, adminUserId, paymentId, remarks);
   }
+
+  async cleanerReceiveCash(tenantId: string, cleanerUserId: string, bookingId: string, remarks?: string) {
+    return this.paymentRepository.cleanerReceiveCash(tenantId, cleanerUserId, bookingId, remarks);
+  }
+
+  async getCompanyBankAccount(tenantId: string) {
+    return this.paymentRepository.getCompanyBankAccount(tenantId);
+  }
+
+  async submitBankTransfer(tenantId: string, userId: string, data: any) {
+    return this.paymentRepository.submitBankTransfer(tenantId, userId, data);
+  }
+
+  async decideBankTransfer(tenantId: string, adminUserId: string, paymentId: string, decision: 'approve' | 'reject', remarks?: string) {
+    return this.paymentRepository.decideBankTransfer(tenantId, adminUserId, paymentId, decision, remarks);
+  }
+
+  async getCompanyBankAccounts(tenantId: string, adminMode?: boolean) {
+    return this.paymentRepository.getCompanyBankAccounts(tenantId, adminMode);
+  }
+
+  async saveCompanyBankAccount(tenantId: string, userId: string, data: any) {
+    return this.paymentRepository.saveCompanyBankAccount(tenantId, userId, data);
+  }
+
+  async toggleCompanyBankAccountActive(tenantId: string, userId: string, accountId: string, isActive: boolean) {
+    return this.paymentRepository.toggleCompanyBankAccountActive(tenantId, userId, accountId, isActive);
+  }
+
+  async deleteCompanyBankAccount(tenantId: string, userId: string, accountId: string) {
+    return this.paymentRepository.deleteCompanyBankAccount(tenantId, userId, accountId);
+  }
 }
 

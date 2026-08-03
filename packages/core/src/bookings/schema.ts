@@ -378,7 +378,10 @@ export const CreateBookingSchema = z.object({
   });
 
   const occurrenceDates = bookingDates.every(({ date }) => date)
-    ? generateBookingOccurrenceDates(data)
+    ? generateBookingOccurrenceDates({
+        ...data,
+        selectedDates: data.selectedDates ? data.selectedDates.filter((d): d is string | Date => Boolean(d)) : undefined,
+      })
     : [];
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();

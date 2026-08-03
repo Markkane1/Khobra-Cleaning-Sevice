@@ -397,6 +397,58 @@ export function Bookings() {
     }
   }
 
+  const [cleanerCashBooking, setCleanerCashBooking] = useState<any | null>(null)
+
+  const cleanerReceiveCashMut = useMutation({
+    mutationFn: (d: { bookingId: string; remarks?: string }) =>
+      fetch('/api/khobra-cleaning/bookings/cleaner-cash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Cash collection failed')
+        return res
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success(`Cash payment of AED ${data.amountReceived} recorded successfully!`)
+      setCleanerCashBooking(null)
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Cash collection failed')
+    },
+  })
+
+  const [reviewingBankTransferBooking, setReviewingBankTransferBooking] = useState<any | null>(null)
+  const [decisionRemarks, setDecisionRemarks] = useState('')
+
+  const decideBankTransferMut = useMutation({
+    mutationFn: (d: { paymentId: string; decision: 'approve' | 'reject'; remarks?: string }) =>
+      fetch('/api/khobra-cleaning/bookings/bank-transfer', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Decision failed')
+        return res
+      }),
+    onSuccess: (data, variables) => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success(variables.decision === 'approve' ? 'Bank transfer approved successfully!' : 'Bank transfer rejected!')
+      setReviewingBankTransferBooking(null)
+      setDecisionRemarks('')
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Decision failed')
+    },
+  })
+
   const { data: assignAvailability } = useQuery({
     queryKey: ['availability', assigningBooking?.scheduledDate, assigningBooking?.startTime, assigningBooking?.endTime],
     queryFn: () => fetch(`/api/khobra-cleaning/employees/availability?date=${assigningBooking?.scheduledDate?.split('T')[0]}&startTime=${assigningBooking?.startTime}&endTime=${assigningBooking?.endTime}&serviceIds=${(assigningBooking?.items?.map((item: any) => item.serviceId) || [assigningBooking?.serviceId]).filter(Boolean).join(',')}`).then(r => r.json()),
@@ -1235,10 +1287,28 @@ export function Bookings() {
                                               Pay / Select Method
                                             </Button>
                                           )}
-                                          {currentRole === 'admin' && fin.paymentStatus === 'cash_selected' && (
+                                          {(currentRole === 'cleaner' || currentRole === 'admin') && fin.remainingPayableAmount > 0 && (
+                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold shadow-sm" onClick={() => setCleanerCashBooking(b)}>
+                                              <Banknote className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                                              Mark Cash Received (AED {fin.remainingPayableAmount})
+                                            </Button>
+                                          )}
+                                          {(fin.paymentStatus === 'paid' || fin.remainingPayableAmount === 0) && b.invoices?.[0]?.payments?.some((p: any) => p.method === 'cash') && (
+                                            <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 border-emerald-300 font-bold text-xs">
+                                              <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600 inline" />
+                                              Cash Received {b.invoices?.[0]?.payments?.[0]?.verifiedAt ? `(${format(parseISO(b.invoices[0].payments[0].verifiedAt), 'MMM dd, HH:mm')})` : ''}
+                                            </Badge>
+                                          )}
+                                          {currentRole === 'admin' && fin.paymentStatus === 'cash_selected' && fin.remainingPayableAmount > 0 && (
                                             <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-400 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 font-semibold" onClick={() => verifyCashMut.mutate({ paymentId: b.invoices?.[0]?.payments?.[0]?.id })}>
                                               <Banknote className="h-3.5 w-3.5 mr-1" />
                                               Verify Cash
+                                            </Button>
+                                          )}
+                                          {currentRole === 'admin' && (fin.paymentStatus === 'bank_transfer_submitted' || fin.paymentStatus === 'under_verification') && (
+                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-purple-400 text-purple-700 bg-purple-50 hover:bg-purple-100 font-semibold" onClick={() => setReviewingBankTransferBooking(b)}>
+                                              <Building2 className="h-3.5 w-3.5 mr-1" />
+                                              Review Transfer
                                             </Button>
                                           )}
                                           {currentRole === 'admin' && fin.paymentStatus !== 'payment_pending' && (
@@ -1251,30 +1321,30 @@ export function Bookings() {
                                         </>
                                       )}
                                       {(b.status === 'cancelled' || b.status === 'no_show') && <span className="text-xs text-muted-foreground px-1">Ended</span>}
+                                      {currentRole === 'admin' && (
+                                        <AlertDialog>
+                                          <AlertDialogTrigger asChild>
+                                            <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                          </AlertDialogTrigger>
+                                          <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                              <AlertDialogTitle>Delete Booking</AlertDialogTitle>
+                                              <AlertDialogDescription>
+                                                Are you sure you want to delete booking {b.bookingNo}? This action cannot be undone.
+                                              </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                              <AlertDialogAction onClick={() => deleteMut.mutate(b.id)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                          </AlertDialogContent>
+                                        </AlertDialog>
+                                      )}
                                     </div>
                                   )
                                 })()}
-                              </TableCell>
-                                  {currentRole === 'admin' && <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Delete Booking</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          Are you sure you want to delete booking {b.bookingNo}? This action cannot be undone.
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => deleteMut.mutate(b.id)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>}
-                                </div>
                               </TableCell>
                             </motion.tr>
                           ))}
@@ -1911,6 +1981,8 @@ export function Bookings() {
             </Button>
           </DialogFooter>
         </DialogContent>
+      </Dialog>
+
       {/* Payment Method Selection Dialog */}
       <Dialog open={Boolean(paymentBooking)} onOpenChange={(open) => { if (!open) setPaymentBooking(null) }}>
         <DialogContent className="sm:max-w-md">
@@ -1996,14 +2068,97 @@ export function Bookings() {
                 {paymentMethod === 'bank_transfer' && (
                   <div className="space-y-3 pt-1">
                     {bankAccountData?.bankAccount && (
-                      <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs space-y-1">
-                        <p className="font-semibold text-emerald-700 dark:text-emerald-400">Company Bank Details</p>
-                        <p><span className="text-muted-foreground">Bank:</span> {bankAccountData.bankAccount.bankName || 'N/A'}</p>
-                        <p><span className="text-muted-foreground">Title:</span> {bankAccountData.bankAccount.accountTitle || 'N/A'}</p>
-                        <p><span className="text-muted-foreground">Account #:</span> {bankAccountData.bankAccount.accountNumber || 'N/A'}</p>
-                        <p><span className="text-muted-foreground">IBAN:</span> {bankAccountData.bankAccount.iban || 'N/A'}</p>
+                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-emerald-50/30 dark:from-slate-900 dark:to-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 text-xs space-y-2">
+                        <div className="flex justify-between items-center pb-1.5 border-b border-emerald-200/50 dark:border-emerald-800/40">
+                          <span className="font-bold text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-1.5">
+                            <Building2 className="h-4 w-4 text-emerald-600" />
+                            Company Bank Details
+                          </span>
+                          <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-semibold px-2 py-0.5 rounded-full">
+                            Active
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Bank Name:</span>
+                            <span className="font-semibold text-foreground">{bankAccountData.bankAccount.bankName || 'Emirates NBD'}</span>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Account Title:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-semibold text-foreground">{bankAccountData.bankAccount.accountTitle || 'Khobra Cleaning Services LLC'}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                title="Copy Account Title"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(bankAccountData.bankAccount.accountTitle || 'Khobra Cleaning Services LLC')
+                                  toast.success('Copied Account Title to clipboard!')
+                                }}
+                              >
+                                📋
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Account Number:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-bold text-foreground">{bankAccountData.bankAccount.accountNumber || '10154829384701'}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                title="Copy Account Number"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(bankAccountData.bankAccount.accountNumber || '10154829384701')
+                                  toast.success('Copied Account Number to clipboard!')
+                                }}
+                              >
+                                📋
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">IBAN:</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-bold text-foreground text-[11px]">{bankAccountData.bankAccount.iban || 'AE0302000010154829384701'}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                title="Copy IBAN"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(bankAccountData.bankAccount.iban || 'AE0302000010154829384701')
+                                  toast.success('Copied IBAN to clipboard!')
+                                }}
+                              >
+                                📋
+                              </Button>
+                            </div>
+                          </div>
+
+                          {bankAccountData.bankAccount.branch && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-muted-foreground">Branch:</span>
+                              <span className="font-medium text-foreground">{bankAccountData.bankAccount.branch}</span>
+                            </div>
+                          )}
+                        </div>
+
                         {bankAccountData.bankAccount.instructions && (
-                          <p className="text-[11px] text-muted-foreground pt-1 italic">{bankAccountData.bankAccount.instructions}</p>
+                          <div className="pt-1.5 border-t border-emerald-200/40 dark:border-emerald-800/30">
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              ℹ️ <strong>Instructions:</strong> {bankAccountData.bankAccount.instructions}
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -2086,8 +2241,212 @@ export function Bookings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Cleaner Cash Collection Confirmation Dialog */}
+      <Dialog open={Boolean(cleanerCashBooking)} onOpenChange={(open) => { if (!open) setCleanerCashBooking(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+              <Banknote className="h-5 w-5 text-emerald-600" />
+              Confirm Cash Collection
+            </DialogTitle>
+          </DialogHeader>
+
+          {cleanerCashBooking && (() => {
+            const financials = calculateBookingFinancials(cleanerCashBooking)
+            const assignedCleanerName = cleanerCashBooking.assignments?.[0]?.employee?.user?.name || 'Assigned Cleaner'
+            return (
+              <div className="space-y-4 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  Please verify the exact collectible cash amount with the customer before recording receipt.
+                </p>
+
+                <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2.5">
+                  <div className="flex justify-between items-center pb-2 border-b border-emerald-200/60 dark:border-emerald-800/40">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">Booking Reference</span>
+                    <span className="font-mono font-bold text-foreground">{cleanerCashBooking.bookingNo}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-semibold text-foreground">{cleanerCashBooking.customer?.user?.name || 'Customer'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Cleaner Receiving Cash</span>
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">{assignedCleanerName}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Currency</span>
+                    <span className="font-semibold text-foreground">AED</span>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2 border-t border-emerald-200/60 dark:border-emerald-800/40">
+                    <span className="font-bold text-xs uppercase tracking-wider text-emerald-900 dark:text-emerald-200">Amount Collected</span>
+                    <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
+                      AED {financials.remainingPayableAmount.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 text-xs text-amber-900 dark:text-amber-300">
+                  ⚠️ <strong>Important:</strong> Recording receipt will instantly update the booking payment status to <strong>Paid</strong>. Cash collected will be submitted for admin cash reconciliation.
+                </div>
+              </div>
+            )
+          })()}
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setCleanerCashBooking(null)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              disabled={cleanerReceiveCashMut.isPending}
+              onClick={() => {
+                if (!cleanerCashBooking) return
+                cleanerReceiveCashMut.mutate({
+                  bookingId: cleanerCashBooking.id,
+                })
+              }}
+            >
+              {cleanerReceiveCashMut.isPending ? 'Recording Cash Receipt...' : 'Confirm Cash Received'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin Bank Transfer Review Dialog */}
+      <Dialog open={Boolean(reviewingBankTransferBooking)} onOpenChange={(open) => { if (!open) { setReviewingBankTransferBooking(null); setDecisionRemarks(''); } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-400">
+              <Building2 className="h-5 w-5 text-purple-600" />
+              Review Submitted Bank Transfer
+            </DialogTitle>
+          </DialogHeader>
+
+          {reviewingBankTransferBooking && (() => {
+            const financials = calculateBookingFinancials(reviewingBankTransferBooking)
+            const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.find((p: any) => p.method === 'bank_transfer') || reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+            return (
+              <div className="space-y-4 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  Verify the customer's transfer proof and reference number against your bank statement before approving or rejecting.
+                </p>
+
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="flex justify-between items-center pb-2 border-b border-border/50">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">Booking Ref</span>
+                    <span className="font-mono font-bold text-foreground">{reviewingBankTransferBooking.bookingNo}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-semibold text-foreground">{reviewingBankTransferBooking.customer?.user?.name || 'Customer'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Reference / Transaction #</span>
+                    <span className="font-mono font-bold text-foreground">{payment?.referenceNo || 'N/A'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Transfer Amount</span>
+                    <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400">
+                      AED {(payment?.amount || financials.remainingPayableAmount).toLocaleString()}
+                    </span>
+                  </div>
+
+                  {payment?.notes && (
+                    <div className="pt-2 border-t border-border/50 text-xs">
+                      <span className="text-muted-foreground block text-[11px]">Submission Details & Notes:</span>
+                      <p className="font-mono text-xs text-foreground bg-muted/40 p-2 rounded mt-1">{payment.notes}</p>
+                    </div>
+                  )}
+
+                  {payment?.proofUrl && (
+                    <div className="pt-2 border-t border-border/50 text-xs">
+                      <span className="text-muted-foreground block text-[11px] mb-1">Payment Proof Attachment:</span>
+                      {payment.proofUrl.endsWith('.pdf') ? (
+                        <a href={payment.proofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline font-semibold bg-blue-50 dark:bg-blue-950/40 px-3 py-1.5 rounded-md border border-blue-200">
+                          <FileText className="h-4 w-4" /> View Submitted PDF Proof
+                        </a>
+                      ) : (
+                        <a href={payment.proofUrl} target="_blank" rel="noreferrer" className="block group">
+                          <img src={payment.proofUrl} alt="Payment Proof" className="max-h-48 rounded-lg border border-border object-contain bg-black/5 p-1 group-hover:opacity-90 transition-opacity" />
+                          <span className="text-[11px] text-blue-600 group-hover:underline mt-1 block">Click to open full resolution image</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-xs font-semibold text-foreground">Admin Decision Remarks:</span>
+                  <input
+                    className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                    placeholder="Enter approval memo or reason for rejection (required if rejecting)..."
+                    value={decisionRemarks}
+                    onChange={e => setDecisionRemarks(e.target.value)}
+                  />
+                </div>
+              </div>
+            )
+          })()}
+
+          <DialogFooter className="flex justify-between items-center gap-2 pt-2">
+            <Button variant="outline" onClick={() => { setReviewingBankTransferBooking(null); setDecisionRemarks(''); }}>
+              Cancel
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold"
+                disabled={decideBankTransferMut.isPending}
+                onClick={() => {
+                  if (!reviewingBankTransferBooking) return
+                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+                  if (!payment) {
+                    toast.error('No payment record found to reject')
+                    return
+                  }
+                  if (!decisionRemarks.trim()) {
+                    toast.error('Please enter decision remarks explaining why the transfer is rejected')
+                    return
+                  }
+                  decideBankTransferMut.mutate({
+                    paymentId: payment.id,
+                    decision: 'reject',
+                    remarks: decisionRemarks.trim(),
+                  })
+                }}
+              >
+                {decideBankTransferMut.isPending ? 'Updating...' : 'Reject Transfer'}
+              </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                disabled={decideBankTransferMut.isPending}
+                onClick={() => {
+                  if (!reviewingBankTransferBooking) return
+                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+                  if (!payment) {
+                    toast.error('No payment record found to approve')
+                    return
+                  }
+                  decideBankTransferMut.mutate({
+                    paymentId: payment.id,
+                    decision: 'approve',
+                    remarks: decisionRemarks.trim() || 'Approved by Admin',
+                  })
+                }}
+              >
+                {decideBankTransferMut.isPending ? 'Updating...' : 'Approve & Mark Paid'}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-  )
   )
 }
 

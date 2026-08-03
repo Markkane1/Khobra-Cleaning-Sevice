@@ -26,6 +26,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { CompanyBankAccounts } from './company-bank-accounts'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -205,58 +206,6 @@ export function Settings() {
     { label: 'Database', value: 'SQLite / Prisma ORM', icon: Database },
     { label: 'UI Library', value: 'shadcn/ui + Tailwind CSS 4', icon: Paintbrush },
     { label: 'Operating Model', value: 'Single Company (Phase 1)', icon: Server },
-    { label: 'Primary Domain', value: 'Hourly Cleaning & Field Service', icon: Building2 },
-    { label: 'Vers ion', value: 'Phase 1 v1.0', icon: Info },
-    { label: 'SaaS Ready', value: 'Yes', icon: ShieldAlert },
-  ]
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div {...fadeUp}>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Platform configuration and company settings</p>
-      </motion.div>
-
-      {/* Tabbed Layout */}
-      <motion.div {...fadeUp}>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
-            <TabsTrigger value="company" className="text-xs sm:text-sm">
-              <Building2 className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              Company
-            </TabsTrigger>
-            <TabsTrigger value="booking_hours" className="text-xs sm:text-sm">
-              <Clock className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              Booking Hours
-            </TabsTrigger>
-            <TabsTrigger value="system" className="text-xs sm:text-sm">
-              <Server className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              System
-            </TabsTrigger>
-            <TabsTrigger value="appearance" className="text-xs sm:text-sm">
-              <Paintbrush className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              Appearance
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Company Tab */}
-          <TabsContent value="company">
-            <motion.div {...fadeUp}>
-            <Card className="border-0 shadow-sm relative overflow-hidden">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 to-teal-500" />
-              <CardHeader className="pl-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base">Company Information</CardTitle>
-                    <CardDescription>Edit your company details and preferences.</CardDescription>
-                  </div>
-                  <Badge variant="outline">{tenant?.status || 'active'}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="space-y-4">
                     {Array.from({ length: 6 }).map((_, i) => (
                       <div key={i} className="flex gap-4">
                         <Skeleton className="h-10 w-10 rounded-lg shrink-0" />

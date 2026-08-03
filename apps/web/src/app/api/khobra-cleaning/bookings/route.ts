@@ -47,7 +47,10 @@ export async function POST(req: NextRequest) {
     if (auth.session.role === 'customer') {
       const minimumBookingAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
       const startMinutes = parseTimeToMinutes(validatedData.startTime)
-      const tooSoon = generateBookingOccurrenceDates(validatedData).some(date => {
+      const tooSoon = generateBookingOccurrenceDates({
+        ...validatedData,
+        selectedDates: validatedData.selectedDates ? validatedData.selectedDates.filter((d): d is string | Date => Boolean(d)) : undefined,
+      }).some(date => {
         date.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0)
         return date < minimumBookingAt
       })

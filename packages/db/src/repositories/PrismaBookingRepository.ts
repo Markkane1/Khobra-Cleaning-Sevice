@@ -170,7 +170,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     const occurrenceDates = generateBookingOccurrenceDates({
       scheduledDate: data.scheduledDate,
       bookingType: data.bookingType,
-      selectedDates: data.selectedDates,
+      selectedDates: data.selectedDates ? data.selectedDates.filter((d): d is string | Date => Boolean(d)) : undefined,
       startDate: data.startDate,
       endDate: data.endDate,
       selectedWeekdays: data.selectedWeekdays,
