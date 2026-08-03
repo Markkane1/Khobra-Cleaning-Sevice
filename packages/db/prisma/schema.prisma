@@ -1,0 +1,531 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ TENANT / ORGANIZATION ============
+
+model Tenant {
+  id             String         @id @default(cuid())
+  name           String
+  slug           String         @unique
+  currency       String         @default("AED")
+  locale         String         @default("en-AE")
+  timezone       String         @default("Asia/Dubai")
+  taxRate        Float          @default(0.0)
+  firstBookingTime String        @default("08:00")
+  lastWorkingTime  String        @default("20:00")
+  logoUrl        String?
+  status         String         @default("active")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  users User[]
+  branches       Branch[]
+  services       Service[]
+  customers Customer[]
+  employees      Employee[]
+  drivers Driver[]
+  bookings       Booking[]
+  invoices       Invoice[]
+  inventoryItems InventoryItem[]
+  vendors Vendor[]
+  complaints     Complaint[]
+  attendances    Attendance[]
+  leaveRecords   LeaveRecord[]
+  assignments    Assignment[]
+  trips          Trip[]
+  payments       Payment[]
+  stockMovements StockMovement[]
+  payrollRecords PayrollRecord[]
+  notifications  Notification[]
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  address   String?
+  phone     String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+// ============ IDENTITY & ACCESS ============
+
+model User {
+  id            String    @id @default(cuid())
+  tenantId      String?
+  email         String    @unique
+  passwordHash  String?
+  phone         String?
+  name          String
+  avatarUrl     String?
+  role          String    @default("customer")
+  status        String    @default("active")
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+  employee      Employee?
+  driver        Driver?
+  customer      Customer?
+}
+
+// ============ SERVICE CATALOG ============
+
+model Service {
+  id               String   @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String?
+  baseRate         Float
+  minDuration      Int      @default(2)
+  category         String?
+  status           String   @default("active")
+  requiresMaterials Boolean  @default(false)
+  skills           String?
+  galleryImages    Json?
+  heroImages       Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  bookings         Booking[]
+  bookingItems     BookingItem[]
+}
+
+// ============ CRM - CUSTOMErs ============
+
+model Customer {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String   @unique
+  phone       String?
+  altPhone    String?
+  address     String?
+  addresses   Json?
+  city        String?
+  area        String?
+  notes       String?
+  preferences String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  bookings    Booking[]
+  invoices    Invoice[]
+  complaints  Complaint[]
+}
+
+// ============ WORKFORCE - EMPLOYEES ============
+
+model Employee {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String   @unique
+  employeeCode String   @unique
+  phone        String?
+  address      String?
+  city         String?
+  area         String?
+  skills       String?
+  baseSalary   Float    @default(0)
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  assignments  Assignment[]
+  attendances  Attendance[]
+  leaveRecords LeaveRecord[]
+  payrollRecords PayrollRecord[]
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  tenantId   String
+  employeeId String
+  date       DateTime
+  clockIn    DateTime?
+  clockOut   DateTime?
+  status     String   @default("present")
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id])
+}
+
+model LeaveRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  type        String
+  startDate   DateTime
+  endDate     DateTime
+  days        Float
+  status      String   @default("pending")
+  reason      String?
+  approvedBy  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  employee    Employee @relation(fields: [employeeId], references: [id])
+}
+
+// ============ DRIVErs ============
+
+model Driver {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String   @unique
+  driverCode  String   @unique
+  phone       String?
+  vehicleInfo String?
+  licenseNo   String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  trips       Trip[]
+}
+
+// ============ BOOKINGS ============
+
+model Booking {
+  id            String   @id @default(cuid())
+  tenantId      String
+  bookingNo     String   @unique
+  customerId    String
+  serviceId     String?
+  status        String   @default("pending")
+  scheduledDate DateTime
+  startTime     String
+  endTime       String?
+  duration      Float
+  employeeCount Int      @default(1)
+  materialsCost Float    @default(0)
+  hourlyRate    Float
+  totalAmount   Float
+  discount      Float    @default(0)
+  netAmount     Float
+  address       String?
+  city          String?
+  area          String?
+  notes         String?
+  isRecurring      Boolean  @default(false)
+  recurringRule    String?
+  recurringGroupId String?
+  cancellationReason String?
+  cancelledBy        String?
+  noShowReason       String?
+  noShowParty        String?
+  createdBy        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  customer      Customer          @relation(fields: [customerId], references: [id])
+  service       Service?          @relation(fields: [serviceId], references: [id])
+  items         BookingItem[]
+  materials     BookingMaterial[]
+  assignments   Assignment[]
+  invoices      Invoice[]
+  complaints    Complaint[]
+  statusHistory BookingStatusHistory[]
+}
+
+model BookingStatusHistory {
+  id             String   @id @default(cuid())
+  bookingId      String
+  previousStatus String
+  newStatus      String
+  changedBy      String?  @default("system")
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  booking        Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model BookingItem {
+  id            String   @id @default(cuid())
+  bookingId     String
+  serviceId     String
+  hourlyRate    Float
+  employeeCount Int      @default(1)
+  hours         Float
+  totalAmount   Float
+  createdAt     DateTime @default(now())
+
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service       Service  @relation(fields: [serviceId], references: [id])
+}
+
+model BookingMaterial {
+  id              String         @id @default(cuid())
+  bookingId       String
+  inventoryItemId String?
+  name            String
+  unit            String         @default("pcs")
+  quantity        Float          @default(1)
+  unitPrice       Float          @default(0)
+  totalAmount     Float          @default(0)
+  createdAt       DateTime       @default(now())
+
+  booking         Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+}
+
+// ============ ASSIGNMENTS & JOBS ============
+
+model Assignment {
+  id            String    @id @default(cuid())
+  tenantId      String
+  bookingId     String
+  employeeId    String
+  status        String    @default("assigned")
+  startedAt     DateTime?
+  completedAt   DateTime?
+  actualHours   Float?
+  overtimeHours Float?
+  notes         String?
+  customerRating Float?
+  ratingNotes   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  booking       Booking  @relation(fields: [bookingId], references: [id])
+  employee      Employee @relation(fields: [employeeId], references: [id])
+}
+
+// ============ DISPATCH / TRIPS ============
+
+model Trip {
+  id           String     @id @default(cuid())
+  tenantId     String
+  driverId     String
+  date         DateTime
+  status       String     @default("planned")
+  startMileage Float?
+  endMileage   Float?
+  fuelCost     Float?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  driver       Driver     @relation(fields: [driverId], references: [id])
+  stops        TripStop[]
+}
+
+model TripStop {
+  id           String   @id @default(cuid())
+  tripId       String
+  type         String
+  address      String?
+  contactPhone String?
+  status       String   @default("pending")
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  trip         Trip     @relation(fields: [tripId], references: [id])
+}
+
+// ============ FINANCE ============
+
+model Invoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  invoiceNo   String    @unique
+  bookingId   String?
+  customerId  String
+  status      String    @default("draft")
+  issuedAt    DateTime?
+  dueDate     DateTime?
+  subtotal    Float
+  taxAmount   Float     @default(0)
+  discount    Float     @default(0)
+  totalAmount Float
+  paidAmount  Float     @default(0)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  booking    Booking?  @relation(fields: [bookingId], references: [id])
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  payments    Payment[]
+}
+
+model Payment {
+  id          String    @id @default(cuid())
+  tenantId    String
+  invoiceId   String
+  amount      Float
+  method      String
+  referenceNo String?
+  proofUrl    String?
+  status      String    @default("pending")
+  receivedBy  String?
+  verifiedBy  String?
+  verifiedAt  DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+}
+
+// ============ INVENTORY ============
+
+model InventoryItem {
+  id           String          @id @default(cuid())
+  tenantId     String
+  name         String
+  sku          String?
+  category     String?
+  unit         String          @default("pcs")
+  currentStock Float           @default(0)
+  minStock     Float           @default(0)
+  costPrice    Float           @default(0)
+  sellPrice    Float           @default(0)
+  status       String          @default("active")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  movements        StockMovement[]
+  vendorItems      VendorItem[]
+  bookingMaterials BookingMaterial[]
+}
+
+model Vendor {
+  id            String       @id @default(cuid())
+  tenantId      String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        String       @default("active")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  items         VendorItem[]
+}
+
+model VendorItem {
+  id           String         @id @default(cuid())
+  vendorId     String
+  itemId       String
+  unitPrice    Float
+  leadTimeDays Int            @default(0)
+  createdAt    DateTime       @default(now())
+
+  vendor       Vendor         @relation(fields: [vendorId], references: [id])
+  item         InventoryItem  @relation(fields: [itemId], references: [id])
+}
+
+model StockMovement {
+  id         String         @id @default(cuid())
+  tenantId   String
+  itemId     String
+  type       String
+  quantity   Float
+  unitCost   Float?
+  reference  String?
+  notes      String?
+  createdAt  DateTime       @default(now())
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id])
+  item       InventoryItem  @relation(fields: [itemId], references: [id])
+}
+
+// ============ COMPLAINTS ============
+
+model Complaint {
+  id           String    @id @default(cuid())
+  tenantId     String
+  complaintNo  String    @unique
+  customerId   String?
+  bookingId    String?
+  category     String?
+  priority     String    @default("medium")
+  status       String    @default("open")
+  description  String
+  resolution   String?
+  attachments  String?
+  assignedTo   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  booking      Booking?  @relation(fields: [bookingId], references: [id])
+}
+
+// ============ CONFIGURATION ============
+
+model AppSettings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ============ PAYROLL & NOTIFICATIONS ============
+
+model PayrollRecord {
+  id          String    @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  month       String
+  year        Int
+  baseSalary  Float
+  allowances  Float     @default(0)
+  deductions  Float     @default(0)
+  netSalary   Float
+  status      String    @default("pending") // pending, approved, paid
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  title     String
+  message   String
+  type      String   @default("info") // info, success, warning, error
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+

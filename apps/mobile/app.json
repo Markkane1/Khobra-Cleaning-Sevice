@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Khobra Cleaning",
+    "slug": "khobra-cleaning",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "android": {
+      "package": "com.khobracleaning.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.khobracleaning.app"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "@preeternal/react-native-cookie-manager",
+        { "androidWebkitVersion": "1.16.0" }
+      ]
+    ]
+  }
+}

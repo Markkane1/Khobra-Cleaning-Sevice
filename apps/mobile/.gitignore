@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+.expo-check/
+android/
+ios/
+.env
+*-test.png
+auth-*.png

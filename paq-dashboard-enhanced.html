@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PAQIDP — Punjab Air Quality Intelligence Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --glass: rgba(15, 23, 42, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.1);
+  --yellow: #fbbf24;
+  --accent: #14b8a6;
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: #020617;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, strong, b { font-family: 'Outfit', sans-serif; }
+button, input { font: inherit; }
+.app { position: relative; width: 100%; height: 100%; isolation: isolate; }
+.map-scene { position: absolute; inset: 0; overflow: hidden; background: #020617; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#wind { mix-blend-mode: screen; opacity: 0.8; }
+.shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at center, transparent 20%, rgba(2, 6, 23, 0.8) 100%); box-shadow: inset 0 0 120px rgba(0,0,0,.6); }
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+.glass::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--glass-highlight) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.top { position: absolute; z-index: 20; left: 24px; right: 24px; top: 24px; display: grid; grid-template-columns: 360px 1fr 280px; align-items: start; pointer-events: none; gap: 20px; }
+
+.search { height: 52px; border-radius: 26px; padding: 0 8px 0 20px; display: flex; align-items: center; gap: 12px; pointer-events: auto; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.search:focus-within { transform: translateY(-2px); border-color: rgba(255,255,255,0.3); box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1); }
+.search span { font-size: 20px; color: var(--muted); }
+.search input { width: 100%; border: 0; outline: 0; background: transparent; color: #fff; font-size: 15px; font-weight: 500; }
+.search input::placeholder { color: #64748b; font-weight: 400; }
+.locate { width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(255,255,255,.1); cursor: pointer; color: #fff; transition: all 0.2s; display: grid; place-items: center; }
+.locate:hover { background: rgba(255,255,255,.2); transform: rotate(90deg); }
+
+.brand { justify-self: center; display: flex; align-items: center; gap: 14px; text-shadow: 0 4px 12px rgba(0,0,0,.8); }
+.mark {
+  display: grid; place-items: center;
+  width: 44px; height: 44px;
+  border-radius: 12px 12px 12px 4px;
+  rotate: -10deg;
+  background: linear-gradient(135deg, #10b981, #047857);
+  border: 2px solid rgba(255,255,255,0.9);
+  font-size: 22px; font-weight: 900;
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+  font-family: sans-serif;
+  position: relative;
+}
+.mark::after {
+    content: ''; position: absolute; inset: -4px; border-radius: inherit; border: 1px solid rgba(16, 185, 129, 0.5); animation: pulseMark 2s infinite; pointer-events: none;
+}
+@keyframes pulseMark { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.3); opacity: 0; } }
+
+.brand div { display: flex; flex-direction: column; }
+.brand strong { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(to right, #fff, #cbd5e1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.brand small { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 4px; color: var(--accent); }
+
+.actions { justify-self: end; display: flex; gap: 12px; pointer-events: auto; }
+.actions button { height: 44px; padding: 0 20px; border-radius: 22px; border: 1px solid var(--glass-border); background: var(--glass); color: #fff; font-weight: 500; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); backdrop-filter: blur(12px); font-size: 14px; }
+.actions button:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); border-color: rgba(255,255,255,0.3); }
+.actions .primary {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: 1px solid #fbbf24;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+}
+.actions .primary:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 12px 25px rgba(245, 158, 11, 0.5);
+}
+
+.context { position: absolute; z-index: 18; top: 90px; left: 24px; width: 360px; border-radius: 20px; padding: 20px; opacity: 0; translate: 0 -12px; pointer-events: none; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.context.open { opacity: 1; translate: 0 0; }
+.context-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.context h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.context .tag { font-size: 9px; font-weight: 700; color: #fbbf24; letter-spacing: 0.1em; background: rgba(251, 191, 36, 0.15); padding: 4px 8px; border-radius: 6px; }
+.route { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.route i { display: block; width: 32px; height: 4px; border-radius: 4px; background: var(--route); box-shadow: 0 0 12px var(--route); }
+.route b { font-size: 12px; font-weight: 500; }
+.route span { margin-left: auto; font-size: 10px; color: var(--muted); font-weight: 500; }
+.context p { margin: 16px 0 0; color: #94a3b8; font-size: 11px; line-height: 1.6; }
+
+.layers { position: absolute; z-index: 21; right: 24px; top: 96px; display: flex; flex-direction: column; gap: 12px; perspective: 1000px; }
+.layer { width: 146px; height: 56px; border: 1px solid rgba(255,255,255,0.08); border-radius: 28px; background: rgba(15, 23, 42, 0.6); color: white; display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px; text-align: left; padding: 5px 12px 5px 5px; cursor: pointer; text-shadow: 0 1px 3px rgba(0,0,0,0.8); box-shadow: 0 4px 15px rgba(0,0,0,.3); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); transform-origin: right center; }
+.layer:hover { transform: translateX(-6px) scale(1.02); background: rgba(30, 41, 59, 0.8); border-color: rgba(255,255,255,0.2); }
+.layer.active { background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(255,255,255,0.4); box-shadow: 0 8px 25px rgba(0,0,0,0.5), inset 0 0 20px rgba(255,255,255,0.05); transform: translateX(-10px); }
+.layer i { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--swatch); font-style: normal; font-weight: 700; font-size: 14px; border: 1px solid rgba(255,255,255,.3); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+.layer b { font-size: 13px; font-weight: 600; }
+.layer small { display: block; font-size: 10px; color: #94a3b8; margin-top: 2px; font-weight: 500; }
+
+.station-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+.station { position: absolute; translate: -50% -50%; pointer-events: auto; width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.9); background: var(--c); box-shadow: 0 4px 12px rgba(0,0,0,.5), 0 0 15px var(--c); cursor: pointer; transition: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.station:after { content: attr(data-name); position: absolute; left: 50%; top: 32px; translate: -50% 0; white-space: nowrap; color: #f8fafc; font-size: 12px; font-family: 'Inter', sans-serif; font-weight: 600; text-shadow: 0 2px 6px rgba(0,0,0,0.9); opacity: 0.8; transition: 0.2s; pointer-events: none; }
+.station:hover { scale: 1.3; z-index: 10; border-color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.6), 0 0 30px var(--c); }
+.station:hover:after { opacity: 1; transform: translateY(4px); font-size: 13px; }
+
+.fire { position: absolute; translate: -50% -50%; width: 14px; height: 14px; border-radius: 50%; background: #ff5a16; border: 2px solid #ffd36b; box-shadow: 0 0 0 6px rgba(255,75,20,.3), 0 0 25px #ff3b00; animation: pulseFire 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.hotspot { position: absolute; translate: -50% -50%; width: 34px; height: 34px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 8px rgba(190,34,136,.3), 0 0 25px #b72292; animation: rotatePulse 4s linear infinite; border-style: dashed; }
+@keyframes pulseFire { 50% { box-shadow: 0 0 0 16px rgba(255,75,20,0), 0 0 25px #ff3b00; } }
+@keyframes rotatePulse { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+.zoom { position: absolute; z-index: 20; left: 24px; bottom: 144px; border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+.zoom button { display: block; width: 44px; height: 44px; border: 0; background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 20px; font-weight: 300; cursor: pointer; backdrop-filter: blur(8px); transition: 0.2s; }
+.zoom button:hover { background: rgba(30, 41, 59, 0.95); }
+.zoom button+button { border-top: 1px solid rgba(255,255,255,0.1); }
+
+.legend { position: absolute; z-index: 19; right: 24px; bottom: 144px; width: 360px; padding: 18px 22px; border-radius: 20px; }
+.legend header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 600; margin-bottom: 14px; }
+.legend header span { color: var(--muted); font-weight: 500; }
+.bar { height: 12px; border-radius: 6px; margin: 0 0 8px; background: linear-gradient(90deg, #3ca675, #c8c94a, #e69a3e, #d34a5e, #7c367b); box-shadow: inset 0 2px 4px rgba(0,0,0,0.4); }
+.ticks { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; font-weight: 600; }
+
+.station-card { position: absolute; z-index: 30; left: 92px; bottom: 144px; width: 320px; border-radius: 24px; padding: 22px; opacity: 0; translate: 0 16px; pointer-events: none; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.station-card.open { opacity: 1; translate: 0 0; pointer-events: auto; }
+.card-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.card-head small { font-size: 10px; color: #10b981; font-weight: 700; letter-spacing: 0.1em; }
+.card-head button, .drawer-head button { width: 32px; height: 32px; border: 1px solid rgba(255,255,255,0.15); border-radius: 50%; background: rgba(255,255,255,0.05); color: #fff; cursor: pointer; transition: 0.2s; font-size: 18px; display: grid; place-items: center; }
+.card-head button:hover, .drawer-head button:hover { background: rgba(255,255,255,0.2); transform: rotate(90deg); }
+.station-card h2 { font-size: 20px; font-weight: 600; margin: 8px 0 0; }
+.reading { display: flex; align-items: center; gap: 16px; margin: 18px 0; }
+.reading strong { font-size: 48px; font-weight: 700; line-height: 1; text-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.reading b { font-size: 14px; font-weight: 600; }
+.reading span { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; font-weight: 500; }
+.spark { height: 50px; display: flex; align-items: end; gap: 3px; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 4px; margin-bottom: 14px; }
+.spark i { flex: 1; background: linear-gradient(to top, #f59e0b, #fbbf24); border-radius: 2px; transition: height 0.3s; opacity: 0.8; }
+.spark i:hover { opacity: 1; background: #fff; }
+.quality { display: flex; justify-content: space-between; font-size: 10px; font-weight: 500; color: #94a3b8; }
+.quality b { color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.quality b::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; }
+
+.drawer { position: absolute; z-index: 31; top: 24px; right: 196px; bottom: 144px; width: 400px; border-radius: 24px; padding: 24px; opacity: 0; translate: 24px 0; pointer-events: none; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1); overflow-y: auto; }
+.drawer::-webkit-scrollbar { width: 6px; }
+.drawer::-webkit-scrollbar-track { background: transparent; }
+.drawer::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+.drawer.open { opacity: 1; translate: 0; pointer-events: auto; }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; position: sticky; top: 0; padding-bottom: 16px; background: inherit; z-index: 2; border-bottom: 1px solid rgba(255,255,255,0.1); margin-top: -8px; padding-top: 8px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.drawer-head small { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.1em; }
+.drawer h2 { margin: 6px 0 0; font-size: 22px; font-weight: 600; }
+.case { margin-top: 16px; padding: 18px; border: 1px solid rgba(255,255,255,.08); border-radius: 16px; background: rgba(255,255,255,.02); transition: 0.2s; position: relative; overflow: hidden; }
+.case:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.case header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.case h3 { font-size: 14px; margin: 0; font-weight: 600; }
+.pill { font-size: 9px; font-weight: 700; background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 4px 8px; border-radius: 8px; letter-spacing: 0.05em; border: 1px solid rgba(245, 158, 11, 0.3); }
+.case p { font-size: 12px; color: #cbd5e1; line-height: 1.6; margin-bottom: 16px; }
+.case button { width: 100%; border: 0; border-radius: 12px; background: rgba(255,255,255,0.1); color: #fff; font-size: 13px; font-weight: 600; padding: 12px; cursor: pointer; transition: 0.2s; }
+.case button:hover { background: #fff; color: #0f172a; box-shadow: 0 4px 15px rgba(255,255,255,0.3); }
+
+.timeline { position: absolute; z-index: 25; left: 24px; right: 24px; bottom: 24px; height: 104px; border-radius: 24px; padding: 16px 24px; display: grid; grid-template-columns: 60px 1fr 240px; align-items: center; gap: 24px; }
+.play { width: 60px; height: 60px; border-radius: 50%; border: 0; background: linear-gradient(135deg, #14b8a6, #0d9488); color: #fff; font-size: 20px; cursor: pointer; display: grid; place-items: center; box-shadow: 0 8px 20px rgba(20, 184, 166, 0.3); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.play:hover { transform: scale(1.1); box-shadow: 0 12px 25px rgba(20, 184, 166, 0.5); }
+.track { position: relative; display: grid; grid-template-columns: repeat(9, 1fr); height: 64px; align-items: center; }
+.track:before { content: ""; position: absolute; left: 2%; right: 2%; top: 31px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); box-shadow: inset 0 1px 2px rgba(0,0,0,0.5); }
+.time { position: relative; border: 0; background: transparent; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; height: 100%; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding-bottom: 4px; }
+.time:before { content: ""; position: absolute; left: 50%; top: 28px; translate: -50%; width: 10px; height: 10px; border-radius: 50%; background: #475569; border: 2px solid #0f172a; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 2; }
+.time b { display: block; color: var(--muted); font-size: 10px; letter-spacing: 0.1em; transition: 0.2s; margin-top: 2px; font-weight: 700; }
+.time:hover { color: #cbd5e1; }
+.time:hover:before { background: #94a3b8; transform: scale(1.3) translateX(-38%); }
+.time.active { color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+.time.active b { color: #14b8a6; }
+.time.active:before { background: #14b8a6; border-color: #fff; box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.2), 0 0 15px #14b8a6; transform: scale(1.4) translateX(-35%); }
+.model { text-align: right; }
+.model b { font-size: 14px; font-weight: 600; }
+.model span { display: block; font-size: 11px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
+.model-tabs { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.model-tabs i { font-style: normal; font-size: 10px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: 0.2s; }
+.model-tabs i:hover { background: rgba(255,255,255,0.1); }
+.model-tabs i:first-child { background: #14b8a6; color: #fff; border-color: #10b981; box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3); }
+
+.foot { position: absolute; z-index: 15; left: 50%; bottom: 136px; translate: -50%; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.4); text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; letter-spacing: 0.15em; }
+.toast { position: absolute; z-index: 50; left: 50%; bottom: 144px; translate: -50% 20px; opacity: 0; background: #fff; color: #0f172a; padding: 12px 24px; border-radius: 14px; font-size: 13px; font-weight: 600; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 12px 35px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 10px; }
+.toast::before { content: '✓'; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #10b981; color: #fff; border-radius: 50%; font-size: 12px; }
+.toast.show { opacity: 1; translate: -50% 0; }
+
+@media(max-width:900px) {
+  .top { grid-template-columns: 1fr auto; }
+  .brand { display: none; }
+  .actions .primary { display: none; }
+  .layers { top: 96px; }
+  .layer { width: 54px; grid-template-columns: 1fr; padding: 5px; }
+  .layer div { display: none; }
+  .context { width: 320px; }
+  .drawer { left: 24px; right: 90px; width: auto; }
+  .model { display: none; }
+  .timeline { grid-template-columns: 56px 1fr; }
+  .legend { right: 90px; width: 280px; }
+  .time:nth-child(even) { display: none; }
+}
+@media(max-width:600px) {
+  .top { left: 16px; right: 16px; top: 16px; grid-template-columns: 1fr auto; }
+  .search { height: 48px; }
+  .actions button { height: 44px; padding: 0 16px; }
+  .layers { right: 16px; top: 80px; }
+  .layer { height: 50px; width: 50px; }
+  .layer i { width: 38px; height: 38px; }
+  .context { left: 16px; top: 80px; width: 280px; }
+  .timeline { left: 16px; right: 16px; bottom: 16px; height: 88px; padding: 12px; }
+  .legend { bottom: 116px; right: 16px; width: 240px; }
+  .zoom { left: 16px; bottom: 116px; }
+  .station-card { left: 76px; right: 16px; bottom: 116px; width: auto; }
+  .drawer { top: 80px; bottom: 116px; }
+  .foot { bottom: 110px; }
+  .track { height: 56px; }
+  .time b { margin-bottom: 24px; }
+}
+@media(prefers-reduced-motion:reduce){#wind{display:none}*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main class="app" aria-label="Punjab Air Quality Intelligence Platform concept">
+  <section class="map-scene" id="scene"><canvas id="map" aria-hidden="true"></canvas><canvas id="wind" aria-hidden="true"></canvas><div class="station-layer" id="markers"></div><div class="shade"></div></section>
+  <header class="top">
+    <label class="search glass"><span>⌕</span><input id="search" placeholder="Search district or station…"><button class="locate" type="button" title="Centre Punjab">◎</button></label>
+    <div class="brand"><span class="mark">پ</span><div><strong>Punjab Air Intelligence</strong><small>Environment Protection Agency · Punjab</small></div></div>
+    <div class="actions"><button class="primary">Situation briefing</button><button id="menu">Menu ☰</button></div>
+  </header>
+
+  <section class="context glass" id="context" aria-label="Transboundary transport context">
+    <div class="context-head"><h2>Regional transport outlook</h2><span class="tag">MODEL CONTEXT</span></div>
+    <div class="route"><i style="--route:#f5a742"></i><b id="currentRoute">Current: western inflow</b><span>High confidence</span></div>
+    <div class="route"><i style="--route:#d33d8f"></i><b id="futureRoute">Next 36h: easterly pathway</b><span>Medium confidence</span></div>
+    <p>Trajectory context supports Punjab forecasting and episode analysis. It is not source attribution or evidence of responsibility.</p>
+  </section>
+
+  <nav class="layers" aria-label="Map layers">
+    <button class="layer active" data-layer="pm25" style="--swatch:linear-gradient(135deg,#2b9b79,#cf3f72)"><i>●</i><div><b>PM2.5</b><small>surface</small></div></button>
+    <button class="layer" data-layer="pm10" style="--swatch:linear-gradient(135deg,#d8c447,#d4653d)"><i>◉</i><div><b>PM10</b><small>dust</small></div></button>
+    <button class="layer" data-layer="no2" style="--swatch:linear-gradient(135deg,#36a6b3,#65459e)"><i>N</i><div><b>NO₂</b><small>urban</small></div></button>
+    <button class="layer" data-layer="transport" style="--swatch:linear-gradient(135deg,#e3a23a,#c6368c)"><i>↝</i><div><b>Transport</b><small>regional</small></div></button>
+    <button class="layer" data-layer="fire" style="--swatch:linear-gradient(135deg,#ffd044,#e64019)"><i>•</i><div><b>Fire</b><small>satellite</small></div></button>
+    <button class="layer" data-layer="hotspot" style="--swatch:linear-gradient(135deg,#d07b3b,#933268)"><i>◎</i><div><b>Hotspots</b><small>persistent</small></div></button>
+    <button class="layer" data-layer="stations" style="--swatch:linear-gradient(135deg,#4cc08a,#d2ca4d)"><i>⌖</i><div><b>Stations</b><small>AQMS</small></div></button>
+    <button class="layer" data-layer="decision" style="--swatch:linear-gradient(135deg,#94a3b8,#475569)"><i>▤</i><div><b>Decision</b><small>support</small></div></button>
+  </nav>
+
+  <div class="zoom glass"><button id="plus" aria-label="Zoom in">+</button><button id="minus" aria-label="Zoom out">−</button></div>
+  <section class="legend glass"><header><b id="legendTitle">PM2.5 concentration</b><span id="legendUnit">µg/m³ · modelled</span></header><div class="bar" id="bar"></div><div class="ticks"><span>0</span><span>35</span><span>75</span><span>150</span><span>250+</span></div></section>
+
+  <section class="station-card glass" id="stationCard" aria-live="polite"><div class="card-head"><div><small>OBSERVED · PROVISIONAL</small><h2 id="stationName">Lahore — Gulberg</h2></div><button id="closeCard">×</button></div><div class="reading"><strong id="aqi">184</strong><div><b id="category">Unhealthy</b><span id="concentration">PM2.5 · 112 µg/m³</span></div></div><div class="spark" id="spark"></div><div class="quality"><span>Received 2 min ago</span><b>QA checks passed</b></div></section>
+
+  <aside class="drawer glass" id="drawer"><div class="drawer-head"><div><small>REGULATORY DSS</small><h2>Priority review</h2></div><button id="closeDrawer">×</button></div><article class="case"><header><h3>Fire candidate · Okara</h3><span class="pill">VERIFY</span></header><p>Satellite thermal anomaly intersects two possible parcels. Detection is a field-verification lead.</p><button data-action="Verification task assigned">Assign verification task</button></article><article class="case"><header><h3>Persistent hotspot · Sheikhupura</h3><span class="pill">REVIEW</span></header><p>Modelled hotspot persisted across three analysis cycles. Source remains unconfirmed.</p><button data-action="Evidence record opened">Open evidence record</button></article><article class="case"><header><h3>Forecast episode · Lahore</h3><span class="pill">PREPARE</span></header><p>72-hour ensemble indicates raised probability of the approved episode threshold being exceeded.</p><button data-action="Advisory draft prepared">Prepare bilingual advisory</button></article></aside>
+
+  <section class="timeline glass"><button class="play" id="play" aria-label="Play forecast">▶</button><div class="track" id="track"></div><div class="model"><b>Regional ensemble · 9 km</b><span id="valid">Valid Fri · 14:00 PKT</span><div class="model-tabs"><i>PAQIDP</i><i>GFS</i><i>WRF</i></div></div></section>
+  <div class="foot">CONCEPT VISUALISATION · ILLUSTRATIVE DATA · BOUNDARIES INDICATIVE</div><div class="toast" id="toast"></div>
+</main>
+<script>
+(()=>{'use strict';
+const GEO={"IND":[[[70.894,25],[70.845,25.215],[70.283,25.722],[70.169,26.492],[69.514,26.941],[70.616,27.989],[71.778,27.913],[72.824,28.962],[73.451,29.976],[74.421,30.98],[74.406,31.693],[75.259,32.271],[74.452,32.765],[73.75,34.318],[74.24,34.749],[75.757,34.505],[76.872,34.654],[77.837,35.494],[78.912,34.322],[78.811,33.506],[79,33.263],[79,32.517],[78.458,32.618],[78.739,31.516],[79,31.369],[79,25]]],"PAK":[[[77.837,35.494],[76.872,34.654],[75.757,34.505],[74.24,34.749],[73.75,34.318],[74.452,32.765],[75.259,32.271],[74.406,31.693],[74.421,30.98],[73.451,29.976],[72.824,28.962],[71.778,27.913],[70.616,27.989],[69.514,26.941],[70.169,26.492],[70.283,25.722],[70.845,25.215],[70.894,25],[66.804,25],[66.373,25.425],[64,25.256],[64,29.372],[64.148,29.341],[64.35,29.56],[65.047,29.472],[66.346,29.888],[66.381,30.739],[66.939,31.305],[67.683,31.303],[67.793,31.583],[68.557,31.713],[68.927,31.62],[69.318,31.901],[69.263,32.502],[69.687,33.105],[70.324,33.359],[69.931,34.02],[70.882,33.989],[71.157,34.349],[71.115,34.733],[71.613,35.153],[71.262,36.074],[71.846,36.51],[74.068,36.836],[74.669,37],[75.369,37],[75.897,36.667],[76.193,35.898],[77.837,35.494]]],"AFG":[[[71.528,37],[71.845,36.738],[72.515,37],[74.669,37],[74.068,36.836],[71.846,36.51],[71.262,36.074],[71.613,35.153],[71.115,34.733],[71.157,34.349],[70.882,33.989],[69.931,34.02],[70.324,33.359],[69.687,33.105],[69.263,32.502],[69.318,31.901],[68.927,31.62],[68.557,31.713],[67.793,31.583],[67.683,31.303],[66.939,31.305],[66.381,30.739],[66.346,29.888],[65.047,29.472],[64.35,29.56],[64.148,29.341],[64,29.372],[64,36.017],[64.546,36.312],[64.718,37]]],"PUNJAB":[[[73.501,34.017],[73.586,33.882],[73.569,33.624],[73.632,33.526],[73.571,33.372],[73.67,33.192],[73.628,33.095],[73.806,33.009],[73.921,33.034],[74.372,32.771],[74.615,32.758],[74.697,32.84],[74.642,32.611],[74.687,32.493],[75.083,32.48],[75.33,32.332],[75.375,32.224],[75.233,32.084],[74.92,32.056],[74.544,31.822],[74.517,31.723],[74.641,31.465],[74.536,31.154],[74.686,31.061],[74.639,31.021],[74.558,31.068],[74.548,30.993],[74.32,30.844],[74.078,30.529],[73.935,30.463],[73.871,30.369],[73.965,30.191],[73.804,30.07],[73.397,29.939],[73.275,29.556],[72.944,29.034],[72.396,28.775],[72.184,28.358],[71.922,28.114],[71.9,27.964],[71.244,27.849],[70.885,27.706],[70.758,27.717],[70.661,27.931],[70.53,28.032],[70.366,28.008],[70.181,27.855],[70.069,27.895],[69.845,28.133],[69.794,28.38],[69.521,28.484],[69.364,28.446],[69.322,28.55],[69.533,28.773],[69.493,28.896],[69.75,29.174],[69.767,29.298],[69.687,29.259],[69.653,29.389],[69.565,29.409],[69.591,29.626],[69.789,29.769],[70.076,30.262],[69.973,30.253],[69.96,30.317],[70.103,30.732],[70.267,30.845],[70.288,31.165],[70.558,31.34],[70.775,31.306],[70.893,31.437],[70.884,31.643],[71.062,31.883],[71.112,32.161],[71.34,32.374],[71.353,32.499],[71.257,32.492],[71.163,32.601],[71.106,32.81],[71.144,32.926],[71.238,32.997],[71.456,33.019],[71.437,33.24],[71.556,33.227],[71.634,33.088],[71.718,33.06],[71.761,33.185],[71.721,33.351],[71.953,33.514],[72.037,33.752],[72.244,33.762],[72.234,33.9],[72.404,34.006],[72.55,33.998],[72.653,33.931],[72.606,33.882],[72.644,33.858],[72.782,33.942],[72.872,33.826],[72.829,33.763],[72.924,33.746],[72.814,33.701],[72.914,33.573],[73.088,33.664],[73.154,33.578],[73.087,33.542],[73.2,33.49],[73.389,33.704],[73.168,33.805],[73.501,34.017]]]};
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],map=$('#map'),wind=$('#wind'),m=map.getContext('2d'),w=wind.getContext('2d');
+const box={west:64,east:79,south:25,north:37};let W=0,H=0,dpr=1,layer='pm25',step=0,scale=1,playing=false,timer,particles=[];
+const stations=[['Lahore — Gulberg',74.35,31.52,184],['Rawalpindi — Saddar',73.06,33.6,132],['Faisalabad — Ghulamabad',73.08,31.42,171],['Gujranwala — City',74.19,32.16,178],['Sialkot — Cantt',74.54,32.49,149],['Multan — Bosan',71.47,30.25,156],['Bahawalpur — Model Town',71.68,29.39,93],['Sargodha — University',72.67,32.08,126],['D.G. Khan — City',70.64,30.05,108],['Okara — Rural',73.45,30.81,163]];
+const cities=[['Islamabad',73.05,33.69],['Lahore',74.35,31.52],['Faisalabad',73.08,31.42],['Multan',71.47,30.2],['Bahawalpur',71.68,29.39],['Peshawar',71.52,34.01],['Quetta',66.99,30.18],['Karachi',67.01,24.86],['Amritsar',74.87,31.63],['Chandigarh',76.78,30.73],['New Delhi',77.21,28.61],['Jaipur',75.79,26.91],['Srinagar',74.8,34.08],['Kabul',69.17,34.53]];
+const rivers=[[[72.8,34.5],[72.6,33.5],[72.2,32.6],[71.7,31.5],[71.2,30.2],[70.7,28.8]],[[74.2,33.4],[73.8,32.6],[73.5,31.9],[73.3,31.1],[72.8,30.2]],[[75.0,32.4],[74.4,31.8],[74.1,31.0],[73.5,30.3],[72.8,29.4]]];
+const cfg={pm25:['PM2.5 concentration','µg/m³ · modelled',['#205d9b','#2da27c','#c7d34d','#f2a443','#d8526d','#773477']],pm10:['PM10 concentration','µg/m³ · modelled',['#3a7595','#72a966','#d7c34d','#e47e42','#9a4053']],no2:['NO₂ concentration','µg/m³ · modelled',['#237d9c','#466fa8','#73569e','#a83f78']],transport:['Regional transport','trajectory context · not attribution',['#e4a83c','#be7440','#b54b76','#733f83']],fire:['Satellite fire candidates','detection · verify',['#f1d14c','#ed8d32','#df3e22']],hotspot:['Persistent hotspots','modelled · investigate',['#d7b34b','#c3643f','#9c366d']],stations:['AQMS station status','observed · provisional',['#3ca575','#d2cb4a','#e98b3b','#d44561']]};
+const times=['Now','+3h','+6h','+12h','+18h','+24h','+36h','+48h','+72h'];
+function project(lon,lat){return[(lon-box.west)/(box.east-box.west)*W,(box.north-lat)/(box.north-box.south)*H]}
+function path(rings){m.beginPath();for(const ring of rings){ring.forEach(([x,y],i)=>{const p=project(x,y);i?m.lineTo(...p):m.moveTo(...p)});m.closePath()}}
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;for(const c of[map,wind]){c.width=W*dpr;c.height=H*dpr;c.getContext('2d').setTransform(dpr,0,0,dpr,0,0)}particles=Array.from({length:innerWidth<700?130:360},()=>({x:Math.random()*W,y:Math.random()*H,age:Math.random()*120}));draw();markers()}
+function draw(){
+  m.clearRect(0,0,W,H);
+  const sea=m.createLinearGradient(0,0,W,H);
+  sea.addColorStop(0,'#020617');sea.addColorStop(.55,'#0f172a');sea.addColorStop(1,'#020617');
+  m.fillStyle=sea;m.fillRect(0,0,W,H);
+  
+  const north=m.createRadialGradient(W*.58,H*.02,10,W*.58,H*.02,W*.45);
+  north.addColorStop(0,'rgba(56, 189, 248, 0.12)');north.addColorStop(.38,'rgba(14, 165, 233, 0.04)');north.addColorStop(1,'rgba(0,0,0,0)');
+  m.fillStyle=north;m.fillRect(0,0,W,H*.55);
+  
+  for(const [code,fill] of [['AFG','#0f172a'],['PAK','#1e293b'],['IND','#0f172a']]){
+    path(GEO[code]);
+    m.fillStyle=fill;m.fill();
+    m.strokeStyle='rgba(255,255,255,.05)';
+    m.lineWidth=1;m.stroke();
+  }
+  
+  rivers.forEach(r=>{m.beginPath();r.forEach(([x,y],i)=>{const p=project(x,y);i?m.lineTo(...p):m.moveTo(...p)});m.strokeStyle='rgba(56, 189, 248, 0.2)';m.lineWidth=1.5;m.stroke()});
+  
+  heat();
+  path(GEO.PUNJAB);
+  m.fillStyle='rgba(255,255,255,.02)';m.fill();
+  m.strokeStyle='rgba(20, 184, 166, 0.6)';m.lineWidth=2;
+  m.shadowColor='rgba(20, 184, 166, 0.4)';m.shadowBlur=8;m.stroke();m.shadowBlur=0;
+  
+  m.font='500 11px Inter';m.textAlign='center';
+  for(const[n,x,y]of cities){
+    const p=project(x,y);if(p[0]<0||p[0]>W||p[1]<0||p[1]>H)continue;
+    m.beginPath();m.arc(p[0],p[1],2.5,0,Math.PI*2);m.fillStyle='#e2e8f0';m.fill();
+    m.shadowColor='rgba(0,0,0,0.8)';m.shadowBlur=4;m.fillStyle='#94a3b8';m.fillText(n,p[0],p[1]-8);m.shadowBlur=0;
+  }
+  
+  m.font='800 14px Outfit';m.fillStyle='rgba(255,255,255,.1)';
+  [['PAKISTAN',69,35.3],['INDIA',77.1,27.5],['AFGHANISTAN',66.8,34.7],['PUNJAB',72.5,29.5]].forEach(([n,x,y])=>{
+    const p=project(x,y);m.fillText(n,...p);
+  });
+}
+function heat(){const colors=cfg[layer]?.[2]||cfg.pm25[2],spots=layer==='transport'?[[66.8,31.4,.3,colors[0]],[78,31.2,.34,colors.at(-1)],[73.8,31.5,.23,colors[2]]]:[[74.35,31.5,.22,colors.at(-1)],[73.1,31.4,.19,colors.at(-2)],[71.5,30.2,.18,colors[2]],[74.2,32.2,.16,colors[1]],[75.6,30.8,.21,colors.at(-2)]];m.save();m.globalCompositeOperation='screen';for(const[x,y,r,c]of spots){const p=project(x+Math.sin(step*.6+x)*.06,y),radius=W*r;const g=m.createRadialGradient(p[0],p[1],0,p[0],p[1],radius);g.addColorStop(0,c+'a6');g.addColorStop(.42,c+'40');g.addColorStop(1,c+'00');m.fillStyle=g;m.fillRect(p[0]-radius,p[1]-radius,radius*2,radius*2)}m.restore();if(layer==='transport')trajectories()}
+function trajectories(){const east=step>=4;const routes=east?[[[78.2,31.1],[77.1,31.2],[76,31.45],[74.35,31.52]],[[77.6,29.2],[76.2,30.1],[75.3,30.9],[74.35,31.52]]]:[[[65.2,31.8],[67.2,31.6],[69.3,31.7],[71.4,31.6],[74.35,31.52]],[[66,34.2],[68.2,33.7],[70.6,33.1],[73.05,33.69]]];m.save();m.setLineDash([6,8]);m.lineWidth=2.5;m.strokeStyle=east?'rgba(217, 70, 239, 0.8)':'rgba(251, 191, 36, 0.8)';m.shadowColor=m.strokeStyle;m.shadowBlur=10;for(const r of routes){m.beginPath();r.forEach(([x,y],i)=>{const p=project(x,y);i?m.lineTo(...p):m.moveTo(...p)});m.stroke()}m.restore()}
+function velocity(x,y){const east=step>=4,dir=east?-1:1,a=Math.sin(y*.012+step*.2)*.42+Math.cos(x*.006)*.2;return{x:dir*(1.25+Math.cos(a)*.7),y:Math.sin(a)*.48}}
+function animate(){w.fillStyle='rgba(2, 6, 23, 0.08)';w.fillRect(0,0,W,H);w.lineWidth=1;for(const p of particles){const v=velocity(p.x,p.y),ox=p.x,oy=p.y;p.x+=v.x*1.45;p.y+=v.y*1.45;p.age++;if(p.x>W||p.x<0||p.y<0||p.y>H||p.age>160){p.x=v.x>0?0:W;p.y=Math.random()*H;p.age=0}const a=Math.sin(Math.min(p.age,70)/70*Math.PI)*.4;w.strokeStyle=`rgba(148, 163, 184, ${a})`;w.beginPath();w.moveTo(ox,oy);w.lineTo(p.x,p.y);w.stroke()}requestAnimationFrame(animate)}
+function value(s){return Math.max(31,Math.round(s[3]+Math.sin(step*.7+s[1])*21+step*2))}function color(v){return v<85?'#10b981':v<130?'#eab308':v<180?'#f59e0b':v<220?'#ef4444':'#a855f7'}
+function markers(){const el=$('#markers');el.innerHTML='';for(const s of stations){const p=project(s[1],s[2]),v=value(s),b=document.createElement('button');b.className='station';b.style.left=p[0]+'px';b.style.top=p[1]+'px';b.style.setProperty('--c',color(v));b.dataset.name=s[0].split(' — ')[0];b.setAttribute('aria-label',`${s[0]}, AQI ${v}`);b.onclick=()=>inspect(s,v);el.appendChild(b)}if(layer==='fire')[[74.8,30.8],[75.4,31.3],[73.5,30.7],[72.9,29.8],[76.2,30.3]].forEach(p=>dot('fire',p));if(layer==='hotspot')[[74.25,31.7],[73.7,31.8],[72.9,31.4]].forEach(p=>dot('hotspot',p))}
+function dot(cls,xy){const p=project(...xy),d=document.createElement('span');d.className=cls;d.style.left=p[0]+'px';d.style.top=p[1]+'px';$('#markers').appendChild(d)}
+function inspect(s,v){$('#stationName').textContent=s[0];$('#aqi').textContent=v;$('#category').textContent=v>200?'Very unhealthy':v>150?'Unhealthy':v>100?'Elevated':'Moderate';$('#concentration').textContent=`PM2.5 · ${Math.round(v*.62)} µg/m³`;$('#spark').innerHTML=Array.from({length:24},(_,i)=>`<i style="height:${7+Math.abs(Math.sin(i*.4+s[1]))*35}px"></i>`).join('');$('#stationCard').classList.add('open')}
+function setLayer(name){if(name==='decision'){openDrawer();return}layer=name;$$('.layer').forEach(b=>b.classList.toggle('active',b.dataset.layer===name));const c=cfg[name];$('#legendTitle').textContent=c[0];$('#legendUnit').textContent=c[1];$('#bar').style.background=`linear-gradient(90deg,${c[2].join(',')})`;$('#context').classList.toggle('open',name==='transport');draw();markers()}
+function setStep(n){step=n;$$('.time').forEach((b,i)=>b.classList.toggle('active',i===n));$('#valid').textContent=`Valid ${n<4?'Fri':n<7?'Sat':'Sun'} · ${String((14+n*3)%24).padStart(2,'0')}:00 PKT`;$('#currentRoute').textContent=n<4?'Current: western inflow':'Current: easterly inflow';draw();markers()}
+function openDrawer(){$('#drawer').classList.add('open')}function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e.t);e.t=setTimeout(()=>e.classList.remove('show'),2500)}
+times.forEach((t,i)=>{const b=document.createElement('button');b.className='time'+(!i?' active':'');b.innerHTML=`<b>${i<3?'FRI':i<7?'SAT':'SUN'}</b>${t}`;b.onclick=()=>setStep(i);$('#track').appendChild(b)});$$('.layer').forEach(b=>b.onclick=()=>setLayer(b.dataset.layer));$('#menu').onclick=openDrawer;$('#closeDrawer').onclick=()=>$('#drawer').classList.remove('open');$('#closeCard').onclick=()=>$('#stationCard').classList.remove('open');$('#play').onclick=()=>{playing=!playing;$('#play').textContent=playing?'❚❚':'▶';clearInterval(timer);if(playing)timer=setInterval(()=>setStep((step+1)%times.length),900)};$('#plus').onclick=()=>{scale=Math.min(1.25,scale+.08);$('#scene').style.transform=`scale(${scale})`;$('#scene').style.transition='0.4s cubic-bezier(0.16, 1, 0.3, 1)'};$('#minus').onclick=()=>{scale=Math.max(.9,scale-.08);$('#scene').style.transform=`scale(${scale})`};$$('.case button').forEach(b=>b.onclick=()=>toast(b.dataset.action+' · demo only'));$('#search').oninput=e=>{const q=e.target.value.toLowerCase();if(q.length>2){const s=stations.find(x=>x[0].toLowerCase().includes(q));if(s)inspect(s,value(s))}};addEventListener('resize',resize);addEventListener('keydown',e=>{if(e.key==='Escape'){$('#drawer').classList.remove('open');$('#stationCard').classList.remove('open')}});
+console.assert(GEO.PUNJAB[0].length>80&&stations.length===10,'Map configuration incomplete');resize();markers();animate();
+})();
+</script>
+</body>
+</html>

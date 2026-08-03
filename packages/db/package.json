@@ -1,0 +1,13 @@
+{
+  "name": "@repo/db",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@prisma/client": "^6.11.1",
+    "@repo/core": "*"
+  },
+  "devDependencies": {
+    "prisma": "^6.11.1"
+  }
+}
