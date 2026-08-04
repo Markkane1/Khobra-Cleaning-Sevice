@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck } from 'lucide-react'
+import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy } from 'lucide-react'
 import { calculateBookingFinancials } from '@repo/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
@@ -151,6 +151,7 @@ const legendItems = [
 
 export function Bookings() {
   const currentRole = useAppStore(s => s.currentRole)
+  const currentUser = useAppStore(s => s.currentUser)
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<any>(null)
@@ -271,9 +272,11 @@ export function Bookings() {
 
   const [ratingBooking, setRatingBooking] = useState<any | null>(null)
   const [empRatings, setEmpRatings] = useState<Record<string, number>>({})
+  const [overallRating, setOverallRating] = useState<number>(5.0)
+  const [overallComment, setOverallComment] = useState<string>('')
 
   const rateMut = useMutation({
-    mutationFn: (d: { bookingId: string; ratings: Array<{ assignmentId?: string; employeeId: string; rating: number; notes?: string }> }) =>
+    mutationFn: (d: { bookingId: string; overallRating?: number; overallComment?: string; ratings: Array<{ assignmentId?: string; employeeId: string; rating: number; notes?: string }> }) =>
       fetch('/api/khobra-cleaning/bookings/rate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -283,26 +286,52 @@ export function Bookings() {
         if (!r.ok) throw new Error(res.error || 'Rating failed')
         return res
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
-      qc.invalidateQueries({ queryKey: ['employees'] })
-      toast.success(`Ratings submitted for booking ${data.bookingNo}!`)
+      toast.success('Thank you! Your ratings and feedback have been submitted.')
       setRatingBooking(null)
       setEmpRatings({})
+      setOverallRating(5.0)
+      setOverallComment('')
     },
     onError: (err: any) => {
-      toast.error(err.message || 'Rating failed')
+      toast.error(err.message || 'Failed to submit ratings')
     },
   })
 
   const [paymentBooking, setPaymentBooking] = useState<any | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash')
-  const [paymentFields, setPaymentFields] = useState({ referenceNo: '', customerBankName: '', accountHolderName: '', proofUrl: '', notes: '' })
+  const [paymentFields, setPaymentFields] = useState({ referenceNo: '', customerBankName: '', accountHolderName: '', transferDate: format(new Date(), 'yyyy-MM-dd'), transferAmount: '', proofUrl: '', remarks: '' })
   const [isUploadingProof, setIsUploadingProof] = useState(false)
 
-  const { data: bankAccountData } = useQuery({
-    queryKey: ['bankAccount'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings/bank-transfer').then(r => r.json()),
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('')
+  const [cleanerCompleteBookingConfirm, setCleanerCompleteBookingConfirm] = useState<any | null>(null)
+
+  const cleanerCompleteMut = useMutation({
+    mutationFn: (d: { bookingId: string; notes?: string }) =>
+      fetch('/api/khobra-cleaning/bookings/cleaner-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }).then(async r => {
+        const res = await r.json()
+        if (!r.ok) throw new Error(res.error || 'Failed to complete booking')
+        return res
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success(`Booking ${data.booking?.bookingNo || ''} marked as Completed!`)
+      setCleanerCompleteBookingConfirm(null)
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Error marking booking as completed')
+    },
+  })
+
+  const { data: companyAccountsData } = useQuery({
+    queryKey: ['companyBankAccountsCustomer'],
+    queryFn: () => fetch('/api/khobra-cleaning/company-bank-accounts').then(r => r.json()),
     enabled: Boolean(paymentBooking && paymentMethod === 'bank_transfer'),
   })
 
@@ -323,11 +352,28 @@ export function Bookings() {
       qc.invalidateQueries({ queryKey: ['payments'] })
       toast.success('Payment method selected successfully!')
       setPaymentBooking(null)
-      setPaymentFields({ referenceNo: '', customerBankName: '', accountHolderName: '', proofUrl: '', notes: '' })
+      setPaymentFields({ referenceNo: '', customerBankName: '', accountHolderName: '', transferDate: format(new Date(), 'yyyy-MM-dd'), transferAmount: '', proofUrl: '', remarks: '' })
     },
     onError: (err: any) => {
       toast.error(err.message || 'Payment selection failed')
     },
+  })
+
+  const submitBankTransferMut = useMutation({
+    mutationFn: (d: any) => fetch('/api/khobra-cleaning/bookings/bank-transfer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => {
+      const res = await r.json()
+      if (!r.ok) throw new Error(res.error || 'Bank transfer submission failed')
+      return res
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['payments'] })
+      toast.success('Bank transfer submitted for Admin verification')
+      setPaymentBooking(null)
+      setPaymentFields({ referenceNo: '', customerBankName: '', accountHolderName: '', transferDate: format(new Date(), 'yyyy-MM-dd'), transferAmount: '', proofUrl: '', remarks: '' })
+    },
+    onError: (err: any) => toast.error(err.message || 'Bank transfer submission failed'),
   })
 
   const reopenPaymentMut = useMutation({
@@ -352,31 +398,14 @@ export function Bookings() {
     },
   })
 
-  const verifyCashMut = useMutation({
-    mutationFn: (d: { paymentId: string; remarks?: string }) =>
-      fetch('/api/khobra-cleaning/bookings/payment-method', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(d),
-      }).then(async r => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Cash verification failed')
-        return res
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['payments'] })
-      toast.success('Cash payment verified!')
-    },
-    onError: (err: any) => {
-      toast.error(err.message || 'Cash verification failed')
-    },
-  })
-
   const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      toast.error('Payment proof must be a JPG, PNG, WEBP, or PDF up to 5 MB')
+      e.target.value = ''
+      return
+    }
     setIsUploadingProof(true)
     try {
       const formData = new FormData()
@@ -1276,34 +1305,35 @@ export function Bookings() {
                                       {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'on_the_way' && (
                                         <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => handleStatusChange(b.id, 'in_progress')}>Start</Button>
                                       )}
-                                      {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'in_progress' && (
-                                        <Button size="sm" variant="outline" className="text-xs h-7 px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100" onClick={() => handleStatusChange(b.id, 'completed')}>Complete</Button>
+                                      {currentRole === 'cleaner' && b.status === 'in_progress' && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-xs h-7 px-2 bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                                          onClick={() => setCleanerCompleteBookingConfirm(b)}
+                                        >
+                                          Complete Booking
+                                        </Button>
                                       )}
                                       {b.status === 'completed' && (
                                         <>
                                           {currentRole === 'customer' && fin.canSelectPaymentMethod && (
-                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-semibold" onClick={() => { setPaymentBooking(b); setPaymentMethod('cash'); }}>
+                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-400 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-semibold" onClick={() => { setPaymentBooking(b); setPaymentMethod('cash'); setPaymentFields(prev => ({ ...prev, transferAmount: String(calculateBookingFinancials(b).remainingPayableAmount), transferDate: format(new Date(), 'yyyy-MM-dd') })); }}>
                                               <CreditCard className="h-3.5 w-3.5 mr-1" />
                                               Pay / Select Method
                                             </Button>
                                           )}
-                                          {(currentRole === 'cleaner' || currentRole === 'admin') && fin.remainingPayableAmount > 0 && (
+                                          {currentRole === 'cleaner' && fin.paymentStatus === 'cash_selected' && fin.remainingPayableAmount > 0 && (
                                             <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold shadow-sm" onClick={() => setCleanerCashBooking(b)}>
                                               <Banknote className="h-3.5 w-3.5 mr-1 text-emerald-600" />
                                               Mark Cash Received (AED {fin.remainingPayableAmount})
                                             </Button>
                                           )}
-                                          {(fin.paymentStatus === 'paid' || fin.remainingPayableAmount === 0) && b.invoices?.[0]?.payments?.some((p: any) => p.method === 'cash') && (
+                                          {(currentRole === 'cleaner' || currentRole === 'admin') && b.invoices?.[0]?.payments?.some((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)) && (
                                             <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 border-emerald-300 font-bold text-xs">
                                               <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600 inline" />
-                                              Cash Received {b.invoices?.[0]?.payments?.[0]?.verifiedAt ? `(${format(parseISO(b.invoices[0].payments[0].verifiedAt), 'MMM dd, HH:mm')})` : ''}
+                                              Cash Received {(() => { const cash = b.invoices?.[0]?.payments?.find((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)); return cash?.verifiedAt ? `(${format(parseISO(cash.verifiedAt), 'MMM dd, HH:mm')})` : '' })()}
                                             </Badge>
-                                          )}
-                                          {currentRole === 'admin' && fin.paymentStatus === 'cash_selected' && fin.remainingPayableAmount > 0 && (
-                                            <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-400 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 font-semibold" onClick={() => verifyCashMut.mutate({ paymentId: b.invoices?.[0]?.payments?.[0]?.id })}>
-                                              <Banknote className="h-3.5 w-3.5 mr-1" />
-                                              Verify Cash
-                                            </Button>
                                           )}
                                           {currentRole === 'admin' && (fin.paymentStatus === 'bank_transfer_submitted' || fin.paymentStatus === 'under_verification') && (
                                             <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-purple-400 text-purple-700 bg-purple-50 hover:bg-purple-100 font-semibold" onClick={() => setReviewingBankTransferBooking(b)}>
@@ -1317,7 +1347,7 @@ export function Bookings() {
                                               Reopen Pay
                                             </Button>
                                           )}
-                                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRatingBooking(b)}><Star className="h-3 w-3 mr-1" />Rate</Button>
+                                          {(currentRole === 'customer' || (currentRole === 'admin' && b.rating)) && <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRatingBooking(b)}><Star className="h-3 w-3 mr-1" />{b.rating ? 'View Rating' : 'Rate'}</Button>}
                                         </>
                                       )}
                                       {(b.status === 'cancelled' || b.status === 'no_show') && <span className="text-xs text-muted-foreground px-1">Ended</span>}
@@ -1791,14 +1821,22 @@ export function Bookings() {
                     {(currentRole === 'admin' || currentRole === 'cleaner') && selectedBooking.status === 'on_the_way' && (
                       <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => { handleStatusChange(selectedBooking.id, 'in_progress'); setDetailOpen(false) }}>Start Service</Button>
                     )}
-                    {(currentRole === 'admin' || currentRole === 'cleaner') && selectedBooking.status === 'in_progress' && (
-                      <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { handleStatusChange(selectedBooking.id, 'completed'); setDetailOpen(false) }}>Mark Complete</Button>
+                    {currentRole === 'cleaner' && selectedBooking.status === 'in_progress' && (
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700 font-semibold"
+                        onClick={() => {
+                          setDetailOpen(false)
+                          setCleanerCompleteBookingConfirm(selectedBooking)
+                        }}
+                      >
+                        Complete Booking
+                      </Button>
                     )}
                   </DialogFooter>
                 </>
               )}
-              {selectedBooking.status === 'completed' && (
-                <DialogFooter className="pt-2"><Button variant="outline" onClick={() => { setRatingBooking(selectedBooking); setDetailOpen(false) }}><Star className="h-4 w-4 mr-2" />Rate Team</Button></DialogFooter>
+              {selectedBooking.status === 'completed' && (currentRole === 'customer' || (currentRole === 'admin' && selectedBooking.rating)) && (
+                <DialogFooter className="pt-2"><Button variant="outline" onClick={() => { setRatingBooking(selectedBooking); setDetailOpen(false) }}><Star className="h-4 w-4 mr-2" />{selectedBooking.rating ? 'View Rating' : 'Rate Team'}</Button></DialogFooter>
               )}
             </>
           )}
@@ -1914,71 +1952,146 @@ export function Bookings() {
         </DialogContent>
       </Dialog>
 
-      {/* Rate Team Modal Dialog (Prompt 13) */}
-      <Dialog open={Boolean(ratingBooking)} onOpenChange={(v) => { if (!v) { setRatingBooking(null); setEmpRatings({}) } }}>
+      {/* Rate Team Modal Dialog */}
+      <Dialog open={Boolean(ratingBooking)} onOpenChange={(v) => { if (!v) { setRatingBooking(null); setEmpRatings({}); setOverallRating(5); setOverallComment(''); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
               <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-              Rate Team — {ratingBooking?.bookingNo}
+              Rate Service & Cleaners — {ratingBooking?.bookingNo}
             </DialogTitle>
           </DialogHeader>
 
-          {ratingBooking && (
-            <div className="space-y-4 py-2">
-              <p className="text-xs text-muted-foreground">
-                Rate each cleaner individually on a scale from 1.0 ★ to 5.0 ★ (in 0.5 step increments).
-              </p>
+          {ratingBooking && (() => {
+            const isAlreadyRated = Boolean(ratingBooking.rating)
+            const displayedOverallRating = isAlreadyRated ? ratingBooking.rating.overallRating : overallRating
 
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {ratingBooking.assignments?.map((a: any) => {
-                  const empId = a.employeeId
-                  const currentRating = empRatings[empId] ?? a.customerRating ?? 5.0
-                  return (
-                    <div key={a.id} className="p-3 rounded-lg bg-muted/40 border border-border/50 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold text-sm">{a.employee?.user?.name || a.employee?.employeeCode}</span>
-                        <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold text-xs">
-                          {currentRating.toFixed(1)} ★
-                        </Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map(val => (
-                          <Button
-                            key={val}
-                            type="button"
-                            size="sm"
-                            variant={currentRating === val ? "default" : "outline"}
-                            className={`h-7 px-2 text-xs font-semibold ${currentRating === val ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}`}
-                            onClick={() => setEmpRatings({ ...empRatings, [empId]: val })}
-                          >
-                            {val.toFixed(1)} ★
-                          </Button>
-                        ))}
-                      </div>
+            return (
+              <div className="space-y-4 py-2">
+                {isAlreadyRated ? (
+                  <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 text-xs text-emerald-800 dark:text-emerald-300 font-medium flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    Rating Submitted (Read-Only)
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Rate overall service and each assigned cleaner on a scale from 1 to 5 stars.
+                  </p>
+                )}
+
+                {/* Overall Service Rating */}
+                <div className="p-3 rounded-xl bg-gradient-to-br from-amber-50/50 to-emerald-50/30 dark:from-amber-950/20 dark:to-emerald-950/20 border space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      Overall Service Rating
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold text-xs">
+                      {displayedOverallRating} ★
+                    </Badge>
+                  </div>
+
+                  {!isAlreadyRated && (
+                    <div className="flex flex-wrap gap-1">
+                      {[1, 2, 3, 4, 5].map(val => (
+                        <Button
+                          key={val}
+                          type="button"
+                          size="sm"
+                          variant={overallRating === val ? "default" : "outline"}
+                          className={`h-7 px-2 text-xs font-semibold ${overallRating === val ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}`}
+                          onClick={() => setOverallRating(val)}
+                        >
+                          {val} ★
+                        </Button>
+                      ))}
                     </div>
-                  )
-                })}
+                  )}
+                </div>
+
+                {/* Individual Cleaner Ratings */}
+                <div className="space-y-2.5 max-h-56 overflow-y-auto">
+                  <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider block">Assigned Cleaners</span>
+                  {ratingBooking.assignments?.map((a: any) => {
+                    const empId = a.employeeId
+                    const currentRating = isAlreadyRated ? (a.customerRating ?? 5) : (empRatings[empId] ?? 5)
+                    return (
+                      <div key={a.id} className="p-3 rounded-lg bg-muted/40 border border-border/50 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-sm">{a.employee?.user?.name || a.employee?.employeeCode}</span>
+                          <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold text-xs">
+                            {currentRating} ★
+                          </Badge>
+                        </div>
+
+                        {!isAlreadyRated && (
+                          <div className="flex flex-wrap gap-1">
+                            {[1, 2, 3, 4, 5].map(val => (
+                              <Button
+                                key={val}
+                                type="button"
+                                size="sm"
+                                variant={currentRating === val ? "default" : "outline"}
+                                className={`h-7 px-2 text-xs font-semibold ${currentRating === val ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}`}
+                                onClick={() => setEmpRatings({ ...empRatings, [empId]: val })}
+                              >
+                                {val} ★
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        {a.ratingNotes && (
+                          <p className="text-xs text-muted-foreground italic pt-1 border-t">"{a.ratingNotes}"</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Optional Written Comment */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Customer Comments & Feedback (Optional)</Label>
+                  {isAlreadyRated ? (
+                    <div className="p-2.5 rounded-md bg-muted text-xs text-muted-foreground italic border">
+                      {ratingBooking.rating.comment || 'No additional comments provided.'}
+                    </div>
+                  ) : (
+                    <Textarea
+                      placeholder="Share details about your cleaning experience..."
+                      value={overallComment}
+                      onChange={e => setOverallComment(e.target.value)}
+                      className="text-xs min-h-[60px]"
+                    />
+                  )}
+                  {isAlreadyRated && <p className="text-[11px] text-muted-foreground">Submitted {format(new Date(ratingBooking.rating.submittedAt), 'MMM dd, yyyy HH:mm')}</p>}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRatingBooking(null)}>Cancel</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => {
-                const ratingsList = (ratingBooking?.assignments || []).map((a: any) => ({
-                  assignmentId: a.id,
-                  employeeId: a.employeeId,
-                  rating: empRatings[a.employeeId] ?? a.customerRating ?? 5.0,
-                }))
-                rateMut.mutate({ bookingId: ratingBooking.id, ratings: ratingsList })
-              }}
-              disabled={rateMut.isPending}
-            >
-              {rateMut.isPending ? 'Submitting...' : 'Submit Ratings'}
-            </Button>
+            <Button variant="outline" onClick={() => setRatingBooking(null)}>Close</Button>
+            {ratingBooking && !ratingBooking.rating && currentRole === 'customer' && (
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 font-semibold"
+                onClick={() => {
+                  const ratingsList = (ratingBooking?.assignments || []).map((a: any) => ({
+                    assignmentId: a.id,
+                    employeeId: a.employeeId,
+                    rating: empRatings[a.employeeId] ?? 5,
+                  }))
+                  rateMut.mutate({
+                    bookingId: ratingBooking.id,
+                    overallRating,
+                    overallComment: overallComment.trim(),
+                    ratings: ratingsList,
+                  })
+                }}
+                disabled={rateMut.isPending}
+              >
+                {rateMut.isPending ? 'Submitting...' : 'Submit Rating'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2045,7 +2158,7 @@ export function Bookings() {
                       type="button"
                       variant={paymentMethod === 'bank_transfer' ? 'default' : 'outline'}
                       className={`h-20 flex-col gap-1.5 rounded-xl border-2 ${paymentMethod === 'bank_transfer' ? 'bg-teal-600 hover:bg-teal-700 text-white border-teal-600' : 'hover:border-teal-300'}`}
-                      onClick={() => setPaymentMethod('bank_transfer')}
+                      onClick={() => { setPaymentMethod('bank_transfer'); setPaymentFields(prev => ({ ...prev, transferAmount: String(financials.remainingPayableAmount) })); }}
                     >
                       <Building2 className="h-6 w-6" />
                       <span className="font-bold text-xs">Bank Transfer</span>
@@ -2067,101 +2180,129 @@ export function Bookings() {
                 {/* Bank Transfer Inputs & Info */}
                 {paymentMethod === 'bank_transfer' && (
                   <div className="space-y-3 pt-1">
-                    {bankAccountData?.bankAccount && (
-                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-emerald-50/30 dark:from-slate-900 dark:to-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 text-xs space-y-2">
-                        <div className="flex justify-between items-center pb-1.5 border-b border-emerald-200/50 dark:border-emerald-800/40">
-                          <span className="font-bold text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-1.5">
-                            <Building2 className="h-4 w-4 text-emerald-600" />
-                            Company Bank Details
-                          </span>
-                          <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-semibold px-2 py-0.5 rounded-full">
-                            Active
-                          </span>
-                        </div>
+                    {(() => {
+                      const activeAccounts = companyAccountsData?.accounts || []
+                      const selectedAcc = activeAccounts.find((a: any) => a.id === selectedBankAccountId) || activeAccounts[0]
 
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Bank Name:</span>
-                            <span className="font-semibold text-foreground">{bankAccountData.bankAccount.bankName || 'Emirates NBD'}</span>
+                      if (!selectedAcc) return <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">No active company bank account is configured. Please contact support before making a transfer.</div>
+
+                      return (
+                        <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-emerald-50/30 dark:from-slate-900 dark:to-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 text-xs space-y-2">
+                          <div className="flex justify-between items-center pb-1.5 border-b border-emerald-200/50 dark:border-emerald-800/40">
+                            <span className="font-bold text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-1.5">
+                              <Building2 className="h-4 w-4 text-emerald-600" />
+                              Company Bank Details
+                            </span>
+                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-semibold px-2 py-0.5 rounded-full">
+                              Active
+                            </span>
                           </div>
 
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Account Title:</span>
-                            <div className="flex items-center gap-1">
-                              <span className="font-semibold text-foreground">{bankAccountData.bankAccount.accountTitle || 'Khobra Cleaning Services LLC'}</span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
-                                title="Copy Account Title"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(bankAccountData.bankAccount.accountTitle || 'Khobra Cleaning Services LLC')
-                                  toast.success('Copied Account Title to clipboard!')
-                                }}
-                              >
-                                📋
-                              </Button>
+                          {activeAccounts.length > 1 && (
+                            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                              {activeAccounts.map((acc: any) => (
+                                <button
+                                  key={acc.id}
+                                  type="button"
+                                  onClick={() => setSelectedBankAccountId(acc.id)}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors border ${selectedAcc.id === acc.id ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background hover:bg-muted text-muted-foreground border-border'}`}
+                                >
+                                  {acc.bankName} ({acc.currency || 'AED'})
+                                </button>
+                              ))}
                             </div>
-                          </div>
+                          )}
 
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Account Number:</span>
-                            <div className="flex items-center gap-1">
-                              <span className="font-mono font-bold text-foreground">{bankAccountData.bankAccount.accountNumber || '10154829384701'}</span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
-                                title="Copy Account Number"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(bankAccountData.bankAccount.accountNumber || '10154829384701')
-                                  toast.success('Copied Account Number to clipboard!')
-                                }}
-                              >
-                                📋
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">IBAN:</span>
-                            <div className="flex items-center gap-1">
-                              <span className="font-mono font-bold text-foreground text-[11px]">{bankAccountData.bankAccount.iban || 'AE0302000010154829384701'}</span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
-                                title="Copy IBAN"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(bankAccountData.bankAccount.iban || 'AE0302000010154829384701')
-                                  toast.success('Copied IBAN to clipboard!')
-                                }}
-                              >
-                                📋
-                              </Button>
-                            </div>
-                          </div>
-
-                          {bankAccountData.bankAccount.branch && (
+                          <div className="space-y-1.5">
                             <div className="flex justify-between items-center">
-                              <span className="text-muted-foreground">Branch:</span>
-                              <span className="font-medium text-foreground">{bankAccountData.bankAccount.branch}</span>
+                              <span className="text-muted-foreground">Bank Name:</span>
+                              <span className="font-semibold text-foreground">{selectedAcc.bankName}</span>
+                            </div>
+
+                            <div className="flex justify-between items-center">
+                              <span className="text-muted-foreground">Account Title:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-foreground">{selectedAcc.accountTitle}</span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                  title="Copy Account Title"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(selectedAcc.accountTitle)
+                                    toast.success('Copied Account Title to clipboard!')
+                                  }}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center">
+                              <span className="text-muted-foreground">Account Number:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-mono font-bold text-foreground">{selectedAcc.accountNumber}</span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                  title="Copy Account Number"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(selectedAcc.accountNumber)
+                                    toast.success('Copied Account Number to clipboard!')
+                                  }}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {selectedAcc.iban && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">IBAN:</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="font-mono font-bold text-foreground text-[11px]">{selectedAcc.iban}</span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-5 w-5 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/50"
+                                    title="Copy IBAN"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(selectedAcc.iban)
+                                      toast.success('Copied IBAN to clipboard!')
+                                    }}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {(selectedAcc.branchName || selectedAcc.branch) && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Branch:</span>
+                                <span className="font-medium text-foreground">{selectedAcc.branchName || selectedAcc.branch}</span>
+                              </div>
+                            )}
+                            {selectedAcc.branchCode && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Branch Code:</span>
+                                <span className="font-medium text-foreground">{selectedAcc.branchCode}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {selectedAcc.instructions && (
+                            <div className="pt-1.5 border-t border-emerald-200/40 dark:border-emerald-800/30">
+                              <p className="text-[11px] text-muted-foreground leading-snug"><strong>Instructions:</strong> {selectedAcc.instructions}</p>
                             </div>
                           )}
                         </div>
-
-                        {bankAccountData.bankAccount.instructions && (
-                          <div className="pt-1.5 border-t border-emerald-200/40 dark:border-emerald-800/30">
-                            <p className="text-[11px] text-muted-foreground leading-snug">
-                              ℹ️ <strong>Instructions:</strong> {bankAccountData.bankAccount.instructions}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     <div className="space-y-2">
                       <div>
@@ -2191,12 +2332,45 @@ export function Bookings() {
                           onChange={e => setPaymentFields({ ...paymentFields, accountHolderName: e.target.value })}
                         />
                       </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-xs">Transfer Date *</span>
+                          <input
+                            type="date"
+                            className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                            value={paymentFields.transferDate}
+                            max={format(new Date(), 'yyyy-MM-dd')}
+                            onChange={e => setPaymentFields({ ...paymentFields, transferDate: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <span className="text-xs">Transfer Amount (AED) *</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                            value={paymentFields.transferAmount}
+                            onChange={e => setPaymentFields({ ...paymentFields, transferAmount: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs">Optional Remarks</span>
+                        <textarea
+                          className="w-full min-h-16 px-3 py-2 rounded-md border border-input bg-transparent text-xs"
+                          placeholder="Any details that will help Admin verify the transfer"
+                          maxLength={500}
+                          value={paymentFields.remarks}
+                          onChange={e => setPaymentFields({ ...paymentFields, remarks: e.target.value })}
+                        />
+                      </div>
                       <div>
                         <span className="text-xs">Payment Proof (Screenshot/PDF) *</span>
                         <div className="flex items-center gap-2">
                           <input
                             type="file"
-                            accept="image/*,.pdf"
+                            accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
                             onChange={handleProofUpload}
                             disabled={isUploadingProof}
                             className="text-xs"
@@ -2208,6 +2382,7 @@ export function Bookings() {
                             ✓ Proof attached
                           </p>
                         )}
+                        <p className="mt-1 text-[10px] text-muted-foreground">JPG, PNG, WEBP, or PDF. Maximum 5 MB.</p>
                       </div>
                     </div>
                   </div>
@@ -2220,23 +2395,42 @@ export function Bookings() {
             <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-              disabled={selectPaymentMut.isPending || isUploadingProof}
+              disabled={selectPaymentMut.isPending || submitBankTransferMut.isPending || isUploadingProof || (paymentMethod === 'bank_transfer' && !(companyAccountsData?.accounts?.length))}
               onClick={() => {
                 if (!paymentBooking) return
                 if (paymentMethod === 'bank_transfer') {
-                  if (!paymentFields.referenceNo || !paymentFields.customerBankName || !paymentFields.accountHolderName || !paymentFields.proofUrl) {
+                  const activeAccounts = companyAccountsData?.accounts || []
+                  const companyBankAccountId = activeAccounts.find((account: any) => account.id === selectedBankAccountId)?.id || activeAccounts[0]?.id
+                  const amount = Number(paymentFields.transferAmount)
+                  if (!companyBankAccountId || !paymentFields.referenceNo.trim() || !paymentFields.customerBankName.trim() || !paymentFields.accountHolderName.trim() || !paymentFields.transferDate || !paymentFields.proofUrl || !(amount > 0)) {
                     toast.error('Please fill in all bank transfer fields including payment proof')
                     return
                   }
+                  const remaining = calculateBookingFinancials(paymentBooking).remainingPayableAmount
+                  if (amount > remaining + 0.001) {
+                    toast.error(`Transfer amount cannot exceed AED ${remaining}`)
+                    return
+                  }
+                  submitBankTransferMut.mutate({
+                    bookingId: paymentBooking.id,
+                    companyBankAccountId,
+                    referenceNo: paymentFields.referenceNo.trim(),
+                    customerBankName: paymentFields.customerBankName.trim(),
+                    accountHolderName: paymentFields.accountHolderName.trim(),
+                    transferDate: paymentFields.transferDate,
+                    transferAmount: amount,
+                    proofUrl: paymentFields.proofUrl,
+                    remarks: paymentFields.remarks.trim() || undefined,
+                  })
+                  return
                 }
                 selectPaymentMut.mutate({
                   bookingId: paymentBooking.id,
-                  method: paymentMethod,
-                  ...paymentFields,
+                  method: 'cash',
                 })
               }}
             >
-              {selectPaymentMut.isPending ? 'Recording Selection...' : paymentMethod === 'cash' ? 'Confirm Pay Cash' : 'Submit Bank Transfer'}
+              {selectPaymentMut.isPending || submitBankTransferMut.isPending ? 'Submitting...' : paymentMethod === 'cash' ? 'Confirm Pay Cash' : 'Submit Bank Transfer'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2254,7 +2448,7 @@ export function Bookings() {
 
           {cleanerCashBooking && (() => {
             const financials = calculateBookingFinancials(cleanerCashBooking)
-            const assignedCleanerName = cleanerCashBooking.assignments?.[0]?.employee?.user?.name || 'Assigned Cleaner'
+            const assignedCleanerName = currentUser?.name || 'Assigned Cleaner'
             return (
               <div className="space-y-4 py-2 text-sm">
                 <p className="text-xs text-muted-foreground">
@@ -2327,7 +2521,7 @@ export function Bookings() {
 
           {reviewingBankTransferBooking && (() => {
             const financials = calculateBookingFinancials(reviewingBankTransferBooking)
-            const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.find((p: any) => p.method === 'bank_transfer') || reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+            const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.find((p: any) => p.method === 'bank_transfer' && p.status === 'under_verification')
             return (
               <div className="space-y-4 py-2 text-sm">
                 <p className="text-xs text-muted-foreground">
@@ -2348,6 +2542,21 @@ export function Bookings() {
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Reference / Transaction #</span>
                     <span className="font-mono font-bold text-foreground">{payment?.referenceNo || 'N/A'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Customer Bank</span>
+                    <span className="font-semibold text-foreground">{payment?.customerBankName || 'N/A'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Account Holder</span>
+                    <span className="font-semibold text-foreground">{payment?.accountHolderName || 'N/A'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground">Transfer Date</span>
+                    <span className="font-semibold text-foreground">{payment?.transferDate ? format(new Date(payment.transferDate), 'PP') : 'N/A'}</span>
                   </div>
 
                   <div className="flex justify-between items-center text-xs">
@@ -2405,7 +2614,7 @@ export function Bookings() {
                 disabled={decideBankTransferMut.isPending}
                 onClick={() => {
                   if (!reviewingBankTransferBooking) return
-                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.find((item: any) => item.method === 'bank_transfer' && item.status === 'under_verification')
                   if (!payment) {
                     toast.error('No payment record found to reject')
                     return
@@ -2428,7 +2637,7 @@ export function Bookings() {
                 disabled={decideBankTransferMut.isPending}
                 onClick={() => {
                   if (!reviewingBankTransferBooking) return
-                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.[0]
+                  const payment = reviewingBankTransferBooking.invoices?.[0]?.payments?.find((item: any) => item.method === 'bank_transfer' && item.status === 'under_verification')
                   if (!payment) {
                     toast.error('No payment record found to approve')
                     return
@@ -2446,6 +2655,60 @@ export function Bookings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Cleaner Complete Booking Confirmation Modal */}
+      <AlertDialog open={Boolean(cleanerCompleteBookingConfirm)} onOpenChange={(v) => { if (!v) setCleanerCompleteBookingConfirm(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              Complete Booking Confirmation
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2 text-xs">
+              <span>Are you sure you want to mark this booking as <strong>Completed</strong>?</span>
+
+              {cleanerCompleteBookingConfirm && (
+                <div className="p-3 rounded-lg bg-muted/60 border text-foreground space-y-1 font-sans">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Booking Ref:</span>
+                    <span className="font-mono font-semibold">{cleanerCompleteBookingConfirm.bookingNo}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer:</span>
+                    <span className="font-semibold">{cleanerCompleteBookingConfirm.customer?.user?.name || cleanerCompleteBookingConfirm.customerName || 'Customer'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Location:</span>
+                    <span>{[cleanerCompleteBookingConfirm.area, cleanerCompleteBookingConfirm.city].filter(Boolean).join(', ') || 'Service Address'}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-1 mt-1">
+                    <span className="text-muted-foreground">Completing Cleaner:</span>
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">{currentUser?.name || 'Assigned Cleaner'}</span>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] text-muted-foreground bg-amber-50 dark:bg-amber-950/30 p-2 rounded border border-amber-200 dark:border-amber-800">
+                ℹ️ Completing this booking will update status from <strong>In Progress</strong> to <strong>Completed</strong>, notify the customer and assigned cleaners, and enable customer payment selection. Payment will remain pending until collected.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              disabled={cleanerCompleteMut.isPending}
+              onClick={() => {
+                if (cleanerCompleteBookingConfirm) {
+                  cleanerCompleteMut.mutate({ bookingId: cleanerCompleteBookingConfirm.id })
+                }
+              }}
+            >
+              {cleanerCompleteMut.isPending ? 'Marking Completed...' : 'Confirm Completion'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

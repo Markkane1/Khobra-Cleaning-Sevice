@@ -27,23 +27,8 @@ export const SelectPaymentMethodSchema = z.object({
   accountHolderName: z.string().trim().optional(),
   referenceNo: z.string().trim().optional(),
   transferDate: z.coerce.date().optional(),
-  proofUrl: z.string().optional(),
+  proofUrl: z.string().url('Payment proof must be a valid URL').optional(),
   notes: z.string().trim().optional(),
-}).superRefine((data, ctx) => {
-  if (data.method === 'bank_transfer') {
-    if (!data.referenceNo) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Transaction/reference number is required for bank transfer', path: ['referenceNo'] });
-    }
-    if (!data.customerBankName) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Customer bank name is required for bank transfer', path: ['customerBankName'] });
-    }
-    if (!data.accountHolderName) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Account-holder name is required for bank transfer', path: ['accountHolderName'] });
-    }
-    if (!data.proofUrl) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Payment proof is required for bank transfer', path: ['proofUrl'] });
-    }
-  }
 });
 
 export type SelectPaymentMethodDTO = z.infer<typeof SelectPaymentMethodSchema>;
@@ -57,13 +42,14 @@ export type ReopenPaymentDTO = z.infer<typeof ReopenPaymentSchema>;
 
 export const SubmitBankTransferSchema = z.object({
   bookingId: z.string().min(1, 'Booking ID is required'),
-  referenceNo: z.string().trim().min(1, 'Transaction/reference number is required'),
-  customerBankName: z.string().trim().min(1, 'Customer bank name is required'),
-  accountHolderName: z.string().trim().min(1, 'Account holder name is required'),
+  companyBankAccountId: z.string().min(1, 'Company bank account is required'),
+  referenceNo: z.string().trim().min(1, 'Transaction/reference number is required').max(100),
+  customerBankName: z.string().trim().min(1, 'Customer bank name is required').max(120),
+  accountHolderName: z.string().trim().min(1, 'Account holder name is required').max(120),
   transferDate: z.coerce.date(),
   transferAmount: z.number().positive('Transfer amount must be greater than zero'),
-  proofUrl: z.string().min(1, 'Payment proof is required'),
-  remarks: z.string().trim().optional(),
+  proofUrl: z.string().url('Payment proof is required'),
+  remarks: z.string().trim().max(500).optional(),
 });
 
 export type SubmitBankTransferDTO = z.infer<typeof SubmitBankTransferSchema>;
@@ -71,29 +57,55 @@ export type SubmitBankTransferDTO = z.infer<typeof SubmitBankTransferSchema>;
 export const AdminBankTransferDecisionSchema = z.object({
   paymentId: z.string().min(1, 'Payment ID is required'),
   decision: z.enum(['approve', 'reject']),
-  remarks: z.string().trim().optional(),
+  remarks: z.string().trim().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.decision === 'reject' && (!data.remarks || data.remarks.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Decision remarks are required when rejecting a payment',
+      path: ['remarks'],
+    });
+  }
 });
 
 export type AdminBankTransferDecisionDTO = z.infer<typeof AdminBankTransferDecisionSchema>;
 
+export function isValidIban(value: string): boolean {
+  const iban = value.replace(/\s/g, '').toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
+  const rearranged = iban.slice(4) + iban.slice(0, 4);
+  let remainder = 0;
+  for (const char of rearranged) {
+    const digits = /[A-Z]/.test(char) ? String(char.charCodeAt(0) - 55) : char;
+    for (const digit of digits) remainder = (remainder * 10 + Number(digit)) % 97;
+  }
+  return remainder === 1;
+}
+
 export const CompanyBankAccountSchema = z.object({
-  id: z.string().optional(),
-  accountTitle: z.string().trim().min(1, 'Account title is required'),
-  bankName: z.string().trim().min(1, 'Bank name is required'),
-  accountNumber: z.string().trim().min(1, 'Account number is required'),
-  iban: z.string().trim().optional(),
-  branchName: z.string().trim().optional(),
-  branchCode: z.string().trim().optional(),
-  currency: z.string().trim().default('AED'),
-  instructions: z.string().trim().optional(),
-  displayOrder: z.coerce.number().default(0),
+  id: z.string().max(80).optional(),
+  accountTitle: z.string().trim().min(1, 'Account title is required').max(120),
+  bankName: z.string().trim().min(1, 'Bank name is required').max(120),
+  accountNumber: z.string().trim().min(6, 'Account number must contain at least 6 characters').max(34).regex(/^[A-Za-z0-9][A-Za-z0-9 -]*[A-Za-z0-9]$/, 'Account number contains unsupported characters'),
+  iban: z.string().trim().transform(value => value.replace(/\s/g, '').toUpperCase()).refine(value => !value || isValidIban(value), 'IBAN is invalid').optional(),
+  branchName: z.string().trim().max(120).optional(),
+  branchCode: z.string().trim().max(30).optional(),
+  currency: z.string().trim().transform(value => value.toUpperCase()).refine(value => /^[A-Z]{3}$/.test(value), 'Currency must be a 3-letter ISO code').default('AED'),
+  instructions: z.string().trim().max(1000).optional(),
+  displayOrder: z.coerce.number().int().min(0).max(999).default(0),
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
   isDeleted: z.boolean().optional(),
   createdBy: z.string().optional(),
   updatedBy: z.string().optional(),
+  activatedBy: z.string().optional(),
+  deactivatedBy: z.string().optional(),
+  deletedBy: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  activatedAt: z.string().optional(),
+  deactivatedAt: z.string().optional(),
+  deletedAt: z.string().optional(),
 });
 
 export type CompanyBankAccountDTO = z.infer<typeof CompanyBankAccountSchema>;
@@ -240,6 +252,9 @@ export function canCleanerReceiveCash(
     return { canReceive: false, remainingPayable: 0, reason: 'Payment is already completed or verified' };
   }
 
+  if (financials.paymentStatus !== 'cash_selected') {
+    return { canReceive: false, remainingPayable: financials.remainingPayableAmount, reason: 'Customer has not selected Pay Cash' };
+  }
+
   return { canReceive: true, remainingPayable: financials.remainingPayableAmount };
 }
-

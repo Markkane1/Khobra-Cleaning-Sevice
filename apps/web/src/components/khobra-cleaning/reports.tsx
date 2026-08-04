@@ -178,6 +178,11 @@ export function Reports() {
     queryFn: () => fetch('/api/khobra-cleaning/complaints').then(r => r.json()),
   })
 
+  const { data: ratingSubmissions = [] } = useQuery({
+    queryKey: ['booking-ratings'],
+    queryFn: () => fetch('/api/khobra-cleaning/bookings/rate').then(r => r.json()),
+  })
+
   /* ── Loading skeleton ── */
   if (dashLoading || !dashboard) {
     return (
@@ -276,20 +281,25 @@ export function Reports() {
     .sort((a, b) => b.count - a.count)
 
   /* ── Employee productivity ── */
-  const employeeProdMap: Record<string, { name: string; bookings: number; completed: number }> = {}
+  const employeeProdMap: Record<string, { name: string; bookings: number; completed: number; ratingTotal: number; ratingCount: number }> = {}
   bookings.forEach((b: any) => {
     b.assignments?.forEach((a: any) => {
       const eid = a.employeeId
       const ename = a.employee?.user?.name || 'Unknown'
-      if (!employeeProdMap[eid]) employeeProdMap[eid] = { name: ename, bookings: 0, completed: 0 }
+      if (!employeeProdMap[eid]) employeeProdMap[eid] = { name: ename, bookings: 0, completed: 0, ratingTotal: 0, ratingCount: 0 }
       employeeProdMap[eid].bookings++
       if (b.status === 'completed') employeeProdMap[eid].completed++
+      if (typeof a.customerRating === 'number') {
+        employeeProdMap[eid].ratingTotal += a.customerRating
+        employeeProdMap[eid].ratingCount++
+      }
     })
   })
   const employeeData = Object.values(employeeProdMap)
     .map(e => ({
       ...e,
       rate: e.bookings > 0 ? Math.round((e.completed / e.bookings) * 100) : 0,
+      averageRating: e.ratingCount ? Math.round((e.ratingTotal / e.ratingCount) * 10) / 10 : null,
     }))
     .sort((a, b) => b.bookings - a.bookings)
 
@@ -610,6 +620,31 @@ export function Reports() {
 
           {/* ── Performance Tab ── */}
           <TabsContent value="performance" className="mt-4 space-y-4">
+            <Card className="border-0 shadow-sm rounded-xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-semibold flex items-center gap-2"><Star className="h-4 w-4 text-amber-500" />Customer Ratings</CardTitle>
+                <CardDescription className="text-xs">Overall service feedback and per-cleaner ratings by booking</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {ratingSubmissions.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No customer ratings submitted yet.</p> : (
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Booking</TableHead><TableHead>Overall</TableHead><TableHead>Cleaner Ratings</TableHead><TableHead>Comment</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
+                      <TableBody>{ratingSubmissions.map((submission: any) => (
+                        <TableRow key={submission.id}>
+                          <TableCell className="font-mono text-xs font-semibold">{submission.bookingReference}</TableCell>
+                          <TableCell><Badge className="bg-amber-100 text-amber-900 border-amber-300">{submission.overallRating} ★</Badge></TableCell>
+                          <TableCell className="text-xs">{submission.cleanerRatings.map((rating: any) => `${rating.cleanerName}: ${rating.rating} ★`).join(', ')}</TableCell>
+                          <TableCell className="max-w-[220px] text-xs text-muted-foreground">{submission.comment || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap text-xs">{format(new Date(submission.submittedAt), 'MMM dd, yyyy HH:mm')}</TableCell>
+                        </TableRow>
+                      ))}</TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Service Completion Rates Table */}
             <Card className="border-0 shadow-sm rounded-xl">
               <CardHeader className="pb-2">
@@ -633,6 +668,7 @@ export function Reports() {
                           <TableHead className="text-xs">Service</TableHead>
                           <TableHead className="text-xs text-center">Total</TableHead>
                           <TableHead className="text-xs text-center">Completed</TableHead>
+                          <TableHead className="text-xs text-center">Rating</TableHead>
                           <TableHead className="text-xs">Completion Rate</TableHead>
                           <TableHead className="text-xs">Status</TableHead>
                         </TableRow>
@@ -738,6 +774,7 @@ export function Reports() {
                               <TableCell className="text-sm font-medium">{emp.name}</TableCell>
                               <TableCell className="text-sm text-center">{emp.bookings}</TableCell>
                               <TableCell className="text-sm text-center">{emp.completed}</TableCell>
+                              <TableCell className="text-sm text-center">{emp.averageRating ? `${emp.averageRating} ★ (${emp.ratingCount})` : '—'}</TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden max-w-[100px]">

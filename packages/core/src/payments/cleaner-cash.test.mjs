@@ -8,7 +8,7 @@ test('allows only assigned cleaner to receive cash for completed booking with ou
     totalAmount: 120,
     netAmount: 120,
     assignments: [{ employeeId: 'emp_cleaner1', employee: { userId: 'user_cleaner1' } }],
-    invoices: [{ paidAmount: 0, payments: [] }],
+    invoices: [{ paidAmount: 0, payments: [{ method: 'cash', status: 'cash_selected' }] }],
   }
 
   // Assigned cleaner can receive cash

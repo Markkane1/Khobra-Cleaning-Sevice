@@ -428,6 +428,15 @@ export function canCleanerSubmitCompletionTiming(currentStatus: string, assigned
   return Boolean(actingCleanerId && assignedCleanerIds.includes(actingCleanerId) && currentStatus === 'in_progress');
 }
 
+export function canCleanerCompleteBooking(currentStatus: string, targetStatus: string | undefined, assignedCleanerIds: string[], actingCleanerId: string | undefined): boolean {
+  return Boolean(actingCleanerId && assignedCleanerIds.includes(actingCleanerId) && normalizeBookingStatus(currentStatus) === 'in_progress' && (!targetStatus || normalizeBookingStatus(targetStatus) === 'completed'));
+}
+
+export const CleanerCompleteBookingSchema = z.object({
+  bookingId: z.string().min(1, 'Booking ID is required'),
+  notes: z.string().optional(),
+});
+
 export const shouldGeneratePickupAlert = (previous: boolean | undefined, current: boolean) => current && previous !== true;
 
 export function isValidStatusTransition(currentStatus: string, targetStatus: string): boolean {
@@ -519,7 +528,7 @@ export const AssignEmployeesSchema = z.object({
 
 export type AssignEmployeesDTO = z.infer<typeof AssignEmployeesSchema>;
 
-export const ALLOWED_RATINGS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0] as const;
+export const ALLOWED_RATINGS = [1, 2, 3, 4, 5] as const;
 
 export function isValidRating(rating: number): boolean {
   return ALLOWED_RATINGS.includes(rating as any);
@@ -529,15 +538,26 @@ export const RateEmployeeInputSchema = z.object({
   assignmentId: z.string().optional(),
   employeeId: z.string().min(1, 'Cleaner ID is required'),
   rating: z.number().refine(val => isValidRating(val), {
-    message: 'Rating must be one of: 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0',
+    message: 'Rating must be a whole number from 1 to 5',
   }),
-  notes: z.string().optional(),
+  notes: z.string().trim().max(500).optional(),
 });
 
 export const RateBookingEmployeesSchema = z.object({
   bookingId: z.string().min(1, 'Booking ID is required'),
+  overallRating: z.number().refine(val => isValidRating(val), {
+    message: 'Overall rating must be a whole number from 1 to 5',
+  }),
+  overallComment: z.string().trim().max(2000).optional(),
   ratings: z.array(RateEmployeeInputSchema).min(1, 'At least one rating is required'),
+}).superRefine((data, ctx) => {
+  const employeeIds = data.ratings.map(rating => rating.employeeId);
+  if (new Set(employeeIds).size !== employeeIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Each cleaner may be rated only once', path: ['ratings'] });
 });
+
+export function canCustomerRateBooking(bookingStatus: string, hasAlreadyRated: boolean): boolean {
+  return normalizeBookingStatus(bookingStatus) === 'completed' && !hasAlreadyRated;
+}
 
 export type RateEmployeeInput = z.infer<typeof RateEmployeeInputSchema>;
 export type RateBookingEmployeesDTO = z.infer<typeof RateBookingEmployeesSchema>;

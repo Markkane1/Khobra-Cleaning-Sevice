@@ -8,6 +8,7 @@ test('validates SubmitBankTransferSchema required fields', () => {
 
   const valid = SubmitBankTransferSchema.safeParse({
     bookingId: 'bk_123',
+    companyBankAccountId: 'acc_123',
     referenceNo: 'TRX-99887766',
     customerBankName: 'Emirates NBD',
     accountHolderName: 'John Doe',
@@ -22,6 +23,7 @@ test('validates SubmitBankTransferSchema required fields', () => {
 test('rejects negative or zero transfer amount in SubmitBankTransferSchema', () => {
   const invalid = SubmitBankTransferSchema.safeParse({
     bookingId: 'bk_123',
+    companyBankAccountId: 'acc_123',
     referenceNo: 'TRX-99887766',
     customerBankName: 'Emirates NBD',
     accountHolderName: 'John Doe',
@@ -53,5 +55,5 @@ test('requires decision remarks when Admin rejects bank transfer', () => {
     paymentId: 'pay_456',
     decision: 'reject',
   })
-  assert.equal(invalidRejectWithoutRemarks.success, true) // optional in base object, custom check handled in UI/repo
+  assert.equal(invalidRejectWithoutRemarks.success, false)
 })

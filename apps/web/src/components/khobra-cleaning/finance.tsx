@@ -621,6 +621,7 @@ export function Finance() {
               <div className="max-h-[440px] overflow-y-auto">
                 <Table><TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
                   <TableHead className="text-xs font-semibold">Invoice</TableHead>
+                  <TableHead className="text-xs font-semibold">Collected By</TableHead>
                   <TableHead className="text-xs font-semibold">Customer</TableHead>
                   <TableHead className="text-xs font-semibold hidden md:table-cell"><SortableHeader col={'issuedAt' as any}>Issued</SortableHeader></TableHead>
                   <TableHead className="text-xs font-semibold"><SortableHeader col={'totalAmount' as any}>Total</SortableHeader></TableHead>
@@ -630,7 +631,7 @@ export function Finance() {
                 </TableRow></TableHeader>
                 <TableBody>
                   {sortedInv.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                       <div className="flex flex-col items-center gap-2">
                         <Receipt className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
                         <p className="text-sm text-muted-foreground">No invoices found</p>
@@ -734,6 +735,7 @@ export function Finance() {
                           </div>
                         </TableCell>
                         <TableCell className="font-mono text-xs">{p.invoice?.invoiceNo}</TableCell>
+                        <TableCell className="text-xs">{p.method === 'cash' ? p.receivedByName || (p.status === 'cash_selected' ? 'Pending cleaner collection' : '-') : '-'}</TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.referenceNo || '-'}</TableCell>
                         <TableCell>
                           {p.proofUrl ? (

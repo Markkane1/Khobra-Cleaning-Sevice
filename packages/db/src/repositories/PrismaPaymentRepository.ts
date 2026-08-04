@@ -1,15 +1,19 @@
 import { IPaymentRepository } from '@repo/application';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 export class PrismaPaymentRepository implements IPaymentRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async getPayments(tenantId: string): Promise<any[]> {
-    return this.prisma.payment.findMany({
+    const payments = await this.prisma.payment.findMany({
       where: { tenantId },
       include: { invoice: { include: { customer: { include: { user: { select: { id: true, name: true } } } }, booking: { select: { bookingNo: true } } } } },
       orderBy: { createdAt: 'desc' },
     });
+    const receivers = await this.prisma.user.findMany({ where: { id: { in: payments.map(payment => payment.receivedBy).filter(Boolean) as string[] } }, select: { id: true, name: true } });
+    const receiverNames = new Map(receivers.map(receiver => [receiver.id, receiver.name]));
+    return payments.map(payment => ({ ...payment, receivedByName: payment.receivedBy ? receiverNames.get(payment.receivedBy) || payment.receivedBy : null }));
   }
 
   async createPayment(tenantId: string, data: any): Promise<any> {
@@ -40,6 +44,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     const { bookingId, method, customerBankName, accountHolderName, referenceNo, transferDate, proofUrl, notes } = data;
 
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, tenantId },
         include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } }, customer: true },
@@ -49,14 +54,17 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw new Error('Booking not found');
       }
 
+      if (booking.customer.userId !== userId) {
+        throw Object.assign(new Error('Customers may select a payment method only for their own booking'), { status: 403 });
+      }
+
       if (booking.status !== 'completed') {
         throw new Error('Payment selection is available only after the booking is Completed');
       }
 
       let invoice = booking.invoices[0];
       if (!invoice) {
-        const invCount = await tx.invoice.count({ where: { tenantId } });
-        const invoiceNo = `INV-${String(1000 + invCount).padStart(5, '0')}`;
+        const invoiceNo = `INV-${booking.bookingNo}`;
         invoice = await tx.invoice.create({
           data: {
             tenantId,
@@ -84,7 +92,14 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw new Error('Payment for this booking has already been verified and locked. An Admin must reopen the payment before changing the payment method.');
       }
 
-      const status = method === 'cash' ? 'cash_selected' : 'under_verification';
+
+      await tx.payment.updateMany({
+        where: { invoiceId: invoice.id, status: { in: ['payment_pending', 'cash_selected', 'bank_transfer_submitted', 'under_verification'] } },
+        data: { status: 'rejected', rejectedAt: new Date(), decisionRemarks: 'Superseded by a new customer payment-method selection' },
+      });
+
+      const bankTransferSubmitted = method === 'bank_transfer' && referenceNo && customerBankName && accountHolderName && proofUrl;
+      const status = method === 'cash' ? 'cash_selected' : bankTransferSubmitted ? 'under_verification' : 'payment_pending';
 
       const payment = await tx.payment.create({
         data: {
@@ -93,7 +108,11 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           amount: remainingPayable,
           method,
           status,
-          receivedBy: userId,
+          selectedBy: userId,
+          customerBankName: method === 'bank_transfer' ? customerBankName : null,
+          accountHolderName: method === 'bank_transfer' ? accountHolderName : null,
+          transferDate: method === 'bank_transfer' ? transferDate : null,
+          submittedAt: method === 'bank_transfer' ? new Date() : null,
           referenceNo: method === 'bank_transfer' ? referenceNo : (method === 'cash' ? `CASH-${Date.now()}` : null),
           proofUrl: method === 'bank_transfer' ? proofUrl : null,
           notes: notes || (method === 'bank_transfer' ? `Bank: ${customerBankName}, Holder: ${accountHolderName}` : 'Cash payment selected'),
@@ -121,19 +140,20 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw new Error('No invoice found for this booking');
       }
 
-      await tx.payment.updateMany({
-        where: { invoiceId: invoice.id, tenantId },
-        data: {
-          status: 'rejected',
-          notes: reason || `Payment reopened by Admin (${adminUserId})`,
-        },
+      const latestPayment = [...invoice.payments].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      if (!latestPayment || latestPayment.status === 'rejected') throw new Error('There is no locked payment to reopen');
+      const reversedAmount = ['verified', 'paid'].includes(latestPayment.status) ? latestPayment.amount : 0;
+      await tx.payment.update({
+        where: { id: latestPayment.id },
+        data: { status: 'rejected', rejectedAt: new Date(), verifiedBy: adminUserId, decisionRemarks: reason || 'Payment reopened by Admin' },
       });
 
+      const paidAmount = Math.max(0, invoice.paidAmount - reversedAmount);
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
-          status: 'issued',
-          paidAmount: 0,
+          status: paidAmount > 0 ? 'partially_paid' : 'issued',
+          paidAmount,
         },
       });
 
@@ -184,6 +204,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
 
   async cleanerReceiveCash(tenantId: string, cleanerUserId: string, bookingId: string, remarks?: string): Promise<any> {
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, tenantId },
         include: {
@@ -206,27 +227,11 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       );
 
       if (!assignedAssignment) {
-        throw new Error('Only a cleaner assigned to this booking can mark cash as received');
+        throw Object.assign(new Error('Only a cleaner assigned to this booking can mark cash as received'), { status: 403 });
       }
 
-      let invoice = booking.invoices[0];
-      if (!invoice) {
-        invoice = await tx.invoice.create({
-          data: {
-            tenantId,
-            bookingId: booking.id,
-            customerId: booking.customerId,
-            invoiceNo: `INV-${booking.bookingNo}`,
-            subtotal: booking.netAmount,
-            taxAmount: 0,
-            totalAmount: booking.netAmount,
-            paidAmount: 0,
-            status: 'issued',
-            dueDate: new Date(),
-          },
-          include: { payments: true },
-        });
-      }
+      const invoice = booking.invoices[0];
+      if (!invoice) throw new Error('Customer must select Pay Cash before cash can be received');
 
       const existingPaid = invoice.paidAmount || 0;
       const remainingPayable = Math.max(0, Math.round((booking.netAmount - existingPaid) * 100) / 100);
@@ -235,26 +240,22 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw new Error('Cash payment has already been completed for this booking');
       }
 
-      const existingPayment = invoice.payments?.find(p => p.status === 'verified' || p.status === 'paid');
+      const cashSelection = invoice.payments?.find(p => p.method === 'cash' && p.status === 'cash_selected');
+      const existingPayment = invoice.payments?.find(p => p.method === 'cash' && (p.status === 'verified' || p.status === 'paid'));
       if (existingPayment) {
         throw new Error('Cash payment has already been recorded and confirmed');
       }
+      if (!cashSelection) throw new Error('Customer must select Pay Cash before cash can be received');
 
       const now = new Date();
       const cleanerName = assignedAssignment.employee?.user?.name || 'Cleaner';
 
-      const payment = await tx.payment.create({
+      if (Math.abs(cashSelection.amount - remainingPayable) > 0.001) throw new Error('Collectible amount changed. Ask the customer or Admin to reselect the payment method');
+      const payment = await tx.payment.update({
+        where: { id: cashSelection.id },
         data: {
-          tenantId,
-          invoiceId: invoice.id,
-          amount: remainingPayable,
-          method: 'cash',
-          status: 'verified',
-          receivedBy: cleanerUserId,
-          verifiedBy: cleanerUserId,
-          verifiedAt: now,
-          referenceNo: `CASH-${booking.bookingNo}-${Date.now().toString().slice(-6)}`,
-          notes: remarks || `Cash received by cleaner ${cleanerName} (${assignedAssignment.employeeId}) on ${now.toISOString()}`,
+          status: 'verified', receivedBy: cleanerUserId, verifiedBy: cleanerUserId, verifiedAt: now,
+          notes: `${cashSelection.notes || 'Cash payment selected'}; ${remarks || `Cash received by cleaner ${cleanerName} (${assignedAssignment.employeeId}) on ${now.toISOString()}`}`,
         },
         include: {
           invoice: {
@@ -269,8 +270,8 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
-          paidAmount: booking.netAmount,
-          status: 'paid',
+          paidAmount: invoice.paidAmount + remainingPayable,
+          status: invoice.paidAmount + remainingPayable + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid',
         },
       });
 
@@ -287,21 +288,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
   }
 
   async getCompanyBankAccount(tenantId: string): Promise<any> {
-    const settingsList = await this.prisma.appSettings.findMany({
-      where: { key: { startsWith: 'bank' } },
-    });
-    const settings = Object.fromEntries(settingsList.map((item: any) => [item.key, item.value]));
-
-    return {
-      tenantId,
-      active: true,
-      accountTitle: settings.bankAccountTitle || 'Khobra Cleaning Services LLC',
-      bankName: settings.bankName || 'Emirates NBD',
-      accountNumber: settings.bankAccountNumber || '10154829384701',
-      iban: settings.bankIban || 'AE0302000010154829384701',
-      branchName: settings.bankBranch || 'Downtown Dubai Branch (Code: 020)',
-      instructions: settings.bankPaymentInstructions || 'Please include your Booking Reference in the transfer memo and upload a clear screenshot or PDF of your payment receipt.',
-    };
+    return (await this.getCompanyBankAccounts(tenantId))[0] || null;
   }
 
   async submitBankTransfer(tenantId: string, userId: string, data: any): Promise<any> {
@@ -352,6 +339,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           invoiceId: invoice.id,
           amount: data.transferAmount || remainingPayable,
           method: 'bank_transfer',
+          companyBankAccountId: data.companyBankAccountId,
           status: 'under_verification',
           referenceNo: data.referenceNo,
           proofUrl: data.proofUrl,
@@ -450,33 +438,11 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       }
     }
 
-    if (accounts.length === 0) {
-      accounts = [
-        {
-          id: `acc_default_${tenantId}`,
-          accountTitle: 'Khobra Cleaning Services LLC',
-          bankName: 'Emirates NBD',
-          accountNumber: '10154829384701',
-          iban: 'AE0302000010154829384701',
-          branchName: 'Downtown Dubai Branch',
-          branchCode: '020',
-          currency: 'AED',
-          instructions: 'Please include your Booking Reference in the transfer memo and upload a clear screenshot or PDF of your payment proof.',
-          displayOrder: 1,
-          isActive: true,
-          isDefault: true,
-          isDeleted: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ];
-    }
-
     if (!adminMode) {
       return accounts
         .filter(a => a.isActive !== false && !a.isDeleted)
         .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
-        .map(({ createdBy, updatedBy, ...customerSafe }) => customerSafe);
+        .map(({ createdBy, updatedBy, activatedBy, deactivatedBy, deletedBy, createdAt, updatedAt, activatedAt, deactivatedAt, deletedAt, isDeleted, ...customerSafe }) => customerSafe);
     }
 
     return accounts
@@ -499,11 +465,21 @@ export class PrismaPaymentRepository implements IPaymentRepository {
 
     const now = new Date().toISOString();
     const isNew = !data.id;
-    const accountId = data.id || `acc_${Date.now().toString().slice(-8)}`;
+    const accountId = data.id || `acc_${randomUUID()}`;
+    const existing = accounts.find(a => a.id === accountId);
+    if (!isNew && !existing) throw new Error('Company bank account not found');
+
+    const normalizedCurrency = String(data.currency || 'AED').toUpperCase();
+    const canonicalAccountNumber = String(data.accountNumber).replace(/[\s-]/g, '').toUpperCase();
+    const duplicate = accounts.find(a => a.id !== accountId && !a.isDeleted && a.currency === normalizedCurrency && (String(a.accountNumber).replace(/[\s-]/g, '').toUpperCase() === canonicalAccountNumber || (data.iban && a.iban === data.iban)));
+    if (duplicate) throw new Error('An account with this account number or IBAN already exists for the selected currency');
 
     if (data.isDefault) {
-      accounts = accounts.map(a => (a.currency === (data.currency || 'AED') ? { ...a, isDefault: false } : a));
+      accounts = accounts.map(a => (a.currency === normalizedCurrency ? { ...a, isDefault: false, updatedBy: userId, updatedAt: now } : a));
     }
+
+    const isActive = data.isActive !== undefined ? Boolean(data.isActive) : true;
+    const activationChanged = existing && existing.isActive !== isActive;
 
     const newOrUpdatedAccount = {
       id: accountId,
@@ -513,16 +489,20 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       iban: data.iban || '',
       branchName: data.branchName || '',
       branchCode: data.branchCode || '',
-      currency: data.currency || 'AED',
+      currency: normalizedCurrency,
       instructions: data.instructions || '',
       displayOrder: typeof data.displayOrder === 'number' ? data.displayOrder : parseInt(data.displayOrder || '0', 10),
-      isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
-      isDefault: Boolean(data.isDefault),
+      isActive,
+      isDefault: isActive && Boolean(data.isDefault),
       isDeleted: false,
-      createdBy: isNew ? userId : (accounts.find(a => a.id === accountId)?.createdBy || userId),
+      createdBy: isNew ? userId : (existing?.createdBy || userId),
       updatedBy: userId,
-      createdAt: isNew ? now : (accounts.find(a => a.id === accountId)?.createdAt || now),
+      activatedBy: isNew && isActive ? userId : activationChanged && isActive ? userId : existing?.activatedBy,
+      deactivatedBy: activationChanged && !isActive ? userId : existing?.deactivatedBy,
+      createdAt: isNew ? now : (existing?.createdAt || now),
       updatedAt: now,
+      activatedAt: isNew && isActive ? now : activationChanged && isActive ? now : existing?.activatedAt,
+      deactivatedAt: activationChanged && !isActive ? now : existing?.deactivatedAt,
     };
 
     if (isNew) {
@@ -550,13 +530,22 @@ export class PrismaPaymentRepository implements IPaymentRepository {
 
     let accounts: any[] = JSON.parse(setting.value);
     const target = accounts.find(a => a.id === accountId);
-    if (!target) {
+    if (!target || target.isDeleted) {
       throw new Error('Target company bank account not found');
     }
 
+    const now = new Date().toISOString();
     target.isActive = isActive;
+    if (!isActive) target.isDefault = false;
     target.updatedBy = userId;
-    target.updatedAt = new Date().toISOString();
+    target.updatedAt = now;
+    if (isActive) {
+      target.activatedBy = userId;
+      target.activatedAt = now;
+    } else {
+      target.deactivatedBy = userId;
+      target.deactivatedAt = now;
+    }
 
     await this.prisma.appSettings.update({
       where: { key },
@@ -581,17 +570,8 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     }
 
     const targetAccount = accounts[targetIndex];
-
     const referencedPayments = await this.prisma.payment.findFirst({
-      where: {
-        tenantId,
-        method: 'bank_transfer',
-        OR: [
-          { referenceNo: { contains: targetAccount.accountNumber } },
-          { notes: { contains: targetAccount.bankName } },
-          { notes: { contains: targetAccount.accountNumber } },
-        ],
-      },
+      where: { tenantId, method: 'bank_transfer', OR: [{ companyBankAccountId: accountId }, { companyBankAccountId: null, createdAt: { gte: new Date(targetAccount.createdAt || 0) } }] },
     });
 
     const now = new Date().toISOString();
@@ -601,6 +581,10 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       accounts[targetIndex].isDeleted = true;
       accounts[targetIndex].updatedBy = userId;
       accounts[targetIndex].updatedAt = now;
+      accounts[targetIndex].deactivatedBy = userId;
+      accounts[targetIndex].deactivatedAt = now;
+      accounts[targetIndex].deletedBy = userId;
+      accounts[targetIndex].deletedAt = now;
 
       await this.prisma.appSettings.update({
         where: { key },
@@ -627,4 +611,3 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     };
   }
 }
-

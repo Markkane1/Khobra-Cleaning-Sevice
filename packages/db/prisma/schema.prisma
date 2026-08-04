@@ -43,6 +43,7 @@ model Tenant {
   stockMovements            StockMovement[]
   payrollRecords            PayrollRecord[]
   completionTimingResponses BookingCompletionTimingResponse[]
+  bookingRatings            BookingRating[]
   notifications             Notification[]
 }
 
@@ -127,6 +128,7 @@ model Customer {
   bookings   Booking[]
   invoices   Invoice[]
   complaints Complaint[]
+  ratings    BookingRating[]
 }
 
 // ============ WORKFORCE - EMPLOYEES ============
@@ -256,6 +258,7 @@ model Booking {
   statusHistory             BookingStatusHistory[]
   completionTimingResponses BookingCompletionTimingResponse[]
   pickupAlerts              BookingPickupAlert[]
+  rating                    BookingRating?
 
   @@index([driverId])
 }
@@ -271,6 +274,23 @@ model BookingStatusHistory {
 
   booking       Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   notifications Notification[]
+}
+
+model BookingRating {
+  id            String   @id @default(cuid())
+  tenantId      String
+  bookingId     String   @unique
+  customerId    String
+  overallRating Int
+  comment       String?
+  submittedAt   DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([tenantId, submittedAt])
+  @@index([customerId])
 }
 
 model BookingCompletionTimingResponse {
@@ -434,7 +454,9 @@ model Payment {
   receivedBy        String?
   selectedBy        String?
   customerBankName  String?
-  accountHolderName String?
+    accountHolderName String?
+    companyBankAccountId String?
+    companyBankAccountSnapshot String?
   transferDate      DateTime?
   submittedAt       DateTime?
   verifiedBy        String?
@@ -446,8 +468,10 @@ model Payment {
   updatedAt         DateTime  @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  invoice Invoice @relation(fields: [invoiceId], references: [id])
-}
+    invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+    @@index([companyBankAccountId])
+  }
 
 // ============ INVENTORY ============
 

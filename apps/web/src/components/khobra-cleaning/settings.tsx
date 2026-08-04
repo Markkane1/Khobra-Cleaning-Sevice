@@ -16,7 +16,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
@@ -26,7 +25,6 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { CompanyBankAccounts } from './company-bank-accounts'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -52,14 +50,6 @@ export function Settings() {
   const [companyTaxRate, setCompanyTaxRate] = useState('0')
   const [companyPhone, setCompanyPhone] = useState('+971-4-1234567')
   const [companyAddress, setCompanyAddress] = useState('Block 9, Clifton, Dubai')
-  const [bankAccountActive, setBankAccountActive] = useState(false)
-  const [bankAccountTitle, setBankAccountTitle] = useState('')
-  const [bankName, setBankName] = useState('')
-  const [bankAccountNumber, setBankAccountNumber] = useState('')
-  const [bankIban, setBankIban] = useState('')
-  const [bankBranch, setBankBranch] = useState('')
-  const [bankPaymentInstructions, setBankPaymentInstructions] = useState('')
-
   const [firstBookingTime, setFirstBookingTime] = useState('08:00')
   const [lastWorkingTime, setLastWorkingTime] = useState('20:00')
 
@@ -89,14 +79,7 @@ export function Settings() {
     setLastWorkingTime(tenant.lastWorkingTime || '20:00')
     setCompanyPhone(savedSettings.phone || '')
     setCompanyAddress(savedSettings.address || '')
-    setBankAccountActive(savedSettings.bankAccountActive === 'true')
-    setBankAccountTitle(savedSettings.bankAccountTitle || '')
-    setBankName(savedSettings.bankName || '')
-    setBankAccountNumber(savedSettings.bankAccountNumber || '')
-    setBankIban(savedSettings.bankIban || '')
-    setBankBranch(savedSettings.bankBranch || '')
-    setBankPaymentInstructions(savedSettings.bankPaymentInstructions || '')
-  }, [tenant, savedSettings.phone, savedSettings.address, savedSettings.bankAccountActive, savedSettings.bankAccountTitle, savedSettings.bankName, savedSettings.bankAccountNumber, savedSettings.bankIban, savedSettings.bankBranch, savedSettings.bankPaymentInstructions])
+  }, [tenant, savedSettings.phone, savedSettings.address])
 
   // DB stats query
   const { data: dbStats } = useQuery({
@@ -158,7 +141,7 @@ export function Settings() {
       taxRate: Number(companyTaxRate),
       firstBookingTime,
       lastWorkingTime,
-      settings: { phone: companyPhone, address: companyAddress, bankAccountActive, bankAccountTitle, bankName, bankAccountNumber, bankIban, bankBranch, bankPaymentInstructions },
+      settings: { phone: companyPhone, address: companyAddress },
     })
   }
 
@@ -205,16 +188,67 @@ export function Settings() {
     { label: 'Framework', value: 'Next.js 16 (App Router)', icon: Layers },
     { label: 'Database', value: 'SQLite / Prisma ORM', icon: Database },
     { label: 'UI Library', value: 'shadcn/ui + Tailwind CSS 4', icon: Paintbrush },
-    { label: 'Operating Model', value: 'Single Company (Phase 1)', icon: Server },
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="flex gap-4">
-                        <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
-                        <Skeleton className="h-10 w-full" />
-                      </div>
-                    ))}
+    { label: 'Primary Domain', value: 'Hourly Cleaning & Field Service', icon: Building2 },
+    { label: 'Version', value: 'Phase 1 v1.0', icon: Info },
+    { label: 'SaaS Ready', value: 'Yes', icon: ShieldAlert },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <motion.div {...fadeUp}>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">Platform configuration and company settings</p>
+      </motion.div>
+
+      {/* Tabbed Layout */}
+      <motion.div {...fadeUp}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full max-w-lg grid-cols-4">
+            <TabsTrigger value="company" className="text-xs sm:text-sm">
+              <Building2 className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              Company
+            </TabsTrigger>
+            <TabsTrigger value="booking_hours" className="text-xs sm:text-sm">
+              <Clock className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              Booking Hours
+            </TabsTrigger>
+            <TabsTrigger value="system" className="text-xs sm:text-sm">
+              <Server className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              System
+            </TabsTrigger>
+            <TabsTrigger value="appearance" className="text-xs sm:text-sm">
+              <Paintbrush className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              Appearance
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Company Tab */}
+          <TabsContent value="company">
+            <motion.div {...fadeUp}>
+              <Card className="border-0 shadow-sm relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 to-teal-500" />
+                <CardHeader className="pl-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base">Company Information</CardTitle>
+                      <CardDescription>Edit your company details and preferences.</CardDescription>
+                    </div>
+                    <Badge variant="outline">{tenant?.status || 'active'}</Badge>
                   </div>
-                ) : (
-                  <div className="space-y-5">
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <div className="space-y-4">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="flex gap-4">
+                          <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
+                          <Skeleton className="h-10 w-full" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
                     {companyFields.map((field, index) => (
                       <div key={field.label}>
                         {index > 0 && <Separator className="mb-4" />}
@@ -236,21 +270,6 @@ export function Settings() {
                         </div>
                       </div>
                     ))}
-                    <Separator />
-                    <div className="space-y-4 rounded-xl border p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div><Label className="font-semibold">Bank Transfer Account</Label><p className="text-xs text-muted-foreground">Only active account details are shown to customers.</p></div>
-                        <Switch checked={bankAccountActive} onCheckedChange={setBankAccountActive} aria-label="Bank account active" />
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5"><Label>Account title</Label><Input value={bankAccountTitle} onChange={event => setBankAccountTitle(event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label>Bank name</Label><Input value={bankName} onChange={event => setBankName(event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label>Account number</Label><Input value={bankAccountNumber} onChange={event => setBankAccountNumber(event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label>IBAN</Label><Input value={bankIban} onChange={event => setBankIban(event.target.value)} /></div>
-                        <div className="space-y-1.5"><Label>Branch name or code</Label><Input value={bankBranch} onChange={event => setBankBranch(event.target.value)} /></div>
-                      </div>
-                      <div className="space-y-1.5"><Label>Payment instructions</Label><Textarea value={bankPaymentInstructions} onChange={event => setBankPaymentInstructions(event.target.value)} /></div>
-                    </div>
                     <Separator />
                     <div className="flex justify-end pt-2">
                       <Button

@@ -33,6 +33,10 @@ export const khobraBookingGateway: BookingGateway = {
     method: 'PUT',
     body: JSON.stringify({ id, status }),
   }, token),
+  completeBooking: (bookingId, token) => request('/api/khobra-cleaning/bookings/cleaner-complete', {
+    method: 'POST',
+    body: JSON.stringify({ bookingId }),
+  }, token),
   submitCompletionTiming: (bookingId, withinScheduledTime, token) => request<CompletionTimingResponse>('/api/khobra-cleaning/bookings/completion-timing', {
     method: 'POST',
     body: JSON.stringify({ bookingId, withinScheduledTime }),
@@ -40,6 +44,15 @@ export const khobraBookingGateway: BookingGateway = {
   getPickupAlerts: (token) => request<PickupAlert[]>('/api/khobra-cleaning/bookings/pickup-alerts', {}, token),
   markPickupAlertViewed: (id, token) => request<PickupAlert>('/api/khobra-cleaning/bookings/pickup-alerts', {
     method: 'PUT', body: JSON.stringify({ id }),
+  }, token),
+  selectPaymentMethod: (bookingId, method, token) => request('/api/khobra-cleaning/bookings/payment-method', {
+    method: 'POST', body: JSON.stringify({ bookingId, method }),
+  }, token),
+  receiveCash: (bookingId, token) => request('/api/khobra-cleaning/bookings/cleaner-cash', {
+    method: 'POST', body: JSON.stringify({ bookingId }),
+  }, token),
+  submitRating: (bookingId, overallRating, overallComment, ratings, token) => request<Booking>('/api/khobra-cleaning/bookings/rate', {
+    method: 'POST', body: JSON.stringify({ bookingId, overallRating, overallComment, ratings }),
   }, token),
 }
 

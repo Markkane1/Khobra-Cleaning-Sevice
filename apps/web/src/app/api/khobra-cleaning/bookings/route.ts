@@ -23,7 +23,9 @@ export async function GET(req: NextRequest) {
       bookings = bookings.filter(booking => booking.customerId === customer?.id)
     } else if (auth.session.role === 'cleaner') {
       const cleaner = await db.employee.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
-      bookings = bookings.filter(booking => booking.assignments?.some(assignment => assignment.employeeId === cleaner?.id))
+      bookings = bookings
+        .filter(booking => booking.assignments?.some(assignment => assignment.employeeId === cleaner?.id))
+        .map(booking => ({ ...booking, assignments: booking.assignments?.filter(assignment => assignment.employeeId === cleaner?.id) }))
     } else if (auth.session.role === 'driver') {
       const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
       bookings = bookings.filter(booking => booking.driverId === driver?.id)
@@ -96,6 +98,8 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Only the assigned driver may change a Scheduled booking to On the Way' }, { status: 403 })
     if (validatedData.status === 'in_progress' && role !== 'cleaner')
       return NextResponse.json({ error: 'Only an assigned cleaner may start work on an On the Way booking' }, { status: 403 })
+    if (validatedData.status === 'completed')
+      return NextResponse.json({ error: 'Assigned cleaners must use Complete Booking to finish an In Progress booking' }, { status: 403 })
     if (role === 'customer' && (booking.customer.userId !== auth.session.userId || validatedData.status !== 'cancelled'))
       return NextResponse.json({ error: 'Customers may only cancel their own bookings' }, { status: 403 })
     if (role === 'driver') {
@@ -110,7 +114,7 @@ export async function PUT(req: NextRequest) {
       const cleaner = await db.employee.findFirst({ where: { tenantId: booking.tenantId, userId: auth.session.userId } })
       const assignedCleanerIds = booking.assignments.map(assignment => assignment.employeeId)
       if (!cleaner || !assignedCleanerIds.includes(cleaner.id)) return NextResponse.json({ error: 'Only a cleaner assigned to this booking may update its status' }, { status: 403 })
-      const allowed = canCleanerStartWork(booking.status, validatedData.status, assignedCleanerIds, cleaner.id) || (booking.status === 'in_progress' && validatedData.status === 'completed')
+      const allowed = canCleanerStartWork(booking.status, validatedData.status, assignedCleanerIds, cleaner.id)
       if (!allowed) return NextResponse.json({ error: 'Start Work is only available when an assigned booking is On the Way' }, { status: 403 })
       authorizedEmployeeId = cleaner.id
     }

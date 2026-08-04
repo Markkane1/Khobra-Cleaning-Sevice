@@ -11,7 +11,7 @@ const paymentService = new PaymentService(paymentRepository)
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['customer', 'admin'])
+    const auth = await requireAuth(req, ['customer'])
     if ('response' in auth) return auth.response
 
     const body = await req.json()

@@ -19,6 +19,7 @@ type ViewId =
   | 'login'
   | 'signup'
   | 'profile'
+  | 'company_bank_accounts'
   | 'notifications'
 
 type RoleId = 'admin' | 'customer' | 'cleaner' | 'driver'

@@ -38,6 +38,6 @@ export interface IBookingRepository {
   create(tenantId: string, data: CreateBookingDTO): Promise<Booking>;
   update(id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
   assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean): Promise<Booking>;
-  rateBookingEmployees(bookingId: string, ratings: RateEmployeeInput[]): Promise<Booking>;
+  rateBookingEmployees(bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking>;
   delete(id: string): Promise<void>;
 }

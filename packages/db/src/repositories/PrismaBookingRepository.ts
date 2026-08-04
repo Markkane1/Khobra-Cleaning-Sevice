@@ -1,10 +1,10 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { IBookingRepository, Booking } from '@repo/application';
-import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, isValidRating, validateBookingConfirmationDTO, validateBookingHours, employeeHasRequiredSkills, getRequiredSkills } from '@repo/core';
+import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, employeeHasRequiredSkills, getRequiredSkills } from '@repo/core';
 
 type StatusTransition = { id: string; previousStatus: string; newStatus: string; createdAt: Date };
 
-async function notifyStatusChange(db: PrismaClient, bookingId: string, transition?: StatusTransition) {
+export async function notifyBookingStatusChange(db: PrismaClient, bookingId: string, transition?: StatusTransition) {
   if (!transition) return;
   try {
     const booking = await db.booking.findUnique({
@@ -69,6 +69,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
         pickupAlerts: { orderBy: { generatedAt: 'desc' } },
         invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
+        rating: true,
       },
       orderBy: { scheduledDate: 'desc' },
     }) as unknown as Booking[];
@@ -88,6 +89,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
         pickupAlerts: { orderBy: { generatedAt: 'desc' } },
         invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
+        rating: true,
       }
     }) as unknown as Booking | null;
   }
@@ -386,7 +388,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         return { booking: created, transition };
       });
 
-      await notifyStatusChange(this.db, result.booking.id, result.transition);
+    await notifyBookingStatusChange(this.db, result.booking.id, result.transition);
       createdBookings.push(result.booking);
     }
 
@@ -395,7 +397,7 @@ export class PrismaBookingRepository implements IBookingRepository {
 
   async update(id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
     const result = await this.db.$transaction(tx => this.updateWithDb(tx, id, data, changedBy, requiredDriverId, requiredEmployeeId));
-    await notifyStatusChange(this.db, id, result.transition);
+    await notifyBookingStatusChange(this.db, id, result.transition);
     return result.booking;
   }
 
@@ -956,37 +958,30 @@ export class PrismaBookingRepository implements IBookingRepository {
     }) as unknown as Booking;
     return { booking, transition };
     });
-    await notifyStatusChange(this.db, bookingId, result.transition);
+    await notifyBookingStatusChange(this.db, bookingId, result.transition);
     return result.booking;
   }
 
-  async rateBookingEmployees(bookingId: string, ratings: RateEmployeeInput[]): Promise<Booking> {
-    const booking = await this.db.booking.findUnique({
-      where: { id: bookingId },
-      include: { assignments: true },
-    });
-
-    if (!booking) throw new Error('Booking not found');
-    if (booking.status !== 'completed') {
-      throw new Error('Customer rating can only be submitted for completed bookings');
-    }
-
-    for (const r of ratings) {
-      if (!isValidRating(r.rating)) {
-        throw new Error(`Invalid rating ${r.rating}. Ratings must be between 1.0 and 5.0 in 0.5 step increments.`);
+  async rateBookingEmployees(bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking> {
+    await this.db.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
+      const booking = await tx.booking.findUnique({ where: { id: bookingId }, include: { assignments: true, rating: true } });
+      if (!booking) throw new Error('Booking not found');
+      if (booking.customerId !== customerId) throw new Error('You may only rate your own booking');
+      if (booking.status !== 'completed') throw new Error('Customer rating can only be submitted for completed bookings');
+      if (booking.rating) throw new Error('Rating has already been submitted for this booking');
+      if (ratings.length !== booking.assignments.length || !booking.assignments.every(assignment => ratings.some(rating => rating.employeeId === assignment.employeeId))) {
+        throw new Error('Submit one rating for every cleaner assigned to this booking');
       }
 
-      const targetAssignment = booking.assignments.find(a => a.employeeId === r.employeeId || a.id === r.assignmentId);
-      if (!targetAssignment) throw new Error('Ratings may only be submitted for cleaners assigned to this booking');
-      await this.db.assignment.update({
-        where: { id: targetAssignment.id },
-        data: {
-          customerRating: r.rating,
-          ratingNotes: r.notes || null,
-        },
+      await Promise.all(booking.assignments.map(assignment => {
+        const rating = ratings.find(item => item.employeeId === assignment.employeeId)!;
+        return tx.assignment.update({ where: { id: assignment.id }, data: { customerRating: rating.rating, ratingNotes: rating.notes || null } });
+      }));
+      await tx.bookingRating.create({
+        data: { tenantId: booking.tenantId, bookingId, customerId, overallRating, comment: overallComment || null },
       });
-    }
-
+    });
     return this.findById(bookingId) as Promise<Booking>;
   }
 

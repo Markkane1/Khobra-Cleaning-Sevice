@@ -44,6 +44,7 @@ const RBACManagement = dynamic(() => import('@/components/khobra-cleaning/rbac')
 const CustomerProfile = dynamic(() => import('@/components/khobra-cleaning/profile').then(m => ({ default: m.CustomerProfile })), { loading: () => <PageSkeleton />, ssr: false })
 const NotificationManagement = dynamic(() => import('@/components/khobra-cleaning/notifications-management').then(m => ({ default: m.NotificationManagement })), { loading: () => <PageSkeleton />, ssr: false })
 const SettingsPage = dynamic(() => import('@/components/khobra-cleaning/settings').then(m => ({ default: m.Settings })), { loading: () => <PageSkeleton />, ssr: false })
+const CompanyBankAccountsPage = dynamic(() => import('@/components/khobra-cleaning/company-bank-accounts').then(m => ({ default: m.CompanyBankAccounts })), { loading: () => <PageSkeleton />, ssr: false })
 
 function PageSkeleton() {
   return (
@@ -72,6 +73,7 @@ const navItems: { id: ViewId; label: string; icon: React.ElementType; roles: Rol
   { id: 'employees', label: 'Cleaners', icon: UserCheck, roles: ['admin'], description: 'Cleaner management' },
   { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['admin', 'customer'], description: 'Booking management and scheduling' },
   { id: 'finance', label: 'Finance', icon: Wallet, roles: ['admin'], description: 'Invoices and payments' },
+  { id: 'company_bank_accounts', label: 'Company Bank Accounts', icon: Building2, roles: ['admin'], description: 'Manage company bank accounts for customer transfers' },
   { id: 'dispatch', label: 'Dispatch', icon: Truck, roles: ['admin'], description: 'Driver and trip management' },
   { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin'], description: 'Stock and vendor management' },
   { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin'], description: 'Analytics and insights' },
@@ -91,6 +93,7 @@ const viewPathMap: Record<ViewId, string> = {
   employees: '/employees',
   bookings: '/bookings',
   finance: '/finance',
+  company_bank_accounts: '/company-bank-accounts',
   dispatch: '/dispatch',
   inventory: '/inventory',
   reports: '/reports',
@@ -127,6 +130,7 @@ const viewTitles: Record<ViewId, string> = {
   employees: 'Cleaners',
   bookings: 'Bookings',
   finance: 'Finance',
+  company_bank_accounts: 'Company Bank Accounts',
   dispatch: 'Dispatch',
   inventory: 'Inventory',
   reports: 'Reports',
@@ -436,6 +440,7 @@ function ViewRenderer({ view, currentRole, allowedPages }: { view: ViewId; curre
       case 'rbac': return RBACManagement
       case 'profile': return CustomerProfile
       case 'notifications': return NotificationManagement
+      case 'company_bank_accounts': return CompanyBankAccountsPage
       case 'settings': return SettingsPage
       default: return Dashboard
     }

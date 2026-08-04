@@ -11,7 +11,7 @@ const paymentService = new PaymentService(paymentRepository)
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['cleaner', 'admin'])
+    const auth = await requireAuth(req, ['cleaner'])
     if ('response' in auth) return auth.response
 
     const body = await req.json()
@@ -31,6 +31,6 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message || 'Invalid cash receipt data' }, { status: 400 })
     }
-    return NextResponse.json({ error: error.message || 'Failed to record cash payment' }, { status: 400 })
+    return NextResponse.json({ error: error.message || 'Failed to record cash payment' }, { status: error.status || 400 })
   }
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { calculateBookingFinancials, SelectPaymentMethodSchema, ReopenPaymentSchema } from './schema.ts'
+import { calculateBookingFinancials, canCleanerReceiveCash, SelectPaymentMethodSchema, ReopenPaymentSchema } from './schema.ts'
 
 test('allows payment method selection only when booking is completed and has outstanding balance', () => {
   const inProgressBooking = {
@@ -59,7 +59,7 @@ test('locks payment method selection when payment status is paid', () => {
   assert.equal(financials.remainingPayableAmount, 0)
 })
 
-test('validates SelectPaymentMethodSchema for cash and bank transfer options', () => {
+test('validates explicit cash and bank-transfer method selections', () => {
   // Cash selection (valid without bank fields)
   const validCash = SelectPaymentMethodSchema.safeParse({
     bookingId: 'bk_123',
@@ -67,12 +67,11 @@ test('validates SelectPaymentMethodSchema for cash and bank transfer options', (
   })
   assert.equal(validCash.success, true)
 
-  // Bank transfer selection (requires reference, bank name, account holder, proof)
-  const invalidBank = SelectPaymentMethodSchema.safeParse({
+  const validBankSelection = SelectPaymentMethodSchema.safeParse({
     bookingId: 'bk_123',
     method: 'bank_transfer',
   })
-  assert.equal(invalidBank.success, false)
+  assert.equal(validBankSelection.success, true)
 
   const validBank = SelectPaymentMethodSchema.safeParse({
     bookingId: 'bk_123',
@@ -91,4 +90,11 @@ test('validates ReopenPaymentSchema for admin payment reopening', () => {
     reason: 'Customer wants to change payment method from Cash to Bank Transfer',
   })
   assert.equal(validReopen.success, true)
+})
+
+test('cash receipt requires an assigned cleaner and an explicit cash selection', () => {
+  const booking = { status: 'completed', totalAmount: 100, netAmount: 100, assignments: [{ employeeId: 'cleaner-1' }], invoices: [{ paidAmount: 0, payments: [{ method: 'cash', status: 'cash_selected' }] }] }
+  assert.equal(canCleanerReceiveCash(booking, 'cleaner-1').canReceive, true)
+  assert.equal(canCleanerReceiveCash(booking, 'cleaner-2').canReceive, false)
+  assert.equal(canCleanerReceiveCash({ ...booking, invoices: [{ paidAmount: 0, payments: [{ method: 'bank_transfer', status: 'payment_pending' }] }] }, 'cleaner-1').canReceive, false)
 })
