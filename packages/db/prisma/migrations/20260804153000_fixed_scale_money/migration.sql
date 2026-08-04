@@ -1,0 +1,15 @@
+ALTER TABLE "Tenant" ALTER COLUMN "taxRate" TYPE DECIMAL(7,6) USING ROUND("taxRate"::numeric, 6);
+ALTER TABLE "TransactionSnapshot" ALTER COLUMN "hourlyRate" TYPE DECIMAL(14,2) USING ROUND("hourlyRate"::numeric, 2), ALTER COLUMN "subtotal" TYPE DECIMAL(14,2) USING ROUND("subtotal"::numeric, 2), ALTER COLUMN "taxAmount" TYPE DECIMAL(14,2) USING ROUND("taxAmount"::numeric, 2), ALTER COLUMN "discount" TYPE DECIMAL(14,2) USING ROUND("discount"::numeric, 2), ALTER COLUMN "totalAmount" TYPE DECIMAL(14,2) USING ROUND("totalAmount"::numeric, 2);
+ALTER TABLE "Service" ALTER COLUMN "baseRate" TYPE DECIMAL(14,2) USING ROUND("baseRate"::numeric, 2);
+ALTER TABLE "Employee" ALTER COLUMN "baseSalary" TYPE DECIMAL(14,2) USING ROUND("baseSalary"::numeric, 2);
+ALTER TABLE "Booking" ALTER COLUMN "materialsCost" TYPE DECIMAL(14,2) USING ROUND("materialsCost"::numeric, 2), ALTER COLUMN "hourlyRate" TYPE DECIMAL(14,2) USING ROUND("hourlyRate"::numeric, 2), ALTER COLUMN "totalAmount" TYPE DECIMAL(14,2) USING ROUND("totalAmount"::numeric, 2), ALTER COLUMN "discount" TYPE DECIMAL(14,2) USING ROUND("discount"::numeric, 2), ALTER COLUMN "netAmount" TYPE DECIMAL(14,2) USING ROUND("netAmount"::numeric, 2);
+ALTER TABLE "BookingItem" ALTER COLUMN "hourlyRate" TYPE DECIMAL(14,2) USING ROUND("hourlyRate"::numeric, 2), ALTER COLUMN "totalAmount" TYPE DECIMAL(14,2) USING ROUND("totalAmount"::numeric, 2);
+ALTER TABLE "BookingMaterial" ALTER COLUMN "unitPrice" TYPE DECIMAL(14,2) USING ROUND("unitPrice"::numeric, 2), ALTER COLUMN "totalAmount" TYPE DECIMAL(14,2) USING ROUND("totalAmount"::numeric, 2);
+ALTER TABLE "DriverExpense" ALTER COLUMN "amount" TYPE DECIMAL(14,2) USING ROUND("amount"::numeric, 2);
+ALTER TABLE "BusinessExpense" ALTER COLUMN "amount" TYPE DECIMAL(14,2) USING ROUND("amount"::numeric, 2);
+ALTER TABLE "Invoice" ALTER COLUMN "subtotal" TYPE DECIMAL(14,2) USING ROUND("subtotal"::numeric, 2), ALTER COLUMN "taxAmount" TYPE DECIMAL(14,2) USING ROUND("taxAmount"::numeric, 2), ALTER COLUMN "discount" TYPE DECIMAL(14,2) USING ROUND("discount"::numeric, 2), ALTER COLUMN "totalAmount" TYPE DECIMAL(14,2) USING ROUND("totalAmount"::numeric, 2), ALTER COLUMN "paidAmount" TYPE DECIMAL(14,2) USING ROUND("paidAmount"::numeric, 2);
+ALTER TABLE "Payment" ALTER COLUMN "amount" TYPE DECIMAL(14,2) USING ROUND("amount"::numeric, 2);
+ALTER TABLE "InventoryItem" ALTER COLUMN "costPrice" TYPE DECIMAL(14,2) USING ROUND("costPrice"::numeric, 2), ALTER COLUMN "sellPrice" TYPE DECIMAL(14,2) USING ROUND("sellPrice"::numeric, 2);
+ALTER TABLE "VendorItem" ALTER COLUMN "unitPrice" TYPE DECIMAL(14,2) USING ROUND("unitPrice"::numeric, 2);
+ALTER TABLE "StockMovement" ALTER COLUMN "unitCost" TYPE DECIMAL(14,2) USING ROUND("unitCost"::numeric, 2);
+ALTER TABLE "PayrollRecord" ALTER COLUMN "baseSalary" TYPE DECIMAL(14,2) USING ROUND("baseSalary"::numeric, 2), ALTER COLUMN "allowances" TYPE DECIMAL(14,2) USING ROUND("allowances"::numeric, 2), ALTER COLUMN "deductions" TYPE DECIMAL(14,2) USING ROUND("deductions"::numeric, 2), ALTER COLUMN "netSalary" TYPE DECIMAL(14,2) USING ROUND("netSalary"::numeric, 2);

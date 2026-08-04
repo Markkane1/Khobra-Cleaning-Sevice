@@ -7,6 +7,7 @@ export interface Booking {
   status: string
   totalAmount: number
   netAmount: number
+  currency: string
   discount?: number
   materialsCost?: number
   customer?: { name?: string; user?: { name?: string } }
@@ -53,9 +54,34 @@ export interface DriverTrip {
 
 export interface CreateBookingInput {
   customerId: string
-  serviceId: string
+  serviceIds: string[]
   scheduledDate: string
   startTime: string
   endTime: string
   address?: string
+}
+
+export interface CompanyBankAccount {
+  id: string
+  accountTitle: string
+  bankName: string
+  accountNumber: string
+  iban?: string | null
+  branchName?: string | null
+  branchCode?: string | null
+  currency: string
+  instructions?: string | null
+  isDefault: boolean
+}
+
+export interface BankTransferInput {
+  bookingId: string
+  companyBankAccountId: string
+  referenceNo: string
+  customerBankName: string
+  accountHolderName: string
+  transferDate: string
+  transferAmount: number
+  proofUrl: string
+  remarks?: string
 }

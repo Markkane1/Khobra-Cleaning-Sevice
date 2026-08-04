@@ -32,12 +32,14 @@ export interface Booking {
   assignments?: any[];
 }
 
+export type BookingActor = { userId: string; role: 'admin' | 'driver' | 'customer' | 'cleaner'; name: string };
+
 export interface IBookingRepository {
   findManyByTenant(tenantId: string): Promise<Booking[]>;
   findById(id: string): Promise<Booking | null>;
   create(tenantId: string, data: CreateBookingDTO): Promise<Booking>;
-  update(id: string, data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
-  assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean): Promise<Booking>;
+  update(id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
+  assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor): Promise<Booking>;
   rateBookingEmployees(bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking>;
   delete(id: string): Promise<void>;
 }

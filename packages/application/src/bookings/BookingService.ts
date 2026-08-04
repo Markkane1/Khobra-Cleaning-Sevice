@@ -1,5 +1,5 @@
 import { CreateBookingDTO, UpdateBookingDTO } from '@repo/core';
-import { IBookingRepository, Booking } from './IBookingRepository';
+import { IBookingRepository, Booking, BookingActor } from './IBookingRepository';
 
 export class BookingService {
   constructor(private readonly bookingRepository: IBookingRepository) {}
@@ -14,16 +14,16 @@ export class BookingService {
     return this.bookingRepository.create(tenantId, data);
   }
 
-  async updateBooking(data: UpdateBookingDTO, changedBy?: string, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
+  async updateBooking(data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
     const existing = await this.bookingRepository.findById(data.id);
     if (!existing) throw new Error('Booking not found');
-    return this.bookingRepository.update(data.id, data, changedBy, requiredDriverId, requiredEmployeeId);
+    return this.bookingRepository.update(data.id, data, actor, requiredDriverId, requiredEmployeeId);
   }
 
-  async assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean): Promise<Booking> {
+  async assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor): Promise<Booking> {
     const existing = await this.bookingRepository.findById(bookingId);
     if (!existing) throw new Error('Booking not found');
-    return this.bookingRepository.assignEmployees(bookingId, employeeIds, autoAssign);
+    return this.bookingRepository.assignEmployees(bookingId, employeeIds, autoAssign, actor);
   }
 
   async deleteBooking(id: string): Promise<void> {

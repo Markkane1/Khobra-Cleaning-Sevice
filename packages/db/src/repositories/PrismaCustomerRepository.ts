@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { ICustomerRepository, Customer } from '@repo/application';
 import { CreateCustomerDTO, UpdateCustomerDTO } from '@repo/core';
+import { hashPassword } from '../password';
 
 export class PrismaCustomerRepository implements ICustomerRepository {
   constructor(private readonly db: PrismaClient) {}
@@ -21,7 +22,7 @@ export class PrismaCustomerRepository implements ICustomerRepository {
   }
 
   async create(tenantId: string, data: CreateCustomerDTO): Promise<Customer> {
-    const { email, name, phone, ...custData } = data;
+    const { email, name, phone, temporaryPassword, ...custData } = data;
     
     return this.db.$transaction(async tx => {
       const user = await tx.user.create({
@@ -30,6 +31,7 @@ export class PrismaCustomerRepository implements ICustomerRepository {
           email,
           name,
           phone,
+          passwordHash: hashPassword(temporaryPassword),
           role: 'customer',
           status: 'active',
         },

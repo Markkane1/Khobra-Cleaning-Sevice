@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { IEmployeeRepository, Employee } from '@repo/application';
 import { CreateEmployeeDTO, UpdateEmployeeDTO } from '@repo/core';
+import { nextReference } from '../reference-sequence';
+import { hashPassword } from '../password';
 
 export class PrismaEmployeeRepository implements IEmployeeRepository {
   constructor(private readonly db: PrismaClient) {}
@@ -38,11 +40,10 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
   }
 
   async create(tenantId: string, data: CreateEmployeeDTO): Promise<Employee> {
-    const { email, name, phone, ...empData } = data;
+    const { email, name, phone, temporaryPassword, ...empData } = data;
     
     return this.db.$transaction(async tx => {
-      const count = await tx.employee.count({ where: { tenantId } });
-      const code = `EMP-${String(count + 1).padStart(3, '0')}`;
+      const code = await nextReference(tx, tenantId, 'employee', 'EMP', 4, 0);
       
       const user = await tx.user.create({
         data: {
@@ -50,6 +51,7 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
           email,
           name,
           phone,
+          passwordHash: hashPassword(temporaryPassword),
           role: 'cleaner',
           status: 'active',
         },

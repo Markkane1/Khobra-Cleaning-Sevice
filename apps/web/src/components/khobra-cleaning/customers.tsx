@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { exportToCSV } from '@/lib/csv-export'
@@ -71,6 +72,7 @@ const emptyForm = {
   area: '',
   addresses: [] as Array<{ label: string; address: string; city: string; area: string }>,
   notes: '',
+  temporaryPassword: '',
 }
 
 /* ------------------------------------------------------------------ */
@@ -78,6 +80,7 @@ const emptyForm = {
 /* ------------------------------------------------------------------ */
 
 export function Customers() {
+  const currency = useTenantCurrency()
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null)
@@ -168,6 +171,7 @@ export function Customers() {
       area: primaryAddress?.area || c.area || '',
       addresses: savedAddresses.slice(1).map((address: any) => ({ label: address.label || '', address: address.address || '', city: address.city || '', area: address.area || '' })),
       notes: c.notes || '',
+      temporaryPassword: '',
     })
     setEditId(c.id)
     setOpen(true)
@@ -311,6 +315,7 @@ export function Customers() {
                     />
                   </div>
                 </div>
+                {!editId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} /></div>}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Phone</Label>
@@ -403,7 +408,7 @@ export function Customers() {
           { icon: Users, label: 'Total Customers', value: stats.total, color: 'bg-emerald-600', sub: `${stats.active} active` },
           { icon: UserCheck, label: 'Active', value: stats.active, color: 'bg-teal-600', sub: `${stats.total > 0 ? Math.round((stats.active / stats.total) * 100) : 0}% of total` },
           { icon: CalendarDays, label: 'Total Bookings', value: stats.totalBookings, color: 'bg-cyan-600', sub: `Avg ${stats.avgBookings}/customer` },
-          { icon: DollarSign, label: 'Est. Revenue', value: `AED ${(stats.totalRevenue / 1000).toFixed(0)}K`, color: 'bg-emerald-500', sub: `Based on bookings` },
+          { icon: DollarSign, label: 'Est. Revenue', value: `${currency} ${(stats.totalRevenue / 1000).toFixed(0)}K`, color: 'bg-emerald-500', sub: `Based on bookings` },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card className="border-0 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -794,7 +799,7 @@ export function Customers() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="hidden sm:table-cell text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                                  AED {c.revenue?.toLocaleString() || "0"}
+                                  {currency} {c.revenue?.toLocaleString() || "0"}
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-1.5">

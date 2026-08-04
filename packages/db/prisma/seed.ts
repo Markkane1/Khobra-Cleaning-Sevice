@@ -1,12 +1,7 @@
 import { PrismaClient } from '@prisma/client'
-import crypto from 'crypto'
+import { hashPassword } from '../src/password'
 
 const prisma = new PrismaClient()
-
-function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex')
-  return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString('hex')}`
-}
 
 async function main() {
   console.log('Seeding Khobra Cleaning Service database...')
@@ -14,14 +9,14 @@ async function main() {
   // 1. Tenant
   const tenant = await prisma.tenant.upsert({
     where: { slug: 'khobra-cleaners' },
-    update: {},
+    update: { taxRate: 0.05 },
     create: {
       name: 'Khobra Cleaning Services',
       slug: 'khobra-cleaners',
       currency: 'AED',
       locale: 'en-AE',
       timezone: 'Asia/Dubai',
-      taxRate: 5.0,
+      taxRate: 0.05,
       firstBookingTime: '08:00',
       lastWorkingTime: '20:00',
       status: 'active',
@@ -147,6 +142,8 @@ async function main() {
         currency: 'AED',
         isDefault: true,
         isActive: true,
+        createdBy: adminUser.id,
+        updatedBy: adminUser.id,
       },
     })
   }
@@ -176,16 +173,7 @@ async function main() {
     }
   }
 
-  // 8. Fix existing passwordless users by giving them default password
-  const passwordlessUsers = await prisma.user.findMany({ where: { passwordHash: null } })
-  for (const user of passwordlessUsers) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash: hashPassword('Khobra2026!') },
-    })
-  }
-
-  // 9. Fix completed bookings without invoices (FIN-013)
+  // 8. Fix completed bookings without invoices (FIN-013)
   const completedWithoutInvoice = await prisma.booking.findMany({
     where: { status: 'completed', invoices: { none: {} } },
   })
@@ -205,7 +193,7 @@ async function main() {
     })
   }
 
-  console.log(`Seeding complete. Updated ${passwordlessUsers.length} passwordless users, fixed ${completedWithoutInvoice.length} orphan completed bookings.`)
+  console.log(`Seeding complete. Ensured one credential per role and fixed ${completedWithoutInvoice.length} orphan completed bookings.`)
 }
 
 

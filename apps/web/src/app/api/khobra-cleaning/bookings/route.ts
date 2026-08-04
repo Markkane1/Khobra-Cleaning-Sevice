@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
       bookings = bookings.filter(booking => booking.driverId === driver?.id)
     }
-    return NextResponse.json(bookings)
+    return NextResponse.json(bookings.map(booking => ({ ...booking, currency: tenant.currency })))
   } catch {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
@@ -126,7 +126,7 @@ export async function PUT(req: NextRequest) {
       : role === 'customer'
         ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason, cancelledBy: 'customer' as const }
         : { id: validatedData.id, status: validatedData.status }
-    const updated = await bookingService.updateBooking(updateData, `${role}: ${auth.session.name} (${auth.session.userId})`, authorizedDriverId, authorizedEmployeeId)
+    const updated = await bookingService.updateBooking(updateData, { userId: auth.session.userId, role, name: auth.session.name }, authorizedDriverId, authorizedEmployeeId)
     
     broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)

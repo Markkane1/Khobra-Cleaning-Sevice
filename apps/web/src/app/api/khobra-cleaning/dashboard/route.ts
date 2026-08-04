@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { PrismaDashboardRepository } from '@repo/db/src/repositories/PrismaDashboardRepository';
 import { DashboardService } from '@repo/application/src/dashboard/DashboardService';
 import { requireAuth } from '@/lib/auth';
+import { calendarDayRange } from '@repo/core';
 
 const dashboardRepository = new PrismaDashboardRepository(db);
 const dashboardService = new DashboardService(dashboardRepository);
@@ -30,8 +31,8 @@ export async function GET(req: NextRequest) {
       const scopedBookings = auth.session.role === 'cleaner'
         ? bookings.map(booking => ({ ...booking, assignments: booking.assignments.filter(assignment => assignment.employeeId === actor?.id) }))
         : bookings;
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+      const timeZone = (await db.tenant.findUnique({ where: { id: auth.session.tenantId }, select: { timezone: true } }))?.timezone || 'UTC';
+      const { start: today, end: tomorrow } = calendarDayRange(new Date(), timeZone);
       const isToday = (date: Date) => date >= today && date < tomorrow;
       const bookingIds = scopedBookings.map(booking => booking.id);
       const openComplaints = await db.complaint.count({ where: { tenantId: auth.session.tenantId, bookingId: { in: bookingIds }, status: { in: ['open', 'in_progress'] } } });

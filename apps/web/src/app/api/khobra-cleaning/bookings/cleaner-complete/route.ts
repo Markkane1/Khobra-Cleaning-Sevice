@@ -79,8 +79,10 @@ export async function POST(req: NextRequest) {
       // Calculate actual total hours worked
       const avgActualHours = updatedAssignments.reduce((acc, curr) => acc + (curr.actualHours || booking.duration), 0) / (updatedAssignments.length || 1)
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: auth.session.tenantId }, select: { taxRate: true } })
-      const services = booking.items.length ? booking.items.map(item => item.service) : [booking.service]
-      const pricing = calculateMultiServicePricing(services, updatedAssignments.length, avgActualHours, booking.materialsCost, booking.discount, tenant.taxRate)
+      const itemServices = booking.items.flatMap(item => item.service ? [item.service] : [])
+      const services = itemServices.length ? itemServices : booking.service ? [booking.service] : []
+      if (!services.length) throw new Error('Booking has no billable service')
+      const pricing = calculateMultiServicePricing(services.map(service => ({ ...service, baseRate: Number(service.baseRate) })), updatedAssignments.length, avgActualHours, Number(booking.materialsCost), Number(booking.discount), Number(tenant.taxRate))
 
       // 3. Record BookingStatusHistory
       const statusHistory = await tx.bookingStatusHistory.create({
@@ -88,7 +90,9 @@ export async function POST(req: NextRequest) {
           bookingId: booking.id,
           previousStatus,
           newStatus: 'completed',
-          changedBy: `cleaner: ${cleaner.user.name} (${auth.session.userId})`,
+          changedBy: `cleaner: ${cleaner.user.name}`,
+          changedByUserId: auth.session.userId,
+          changedByRole: 'cleaner',
           reason: validated.notes || 'Marked completed by assigned cleaner',
           createdAt: completionTime,
         },

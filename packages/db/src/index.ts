@@ -1,38 +1,26 @@
-import { PrismaClient } from '@prisma/client'
-
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-}
-
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: ['query'],
-  })
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
-
-
-export * from './repositories/PrismaActivityRepository';
-export * from './repositories/PrismaAttendanceRepository';
-export * from './repositories/PrismaBookingRepository';
-export * from './repositories/PrismaBranchRepository';
-export * from './repositories/PrismaComplaintRepository';
-export * from './repositories/PrismaCustomerRepository';
-export * from './repositories/PrismaDashboardRepository';
-export * from './repositories/PrismaDriverRepository';
-export * from './repositories/PrismaEmployeeRepository';
-export * from './repositories/PrismaInventoryItemRepository';
-export * from './repositories/PrismaInvoicePdfRepository';
-export * from './repositories/PrismaInvoiceRepository';
-export * from './repositories/PrismaLeaveRepository';
-export * from './repositories/PrismaNotificationRepository';
-export * from './repositories/PrismaPaymentRepository';
-export * from './repositories/PrismaPayrollRepository';
-export * from './repositories/PrismaServiceRepository';
-export * from './repositories/PrismaSettingsRepository';
-export * from './repositories/PrismaStatsRepository';
-export * from './transaction-snapshot';
-export * from './repositories/PrismaTripRepository';
-export * from './repositories/PrismaVendorItemRepository';
-export * from './repositories/PrismaVendorRepository';
+export * from './client.ts';
+export * from './repositories/PrismaActivityRepository.ts';
+export * from './repositories/PrismaAttendanceRepository.ts';
+export * from './repositories/PrismaBookingRepository.ts';
+export * from './repositories/PrismaBranchRepository.ts';
+export * from './repositories/PrismaComplaintRepository.ts';
+export * from './repositories/PrismaCustomerRepository.ts';
+export * from './repositories/PrismaDashboardRepository.ts';
+export * from './repositories/PrismaDriverRepository.ts';
+export * from './repositories/PrismaEmployeeRepository.ts';
+export * from './repositories/PrismaInventoryItemRepository.ts';
+export * from './repositories/PrismaInvoicePdfRepository.ts';
+export * from './repositories/PrismaInvoiceRepository.ts';
+export * from './repositories/PrismaLeaveRepository.ts';
+export * from './repositories/PrismaNotificationRepository.ts';
+export * from './repositories/PrismaPaymentRepository.ts';
+export * from './repositories/PrismaPayrollRepository.ts';
+export * from './repositories/PrismaServiceRepository.ts';
+export * from './repositories/PrismaSettingsRepository.ts';
+export * from './repositories/PrismaStatsRepository.ts';
+export * from './transaction-snapshot.ts';
+export * from './reference-sequence.ts';
+export * from './password.ts';
+export * from './repositories/PrismaTripRepository.ts';
+export * from './repositories/PrismaVendorItemRepository.ts';
+export * from './repositories/PrismaVendorRepository.ts';

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select'
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV } from '@/lib/csv-export'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 
 export type ServiceMaterial = {
   id: string
@@ -89,6 +90,7 @@ const emptyForm = {
 }
 
 export function Services() {
+  const currency = useTenantCurrency()
   const [open, setOpen] = useState(false)
   const [catManagerOpen, setCatManagerOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
@@ -373,7 +375,7 @@ export function Services() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label className="text-xs font-semibold">Hourly Rate (AED) *</Label>
+                      <Label className="text-xs font-semibold">Hourly Rate ({currency}) *</Label>
                       <Input type="number" value={form.baseRate} onChange={e => setForm({ ...form, baseRate: Number(e.target.value) })} className="h-9" />
                     </div>
                     <div className="grid gap-2">
@@ -682,7 +684,7 @@ export function Services() {
             {[
               { label: 'Total Services', value: stats.total, icon: Sparkles, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
               { label: 'Active Services', value: stats.active, icon: TrendingUp, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/50' },
-              { label: 'Avg Hourly Rate', value: `AED ${stats.avgRate.toLocaleString()}`, icon: Tag, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/50' },
+              { label: 'Avg Hourly Rate', value: `${currency} ${stats.avgRate.toLocaleString()}`, icon: Tag, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/50' },
               { label: 'Categories', value: stats.categories, icon: FolderPlus, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/50' },
             ].map((s, i) => (
               <Card key={i} className="border-0 shadow-sm">
@@ -751,7 +753,7 @@ export function Services() {
                         <Badge className={`${catStyle.pill} mt-1 text-[10px]`}>{s.category || 'General'}</Badge>
                       </div>
                       <div className="text-right">
-                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">AED {s.baseRate}</span>
+                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{currency} {s.baseRate}</span>
                         <span className="text-xs text-muted-foreground">/hr</span>
                       </div>
                     </div>
@@ -821,7 +823,7 @@ export function Services() {
                     <TableRow key={s.id}>
                       <TableCell className="font-semibold">{s.name}</TableCell>
                       <TableCell><Badge variant="outline">{s.category}</Badge></TableCell>
-                      <TableCell className="font-bold text-emerald-600">AED {s.baseRate}/hr</TableCell>
+                      <TableCell className="font-bold text-emerald-600">{currency} {s.baseRate}/hr</TableCell>
                       <TableCell>{s.minDuration} hrs</TableCell>
                       <TableCell>{s.materials?.length || 0} items</TableCell>
                       <TableCell className="text-right">

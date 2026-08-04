@@ -4,12 +4,16 @@ import { IDashboardRepository } from '@repo/application/src/dashboard/IDashboard
 export class PrismaDashboardRepository implements IDashboardRepository {
   constructor(private readonly db: PrismaClient) {}
 
+  async getTimezone(tenantId: string): Promise<string> {
+    return (await this.db.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }))?.timezone || 'UTC';
+  }
+
   async getMetrics(tenantId: string, today: Date, tomorrow: Date): Promise<any> {
-    const [totalBookings, todayBookings, completedBookings, pendingBookings, cancelledBookings, inProgressBookings, totalCustomers, activeEmployees, totalRevenue, pendingPayments, openComplaints, lowStockItems, totalInvoices, paidInvoices, overdueInvoices, onLeaveEmployees, inflowByMethod] = await Promise.all([
+    const [totalBookings, todayBookings, completedBookings, pendingBookings, cancelledBookings, inProgressBookings, totalCustomers, activeEmployees, totalRevenue, pendingPayments, openComplaints, lowStockItems, totalInvoices, paidInvoices, overdueInvoices, onLeaveEmployees, inflowByMethod, statusCounts, businessExpenses, driverExpenses, paidPayroll] = await Promise.all([
       this.db.booking.count({ where: { tenantId } }),
       this.db.booking.count({ where: { tenantId, scheduledDate: { gte: today, lt: tomorrow } } }),
       this.db.booking.count({ where: { tenantId, status: 'completed' } }),
-      this.db.booking.count({ where: { tenantId, status: 'pending' } }),
+      this.db.booking.count({ where: { tenantId, status: { in: ['pending', 'pending_assignment', 'assigned', 'scheduled'] } } }),
       this.db.booking.count({ where: { tenantId, status: 'cancelled' } }),
       this.db.booking.count({ where: { tenantId, status: 'in_progress' } }),
       this.db.customer.count({ where: { tenantId } }),
@@ -23,10 +27,14 @@ export class PrismaDashboardRepository implements IDashboardRepository {
       this.db.invoice.count({ where: { tenantId, status: 'overdue' } }),
       this.db.employee.count({ where: { tenantId, status: 'on_leave' } }),
       this.db.payment.groupBy({ by: ['method'], where: { tenantId, status: { in: ['paid', 'verified'] } }, _sum: { amount: true } }),
+      this.db.booking.groupBy({ by: ['status'], where: { tenantId }, _count: { status: true } }),
+      this.db.businessExpense.aggregate({ where: { tenantId }, _sum: { amount: true } }),
+      this.db.driverExpense.aggregate({ where: { tenantId, status: 'approved' }, _sum: { amount: true } }),
+      this.db.payrollRecord.aggregate({ where: { tenantId, status: 'paid' }, _sum: { netSalary: true } }),
     ]);
 
     return {
-      totalBookings, todayBookings, completedBookings, pendingBookings, cancelledBookings, inProgressBookings, totalCustomers, activeEmployees, totalRevenue, pendingPayments, openComplaints, lowStockItems, totalInvoices, paidInvoices, overdueInvoices, onLeaveEmployees, inflowByMethod
+      totalBookings, todayBookings, completedBookings, pendingBookings, cancelledBookings, inProgressBookings, totalCustomers, activeEmployees, totalRevenue, pendingPayments, openComplaints, lowStockItems, totalInvoices, paidInvoices, overdueInvoices, onLeaveEmployees, inflowByMethod, statusCounts, businessExpenses, driverExpenses, paidPayroll
     };
   }
 

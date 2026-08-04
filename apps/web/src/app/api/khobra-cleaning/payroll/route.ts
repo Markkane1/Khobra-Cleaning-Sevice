@@ -12,10 +12,7 @@ export async function GET(req: NextRequest) {
     const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json({ records: [], summary: {} })
-    
-    const result = await payrollService.getPayrollSummary(tenant.id)
+    const result = await payrollService.getPayrollSummary(auth.session.tenantId)
     return NextResponse.json(result)
   } catch (error) {
     console.error('Payroll fetch error:', error)
@@ -28,13 +25,10 @@ export async function PUT(req: NextRequest) {
     const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
-
     const body = await req.json()
     const validatedData = UpdatePayrollSchema.parse(body)
     
-    const record = await payrollService.updatePayrollRecord(tenant.id, validatedData)
+    const record = await payrollService.updatePayrollRecord(auth.session.tenantId, validatedData)
     
     return NextResponse.json({ success: true, record })
   } catch (error: any) {

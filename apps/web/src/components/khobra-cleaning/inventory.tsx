@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
@@ -47,6 +48,7 @@ const fadeUp = {
 }
 
 export function Inventory() {
+  const currency = useTenantCurrency()
   const [tab, setTab] = useState('items')
   const [itemOpen, setItemOpen] = useState(false)
   const [vendorOpen, setVendorOpen] = useState(false)
@@ -211,8 +213,8 @@ export function Inventory() {
                   <div className="grid gap-2"><Label>Min Stock (Alert)</Label><Input type="number" value={form.minStock} onChange={e => setForm({ ...form, minStock: Number(e.target.value) })} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2"><Label>Cost Price (AED)</Label><Input type="number" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: Number(e.target.value) })} /></div>
-                  <div className="grid gap-2"><Label>Sell Price (AED)</Label><Input type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: Number(e.target.value) })} /></div>
+                  <div className="grid gap-2"><Label>Cost Price ({currency})</Label><Input type="number" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: Number(e.target.value) })} /></div>
+                  <div className="grid gap-2"><Label>Sell Price ({currency})</Label><Input type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: Number(e.target.value) })} /></div>
                 </div>
               </div>
               <DialogFooter>
@@ -229,8 +231,8 @@ export function Inventory() {
         {[
           { icon: Package, label: 'Total Items', value: items.length, color: 'bg-emerald-600', sub: `${Object.keys(categories).length} categories` },
           { icon: AlertTriangle, label: 'Low Stock', value: lowStockCount, color: lowStockCount > 0 ? 'bg-amber-500' : 'bg-emerald-600', sub: lowStockCount > 0 ? 'Needs reorder' : 'All stocked', pulse: lowStockCount > 0 },
-          { icon: DollarSign, label: 'Stock Value', value: `AED ${totalValue.toLocaleString()}`, color: 'bg-teal-600', sub: `Cost basis` },
-          { icon: TrendingDown, label: 'Retail Value', value: `AED ${totalRetailValue.toLocaleString()}`, color: 'bg-cyan-600', sub: `Margin: AED ${(totalRetailValue - totalValue).toLocaleString()}` },
+          { icon: DollarSign, label: 'Stock Value', value: `${currency} ${totalValue.toLocaleString()}`, color: 'bg-teal-600', sub: `Cost basis` },
+          { icon: TrendingDown, label: 'Retail Value', value: `${currency} ${totalRetailValue.toLocaleString()}`, color: 'bg-cyan-600', sub: `Margin: ${currency} ${(totalRetailValue - totalValue).toLocaleString()}` },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card className="border-0 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -357,8 +359,8 @@ export function Inventory() {
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell text-sm tabular-nums">AED {item.costPrice.toLocaleString()}</TableCell>
-                          <TableCell className="hidden lg:table-cell text-sm tabular-nums font-medium">AED {item.sellPrice.toLocaleString()}</TableCell>
+                          <TableCell className="hidden lg:table-cell text-sm tabular-nums">{currency} {item.costPrice.toLocaleString()}</TableCell>
+                          <TableCell className="hidden lg:table-cell text-sm tabular-nums font-medium">{currency} {item.sellPrice.toLocaleString()}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.unit}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">

@@ -106,6 +106,28 @@ export function CustomerProfile() {
     queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
     enabled: userRole === 'customer',
   })
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()),
+  })
+  const currency = settings?.tenant?.currency || 'AED'
+
+  const downloadInvoice = async () => {
+    const invoice = selectedBooking?.invoices?.[0]
+    if (!invoice) return
+    try {
+      const response = await fetch(`/api/khobra-cleaning/invoice-pdf?id=${invoice.id}`)
+      if (!response.ok) throw new Error('Invoice PDF could not be generated')
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${invoice.invoiceNo || selectedBooking.bookingNo || 'invoice'}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Invoice PDF could not be generated')
+    }
+  }
 
   const { data: attendanceRecords = [] } = useQuery({
     queryKey: ['attendance'],
@@ -509,7 +531,7 @@ export function CustomerProfile() {
                       <p className="text-xs font-semibold text-foreground truncate">{b.service?.name || 'Home Cleaning'}</p>
                       <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2">
                         <span>{b.scheduledDate ? new Date(b.scheduledDate).toLocaleDateString() : 'Today'}</span>
-                        <span className="font-bold text-emerald-700">AED {b.netAmount || 350}</span>
+                        <span className="font-bold text-emerald-700">{currency} {Number(b.invoices?.[0]?.totalAmount ?? b.netAmount ?? 0).toLocaleString()}</span>
                       </div>
                     </div>
                   ))}
@@ -524,7 +546,7 @@ export function CustomerProfile() {
                         <h2 className="text-xl font-bold">Booking #{selectedBooking.bookingNo || selectedBooking.id.slice(-6)}</h2>
                         <p className="text-xs text-muted-foreground">Scheduled for {selectedBooking.scheduledDate ? new Date(selectedBooking.scheduledDate).toLocaleDateString() : 'Today'}</p>
                       </div>
-                      <Button variant="outline" size="sm" className="gap-2 text-xs border-emerald-300 text-emerald-700" onClick={() => toast.success('Downloading Invoice PDF...')}>
+                      <Button variant="outline" size="sm" className="gap-2 text-xs border-emerald-300 text-emerald-700" onClick={downloadInvoice} disabled={!selectedBooking.invoices?.[0]}>
                         <Download className="h-3.5 w-3.5" />Download Invoice PDF
                       </Button>
                     </div>
@@ -536,15 +558,15 @@ export function CustomerProfile() {
                       </h3>
                       <div className="flex justify-between text-muted-foreground">
                         <span>Service Subtotal:</span>
-                        <span>AED {((selectedBooking.netAmount || 350) * 0.95).toFixed(2)}</span>
+                        <span>{currency} {Number(selectedBooking.invoices?.[0]?.subtotal ?? selectedBooking.totalAmount ?? 0).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-muted-foreground">
-                        <span>VAT (5% UAE Tax):</span>
-                        <span>AED {((selectedBooking.netAmount || 350) * 0.05).toFixed(2)}</span>
+                        <span>Tax:</span>
+                        <span>{currency} {Number(selectedBooking.invoices?.[0]?.taxAmount ?? 0).toFixed(2)}</span>
                       </div>
                       <div className="pt-2 border-t flex justify-between font-bold text-sm text-foreground">
                         <span>Total Net Billing Amount:</span>
-                        <span className="text-emerald-700">AED {selectedBooking.netAmount || 350}</span>
+                        <span className="text-emerald-700">{currency} {Number(selectedBooking.invoices?.[0]?.totalAmount ?? selectedBooking.netAmount ?? 0).toFixed(2)}</span>
                       </div>
                     </div>
                   </CardContent>

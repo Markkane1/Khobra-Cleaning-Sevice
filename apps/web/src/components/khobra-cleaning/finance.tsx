@@ -148,6 +148,11 @@ export function Finance() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Payment recorded successfully'); setPayOpen(false); setPayForm(emptyPayment); setProofFile(null); setProofPreview(null) },
     onError: () => toast.error('Failed to record payment'),
   })
+  const { data: dashboard } = useQuery({ queryKey: ['dashboard'], queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()) })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()) })
+  const currency = settings?.tenant?.currency || 'AED'
+  const cashOutflow = Number(dashboard?.stats?.cashOutflow || 0)
+  const netCashFlow = Number(dashboard?.stats?.netCashFlow || 0)
 
   const reconcileCashMut = useMutation({
     mutationFn: (paymentId: string) => fetch('/api/khobra-cleaning/bookings/payment-method', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentId, remarks: 'Cash reconciled in Finance' }) }).then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Cash reconciliation failed'); return data }),
@@ -308,7 +313,7 @@ export function Finance() {
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2"><Label>Total Amount (AED)</Label><Input type="number" value={invForm.totalAmount} onChange={e => setInvForm({ ...invForm, totalAmount: Number(e.target.value) })} /></div>
+                  <div className="grid gap-2"><Label>Total Amount ({currency})</Label><Input type="number" value={invForm.totalAmount} onChange={e => setInvForm({ ...invForm, totalAmount: Number(e.target.value) })} /></div>
                   <div className="grid gap-2"><Label>Status</Label>
                     <Select value={invForm.status} onValueChange={v => setInvForm({ ...invForm, status: v })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -337,28 +342,28 @@ export function Finance() {
               <div className="grid gap-2"><Label>Invoice</Label>
                 <Select value={payForm.invoiceId} onValueChange={v => setPayForm({ ...payForm, invoiceId: v })}>
                   <SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger>
-                  <SelectContent>{invoices.filter((i: any) => i.status !== 'paid' && i.status !== 'cancelled').map((i: any) => <SelectItem key={i.id} value={i.id}>{i.invoiceNo} - {i.customer?.user?.name} (Balance: AED {(i.totalAmount - (i.paidAmount || 0)).toLocaleString()})</SelectItem>)}</SelectContent>
+                  <SelectContent>{invoices.filter((i: any) => i.status !== 'paid' && i.status !== 'cancelled').map((i: any) => <SelectItem key={i.id} value={i.id}>{i.invoiceNo} - {i.customer?.user?.name} (Balance: {currency} {(i.totalAmount - (i.paidAmount || 0)).toLocaleString()})</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               {selectedInvoice && (
                 <div className="bg-muted/40 rounded-lg p-3 space-y-1.5">
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Total Invoice Amount</span>
-                    <span>AED {selectedInvoice.totalAmount.toLocaleString()}</span>
+                    <span>{currency} {selectedInvoice.totalAmount.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Already Paid</span>
-                    <span className="text-emerald-600">AED {(selectedInvoice.paidAmount || 0).toLocaleString()}</span>
+                    <span className="text-emerald-600">{currency} {(selectedInvoice.paidAmount || 0).toLocaleString()}</span>
                   </div>
                   <Separator className="my-1" />
                   <div className="flex justify-between text-sm font-semibold">
                     <span>Remaining Balance</span>
-                    <span className="text-emerald-700 dark:text-emerald-400">AED {invoiceBalance.toLocaleString()}</span>
+                    <span className="text-emerald-700 dark:text-emerald-400">{currency} {invoiceBalance.toLocaleString()}</span>
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2"><Label>Amount (AED)</Label><Input type="number" value={payForm.amount || ''} onChange={e => setPayForm({ ...payForm, amount: Number(e.target.value) })} /></div>
+                <div className="grid gap-2"><Label>Amount ({currency})</Label><Input type="number" value={payForm.amount || ''} onChange={e => setPayForm({ ...payForm, amount: Number(e.target.value) })} /></div>
                 <div className="grid gap-2"><Label>Method</Label>
                   <Select value={payForm.method} onValueChange={v => setPayForm({ ...payForm, method: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -480,7 +485,7 @@ export function Finance() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <motion.div {...fadeIn}>
           <Card className="border-0 shadow-sm overflow-hidden relative">
               <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-600" />
@@ -488,7 +493,7 @@ export function Finance() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground font-medium">Total Revenue</p>
-                  <p className="text-2xl font-bold"><AnimatedCounter value={totalRevenue} prefix="AED " /></p>
+                  <p className="text-2xl font-bold"><AnimatedCounter value={totalRevenue} prefix={`${currency} `} /></p>
                   <p className="text-xs text-emerald-600 flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" />{paidInvoices} paid invoices
                   </p>
@@ -508,7 +513,7 @@ export function Finance() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground font-medium">Outstanding</p>
-                  <p className="text-2xl font-bold"><AnimatedCounter value={Math.round(outstanding)} prefix="AED " /></p>
+                  <p className="text-2xl font-bold"><AnimatedCounter value={Math.round(outstanding)} prefix={`${currency} `} /></p>
                   <p className="text-xs text-amber-600 flex items-center gap-1">
                     <AlertTriangle className="h-3 w-3" />{totalInvoices - paidInvoices} unpaid invoices
                   </p>
@@ -528,9 +533,9 @@ export function Finance() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground font-medium">Payments Collected</p>
-                  <p className="text-2xl font-bold"><AnimatedCounter value={totalPaid} prefix="AED " /></p>
+                  <p className="text-2xl font-bold"><AnimatedCounter value={totalPaid} prefix={`${currency} `} /></p>
                   <p className="text-xs text-teal-600 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" />Cash AED {cashInflow.toLocaleString()} · Bank AED {bankInflow.toLocaleString()}
+                    <CheckCircle2 className="h-3 w-3" />Cash {currency} {cashInflow.toLocaleString()} · Bank {currency} {bankInflow.toLocaleString()}
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 shadow-lg shadow-teal-200 dark:shadow-teal-900/30 transition-transform hover:scale-110">
@@ -558,6 +563,16 @@ export function Finance() {
             </CardContent>
           </Card>
         </motion.div>
+        <motion.div {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.4 }}>
+          <Card className="border-0 shadow-sm overflow-hidden relative">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-600" />
+            <CardContent className="p-5">
+              <p className="text-xs text-muted-foreground font-medium">Net Cash Flow</p>
+              <p className="text-2xl font-bold">{currency} {netCashFlow.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">Confirmed inflow less business, approved driver, and paid payroll outflows ({currency} {cashOutflow.toLocaleString()})</p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Revenue Chart + Aging Summary */}
@@ -580,7 +595,7 @@ export function Finance() {
                     />
                     <span className="text-[10px] text-muted-foreground font-medium">{day.label}</span>
                     {day.amount > 0 && (
-                      <span className="text-[10px] text-muted-foreground">AED {(day.amount / 1000).toFixed(0)}k</span>
+                      <span className="text-[10px] text-muted-foreground">{currency} {(day.amount / 1000).toFixed(0)}k</span>
                     )}
                   </div>
                 ))}
@@ -610,7 +625,7 @@ export function Finance() {
                       <div className={`w-2.5 h-2.5 rounded-full ${bucket.color}`} />
                       <span className="text-xs font-medium">{bucket.label}</span>
                     </div>
-                    <span className="text-xs font-semibold">AED {Math.round(bucket.amount).toLocaleString()}</span>
+                    <span className="text-xs font-semibold">{currency} {Math.round(bucket.amount).toLocaleString()}</span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <motion.div
@@ -677,14 +692,14 @@ export function Finance() {
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{inv.issuedAt ? format(parseISO(inv.issuedAt), 'MMM dd, yyyy') : '-'}</TableCell>
                         <TableCell>
                           <div className="space-y-1">
-                            <span className="font-semibold text-sm">AED {inv.totalAmount.toLocaleString()}</span>
+                            <span className="font-semibold text-sm">{currency} {inv.totalAmount.toLocaleString()}</span>
                           </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
                           <div className="space-y-1 max-w-[120px]">
                             <div className="flex justify-between text-[10px] text-muted-foreground">
                               <span>{pct}%</span>
-                              <span>AED {(inv.paidAmount || 0).toLocaleString()}</span>
+                              <span>{currency} {(inv.paidAmount || 0).toLocaleString()}</span>
                             </div>
                             <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                               <motion.div
@@ -759,7 +774,7 @@ export function Finance() {
                         className={`border-b border-border/40 ${idx % 2 === 1 ? 'bg-muted/20' : ''} hover:bg-muted/40 transition-colors `}
                       >
                         <TableCell className="font-mono text-xs font-semibold">{p.master.transactionNumber}</TableCell>
-                        <TableCell className="font-semibold">AED {p.amount.toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">{currency} {p.amount.toLocaleString()}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <MethodIcon className={`h-3.5 w-3.5 ${methodColors [p.method] || 'text-muted-foreground'}`} />

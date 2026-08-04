@@ -7,18 +7,32 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm --prefix apps/web run dev",
+    "dev": "concurrently -n web,realtime -c green,cyan \"npm --prefix apps/web run dev\" \"npm --prefix apps/realtime run dev\"",
     "build": "npm --prefix apps/web run build",
     "start": "npm --prefix apps/web run start",
     "lint": "npm --prefix apps/web run lint",
     "typecheck": "npx tsc -p apps/web/tsconfig.json --noEmit",
-    "verify": "npm run lint && npm run typecheck && npm run build"
+    "test:unit": "node --experimental-strip-types --test apps/web/src/lib/auth.test.mjs apps/web/src/lib/rate-limit.integration.test.mjs packages/core/src/timezone.test.mjs packages/core/src/bookings/cleaner-complete.test.mjs packages/core/src/bookings/five-star-rating.test.mjs packages/core/src/bookings/status.test.mjs packages/core/src/payments/bank-transfer.test.mjs packages/core/src/payments/cleaner-cash.test.mjs packages/core/src/payments/company-bank-accounts.test.mjs packages/core/src/payments/payment-selection.test.mjs packages/core/src/payments/transaction-integrity.test.mjs packages/core/src/workflow/complete-workflow-validation.test.mjs",
+    "test:workflow": "node scripts/run-workflow-test.mjs",
+    "verify": "npm run lint && npm run typecheck && npm --prefix apps/realtime run typecheck && npm --prefix apps/mobile run typecheck && npm --prefix packages/db run db:validate && npm --prefix packages/db run db:rehearse && npm --prefix packages/db run db:rehearse-backup && npm --prefix packages/db run test:retention && npm --prefix packages/db run audit:actors && npm --prefix packages/db run audit:timezones && npm run test:unit && npm run build && npm run test:workflow && npm --prefix apps/mobile exec expo-doctor && npm --prefix apps/mobile run build:android && npm --prefix apps/mobilewrapper run build:android"
   },
   "overrides": {
-    "brace-expansion": "^5.0.9",
+    "@expo/vector-icons": "15.0.3",
+    "expo": "~54.0.0",
+    "expo-font": "14.0.12",
     "js-yaml": "^4.3.0",
     "postcss": "^8.5.25",
     "prismjs": "^1.30.0",
-    "sharp": "^0.35.3"
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "sharp": "^0.35.3",
+    "typescript": "5.9.3",
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "brace-expansion": "2.1.4",
+    "concurrently": "^9.2.4",
+    "typescript": "5.9.3"
   }
 }

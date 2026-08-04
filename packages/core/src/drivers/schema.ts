@@ -7,6 +7,7 @@ export const CreateDriverSchema = z.object({
   licenseNo: z.string().optional(),
   vehicleNo: z.string().optional(),
   status: z.string().optional(),
+  temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters'),
 });
 
 export const UpdateDriverSchema = z.object({

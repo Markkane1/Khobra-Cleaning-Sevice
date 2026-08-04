@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import * as Clipboard from 'expo-clipboard'
+import * as DocumentPicker from 'expo-document-picker'
 import { loadBookings } from '../application/bookings'
 import type { Session } from '../domain/auth/types'
-import type { Booking, DriverTrip } from '../domain/bookings/types'
+import type { Booking, CompanyBankAccount, DriverTrip } from '../domain/bookings/types'
 import { khobraBookingGateway } from '../infrastructure/http/khobra-gateways'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
@@ -20,6 +22,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   const [driverScope, setDriverScope] = useState<'today' | 'completed' | 'pending' | 'upcoming'>('today')
   const [issueBooking, setIssueBooking] = useState<Booking | null>(null)
   const [issueDescription, setIssueDescription] = useState('')
+  const [bankBooking, setBankBooking] = useState<Booking | null>(null)
 
   useEffect(() => {
     loadBookings(khobraBookingGateway, session.token)
@@ -77,7 +80,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
         setUpdating(item.id)
         const receipt = await khobraBookingGateway.receiveCash(item.id, session.token)
         setBookings(await loadBookings(khobraBookingGateway, session.token))
-        Alert.alert('Cash Received', `AED ${receipt.amountReceived} was recorded successfully.`)
+        Alert.alert('Cash Received', `${item.currency} ${receipt.amountReceived} was recorded successfully.`)
       } catch (error) {
         Alert.alert('Cash not recorded', error instanceof Error ? error.message : 'Try again.')
       } finally {
@@ -88,7 +91,8 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
         setUpdating(item.id)
         await khobraBookingGateway.selectPaymentMethod(item.id, method, session.token)
         setBookings(await loadBookings(khobraBookingGateway, session.token))
-        Alert.alert('Payment method selected', method === 'cash' ? 'Pay Cash has been selected.' : 'Bank Transfer has been selected.')
+        if (method === 'bank_transfer') setBankBooking(item)
+        else Alert.alert('Payment method selected', 'Pay Cash has been selected.')
       } catch (error) {
         Alert.alert('Payment method not selected', error instanceof Error ? error.message : 'Try again.')
       } finally {
@@ -119,6 +123,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   <Modal visible={Boolean(issueBooking)} transparent animationType="slide" onRequestClose={() => setIssueBooking(null)}>
     <View style={styles.modalBackdrop}><View style={styles.ratingModal}><View style={styles.ratingContent}><Text style={styles.ratingTitle}>Report Customer Issue</Text><Text style={styles.ratingSubtitle}>{issueBooking?.bookingNo} · {issueBooking?.customer?.user?.name || issueBooking?.customer?.name || 'Customer'}</Text><TextInput value={issueDescription} onChangeText={setIssueDescription} multiline maxLength={2000} placeholder="Describe what happened with the customer..." style={styles.issueInput} /><View style={styles.ratingActions}><Pressable onPress={() => setIssueBooking(null)} style={styles.ratingCancel}><Text style={styles.ratingCancelText}>Cancel</Text></Pressable><Pressable disabled={issueDescription.trim().length < 5 || Boolean(updating)} onPress={async () => { if (!issueBooking) return; setUpdating(issueBooking.id); try { await khobraBookingGateway.reportCustomerIssue(issueBooking.id, issueDescription.trim(), session.token); Alert.alert('Issue reported', 'The customer issue was sent to Admin.'); setIssueBooking(null); setIssueDescription('') } catch (error) { Alert.alert('Could not report issue', error instanceof Error ? error.message : 'Try again.') } finally { setUpdating(null) } }} style={[styles.ratingSubmit, issueDescription.trim().length < 5 && { opacity: 0.5 }]}><Text style={styles.ratingSubmitText}>Submit Issue</Text></Pressable></View></View></View></View>
   </Modal>
+  <BankTransferModal booking={bankBooking} token={session.token} onClose={() => setBankBooking(null)} onSubmitted={async () => { setBookings(await loadBookings(khobraBookingGateway, session.token)); setBankBooking(null) }} />
   <Modal visible={Boolean(ratingBooking)} transparent animationType="slide" onRequestClose={() => setRatingBooking(null)}>
     <View style={styles.modalBackdrop}>
       <View style={styles.ratingModal}>
@@ -157,6 +162,52 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   </>
 }
 
+function BankTransferModal({ booking, token, onClose, onSubmitted }: { booking: Booking | null; token: string; onClose: () => void; onSubmitted: () => Promise<void> }) {
+  const [accounts, setAccounts] = useState<CompanyBankAccount[]>([])
+  const [accountId, setAccountId] = useState('')
+  const [referenceNo, setReferenceNo] = useState('')
+  const [customerBankName, setCustomerBankName] = useState('')
+  const [accountHolderName, setAccountHolderName] = useState('')
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().slice(0, 10))
+  const [transferAmount, setTransferAmount] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [proof, setProof] = useState<{ uri: string; name: string; mimeType: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!booking) return
+    const invoice = booking.invoices?.[0]
+    setTransferAmount(String(Math.max(0, Number(invoice?.totalAmount || booking.netAmount) - Number(invoice?.paidAmount || 0))))
+    khobraBookingGateway.getCompanyBankAccounts(token).then(result => { setAccounts(result); setAccountId(result.find(account => account.isDefault)?.id || result[0]?.id || '') }).catch(error => Alert.alert('Bank accounts unavailable', error instanceof Error ? error.message : 'Try again.'))
+  }, [booking?.id, token])
+
+  const selected = accounts.find(account => account.id === accountId)
+  const submit = async () => {
+    if (!booking || !proof) return
+    try {
+      setSaving(true)
+      const proofUrl = await khobraBookingGateway.uploadPaymentProof(proof, token)
+      await khobraBookingGateway.submitBankTransfer({ bookingId: booking.id, companyBankAccountId: accountId, referenceNo: referenceNo.trim(), customerBankName: customerBankName.trim(), accountHolderName: accountHolderName.trim(), transferDate, transferAmount: Number(transferAmount), proofUrl, remarks: remarks.trim() || undefined }, token)
+      await onSubmitted()
+      Alert.alert('Transfer submitted', 'Your bank transfer is pending Admin verification.')
+    } catch (error) {
+      Alert.alert('Transfer not submitted', error instanceof Error ? error.message : 'Try again.')
+    } finally { setSaving(false) }
+  }
+
+  return <Modal visible={Boolean(booking)} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.ratingModal}><ScrollView contentContainerStyle={styles.ratingContent} keyboardShouldPersistTaps="handled"><Text style={styles.ratingTitle}>Submit Bank Transfer</Text><Text style={styles.ratingSubtitle}>{booking?.bookingNo} · Payment remains unverified until Admin approval.</Text>
+    {accounts.map(account => <Pressable key={account.id} onPress={() => setAccountId(account.id)} style={[styles.bankAccount, account.id === accountId && styles.bankAccountSelected]}><Text style={styles.ratingLabel}>{account.bankName} · {account.currency}</Text><CopyRow label="Account title" value={account.accountTitle} /><CopyRow label="Account number" value={account.accountNumber} />{account.iban ? <CopyRow label="IBAN" value={account.iban} /> : null}{account.branchName || account.branchCode ? <Text style={styles.bankMeta}>{[account.branchName, account.branchCode].filter(Boolean).join(' · ')}</Text> : null}{account.instructions ? <Text style={styles.bankMeta}>{account.instructions}</Text> : null}</Pressable>)}
+    {accounts.length === 0 ? <Text style={styles.bankMeta}>No active company bank account is available.</Text> : null}
+    <TextInput placeholder="Transaction / reference number *" value={referenceNo} onChangeText={setReferenceNo} style={styles.bankInput} /><TextInput placeholder="Your bank name *" value={customerBankName} onChangeText={setCustomerBankName} style={styles.bankInput} /><TextInput placeholder="Account-holder name *" value={accountHolderName} onChangeText={setAccountHolderName} style={styles.bankInput} /><TextInput placeholder="Transfer date (YYYY-MM-DD) *" value={transferDate} onChangeText={setTransferDate} style={styles.bankInput} /><TextInput placeholder="Transfer amount *" value={transferAmount} onChangeText={setTransferAmount} keyboardType="decimal-pad" style={styles.bankInput} /><TextInput placeholder="Remarks (optional)" value={remarks} onChangeText={setRemarks} multiline style={[styles.bankInput, { minHeight: 70 }]} />
+    <Pressable onPress={async () => { const result = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true }); if (!result.canceled) { const asset = result.assets[0]; setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream' }) } }} style={styles.proofButton}><Ionicons name="cloud-upload-outline" size={18} color={palette.primaryDark} /><Text style={styles.proofText}>{proof?.name || 'Choose payment proof *'}</Text></Pressable>
+    <View style={styles.ratingActions}><Pressable disabled={saving} onPress={onClose} style={styles.ratingCancel}><Text style={styles.ratingCancelText}>Cancel</Text></Pressable><Pressable disabled={saving || !selected || !proof || !referenceNo.trim() || !customerBankName.trim() || !accountHolderName.trim() || !(Number(transferAmount) > 0)} onPress={submit} style={[styles.ratingSubmit, (saving || !selected || !proof) && { opacity: 0.5 }]}><Text style={styles.ratingSubmitText}>{saving ? 'Submitting...' : 'Submit for Verification'}</Text></Pressable></View>
+  </ScrollView></View></View></Modal>
+}
+
+function CopyRow({ label, value }: { label: string; value: string }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Copy ${label}`} onPress={() => Clipboard.setStringAsync(value)} style={styles.copyRow}><View style={{ flex: 1 }}><Text style={styles.bankMeta}>{label}</Text><Text style={styles.bankValue}>{value}</Text></View><Ionicons name="copy-outline" size={17} color={palette.primary} /></Pressable>
+}
+
 function StarSelector({ value, onChange }: { value: number; onChange: (rating: number) => void }) {
   return <View style={styles.stars}>{[1, 2, 3, 4, 5].map(star => <Pressable key={star} accessibilityRole="button" accessibilityLabel={`${star} stars`} onPress={() => onChange(star)}><Ionicons name={star <= value ? 'star' : 'star-outline'} size={30} color="#f59e0b" /></Pressable>)}</View>
 }
@@ -165,7 +216,8 @@ function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming,
   const date = new Date(booking.scheduledDate).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' })
   const tone = statusTones[booking.status.toLowerCase()] || statusTones.default
   const paidAmount = booking.invoices?.[0]?.paidAmount || 0
-  const remainingPayable = Math.max(0, booking.netAmount - paidAmount)
+  const invoiceTotal = booking.invoices?.[0]?.totalAmount ?? booking.netAmount
+  const remainingPayable = Math.max(0, invoiceTotal - paidAmount)
   const paymentStatus = booking.invoices?.[0]?.payments?.[0]?.status
   const cashPayment = booking.invoices?.[0]?.payments?.find(payment => payment.method === 'cash')
   const cashSelected = booking.invoices?.[0]?.selectedPaymentMethod === 'cash' || cashPayment?.status === 'cash_selected'
@@ -184,10 +236,10 @@ function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming,
     {role === 'cleaner' && booking.status === 'in_progress' ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Completion Within Scheduled Time', 'Select the expected completion timing.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Yes — within scheduled time', onPress: () => onTiming(true) }, { text: 'No — additional time required', onPress: () => onTiming(false) }])} style={styles.timingAction}><Text style={styles.timingActionText}>Confirm Completion Within Scheduled Time</Text></Pressable> : null}
     {(role === 'admin' || role === 'driver') && booking.completionTimingResponses?.[0] ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Latest completion timing</Text><Text style={styles.timingResultText}>{booking.completionTimingResponses[0].withinScheduledTime ? 'Yes — expected within scheduled time' : 'No — additional time may be required'}</Text><Text style={styles.timingResultMeta}>{booking.completionTimingResponses[0].employee?.user?.name || 'Cleaner'} · {new Date(booking.completionTimingResponses[0].createdAt).toLocaleString('en-AE')}</Text></View> : null}
     {role === 'cleaner' && booking.status === 'in_progress' ? <Pressable disabled={updating} onPress={() => Alert.alert('Complete Booking', 'Confirm that all work is finished and mark this booking Completed?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Complete Booking', onPress: onComplete }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Completing...' : 'Complete Booking'}</Text></Pressable> : null}
-    {booking.status === 'completed' && role === 'customer' && remainingPayable > 0 && !['verified', 'paid'].includes(paymentStatus || '') ? <Pressable disabled={updating} onPress={() => Alert.alert('Select Payment Method', `Booking amount: AED ${booking.totalAmount}\nAdjustments: AED ${(booking.netAmount - booking.totalAmount).toFixed(2)}\nAlready paid: AED ${paidAmount}\nRemaining payable: AED ${remainingPayable}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Pay Cash', onPress: () => onPayment('cash') }, { text: 'Bank Transfer', onPress: () => onPayment('bank_transfer') }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : 'Select Payment Method'}</Text></Pressable> : null}
+    {booking.status === 'completed' && role === 'customer' && remainingPayable > 0 && !['verified', 'paid'].includes(paymentStatus || '') ? <Pressable disabled={updating} onPress={() => Alert.alert('Select Payment Method', `Booking amount: ${booking.currency} ${booking.totalAmount}\nAdjustments: ${booking.currency} ${(invoiceTotal - booking.totalAmount).toFixed(2)}\nAlready paid: ${booking.currency} ${paidAmount}\nRemaining payable: ${booking.currency} ${remainingPayable}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Pay Cash', onPress: () => onPayment('cash') }, { text: 'Bank Transfer', onPress: () => onPayment('bank_transfer') }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : 'Select Payment Method'}</Text></Pressable> : null}
     {booking.status === 'completed' && role === 'customer' ? <Pressable disabled={updating} onPress={onRate} style={styles.ratingAction}><Ionicons name="star" size={16} color="#92400e" /><Text style={styles.ratingActionText}>{booking.rating ? 'View Rating' : 'Rate Service & Cleaners'}</Text></Pressable> : null}
     {role === 'cleaner' && booking.assignments?.[0]?.customerRating ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Your customer rating</Text><Text style={styles.timingResultText}>{booking.assignments[0].customerRating} / 5 stars</Text></View> : null}
-    {booking.status === 'completed' && role === 'cleaner' && cashSelected && remainingPayable > 0 ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Cash Collection', `Booking reference: ${booking.bookingNo}\nCustomer: ${booking.customer?.user?.name || booking.customer?.name || 'Customer'}\nAmount: AED ${remainingPayable}\nCurrency: AED\nCleaner receiving cash: ${cleanerName}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Cash Received', onPress: onCash }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : `Mark Cash Received (AED ${remainingPayable})`}</Text></Pressable> : null}
+    {booking.status === 'completed' && role === 'cleaner' && cashSelected && remainingPayable > 0 ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Cash Collection', `Booking reference: ${booking.bookingNo}\nCustomer: ${booking.customer?.user?.name || booking.customer?.name || 'Customer'}\nAmount: ${booking.currency} ${remainingPayable}\nCurrency: ${booking.currency}\nCleaner receiving cash: ${cleanerName}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Cash Received', onPress: onCash }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : `Mark Cash Received (${booking.currency} ${remainingPayable})`}</Text></Pressable> : null}
     {role === 'cleaner' && cashPayment && ['verified', 'paid'].includes(cashPayment.status) ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Cash Received</Text><Text style={styles.timingResultText}>{cashPayment.receivedAt || cashPayment.verifiedAt ? new Date(cashPayment.receivedAt || cashPayment.verifiedAt!).toLocaleString('en-AE') : 'Recorded'}</Text></View> : null}
     {role === 'cleaner' ? <Pressable onPress={onReportIssue} style={styles.issueAction}><Ionicons name="warning-outline" size={16} color="#be123c" /><Text style={styles.issueActionText}>Report Issue Regarding Customer</Text></Pressable> : null}
   </View>
@@ -261,4 +313,12 @@ const styles = StyleSheet.create({
   issueAction: { minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3', backgroundColor: '#fff1f2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 9 },
   issueActionText: { color: '#be123c', fontSize: 12, fontWeight: '800' },
   issueInput: { minHeight: 120, borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, textAlignVertical: 'top', color: palette.ink, backgroundColor: palette.surfaceMuted },
+  bankAccount: { borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 13, gap: 8, backgroundColor: palette.surfaceMuted },
+  bankAccountSelected: { borderColor: palette.primary, backgroundColor: '#ecfdf5' },
+  bankMeta: { color: palette.muted, fontSize: 11 },
+  bankValue: { color: palette.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  copyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bankInput: { minHeight: 48, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: palette.ink, backgroundColor: palette.surfaceMuted },
+  proofButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.primary, borderRadius: 12, backgroundColor: palette.primarySoft },
+  proofText: { color: palette.primaryDark, fontWeight: '700', fontSize: 12 },
 })

@@ -11,6 +11,7 @@ for (const file of ['apps/web/.env', 'apps/web/.env.local']) {
 }
 
 const { createSessionToken } = await import('./auth-crypto.ts')
+const { verifyPassword } = await import('../../../../packages/db/src/password.ts')
 const db = new PrismaClient()
 const apiBase = process.env.WORKFLOW_API_BASE || 'http://localhost:3000/api/khobra-cleaning'
 
@@ -26,7 +27,7 @@ async function request(path, token, method = 'GET', body) {
 
 test('complete operational workflow passes through real API routes and persistence', async () => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  const tenant = await db.tenant.create({ data: { name: 'Workflow Validation', slug: `workflow-${suffix}` } })
+  const tenant = await db.tenant.create({ data: { name: 'Workflow Validation', slug: `workflow-${suffix}`, taxRate: 0.05 } })
   const ids = { tenantId: tenant.id, bookingIds: [], foreignTenantId: null }
 
   try {
@@ -175,8 +176,12 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(result.response.status, 200, '7: assigned cleaner must complete')
     booking = await db.booking.findUniqueOrThrow({ where: { id: cashBooking.id }, include: { statusHistory: true, assignments: true, invoices: true } })
     assert.equal(booking.status, 'completed')
-    assert.equal(booking.invoices[0].paidAmount, 0, '19: completion must not pay invoice')
-    const cashCollectible = booking.invoices[0].totalAmount
+    assert.equal(Number(booking.invoices[0].paidAmount), 0, '19: completion must not pay invoice')
+    const actualBillableHours = booking.assignments.reduce((sum, assignment) => sum + Number(assignment.actualHours || 0), 0)
+    assert.equal(Number(booking.invoices[0].subtotal), actualBillableHours * 100, 'Completed invoice must use actual cleaner hours')
+    assert.equal(Number(booking.invoices[0].taxAmount), Number(booking.invoices[0].subtotal) * 0.05, 'Invoice tax must use tenant tax rate')
+    assert.equal(Number(booking.invoices[0].totalAmount), Number(booking.invoices[0].subtotal) + Number(booking.invoices[0].taxAmount), 'Invoice total must preserve its tax breakdown')
+    const cashCollectible = Number(booking.invoices[0].totalAmount)
     assert.ok(booking.assignments.every(item => item.completedAt))
     notices = await db.notification.findMany({ where: { statusHistoryId: booking.statusHistory.at(-1).id } })
     assert.deepEqual(new Set(notices.map(item => item.userId)), new Set([customerUser.id, cleanerOneUser.id, cleanerTwoUser.id]), '8: completion notifications must reach all recipients')
@@ -187,7 +192,7 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(result.response.status, 201, '9: customer must select cash')
     assert.equal(result.data.status, 'cash_selected')
     let cashInvoice = await db.invoice.findFirstOrThrow({ where: { bookingId: cashBooking.id } })
-    assert.equal(cashInvoice.paidAmount, 0, 'Selecting cash must not create an inflow')
+    assert.equal(Number(cashInvoice.paidAmount), 0, 'Selecting cash must not create an inflow')
     assert.equal(cashInvoice.selectedPaymentMethod, 'cash')
     assert.equal(await db.payment.count({ where: { invoiceId: cashInvoice.id } }), 0, 'Selecting Pay Cash must not create a transaction')
     result = await request('/bookings/cleaner-cash', auth.otherCleaner, 'POST', { bookingId: cashBooking.id })
@@ -205,7 +210,7 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(cashPayments[0].reconciliationStatus, 'pending')
     assert.ok(cashPayments[0].receivedAt)
     assert.equal(cashPayments[0].verifiedAt, null)
-    assert.equal((await db.invoice.findFirstOrThrow({ where: { bookingId: cashBooking.id } })).paidAmount, cashCollectible, 'Cash receipt must add the inflow exactly once')
+    assert.equal(Number((await db.invoice.findFirstOrThrow({ where: { bookingId: cashBooking.id } })).paidAmount), cashCollectible, 'Cash receipt must add the inflow exactly once')
     result = await request('/dashboard', auth.admin)
     assert.equal(result.data.stats.cashInflow, cashCollectible, 'Pending-reconciliation cash must appear in cash inflow reporting')
     assert.equal(result.data.stats.bankInflow, 0)
@@ -213,7 +218,7 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(result.response.status, 200, `Cash reconciliation failed: ${result.data.error || ''}`)
     assert.equal(result.data.status, 'verified')
     assert.equal(result.data.reconciliationStatus, 'reconciled')
-    assert.equal((await db.invoice.findFirstOrThrow({ where: { bookingId: cashBooking.id } })).paidAmount, cashCollectible, 'Cash reconciliation must not count the inflow twice')
+    assert.equal(Number((await db.invoice.findFirstOrThrow({ where: { bookingId: cashBooking.id } })).paidAmount), cashCollectible, 'Cash reconciliation must not count the inflow twice')
 
     result = await request('/bookings/rate', auth.admin, 'POST', { bookingId: cashBooking.id, overallRating: 5, ratings: [{ employeeId: cleanerOne.id, rating: 5 }, { employeeId: cleanerTwo.id, rating: 4 }] })
     assert.equal(result.response.status, 403, '18: admin must not submit customer rating')
@@ -235,13 +240,14 @@ test('complete operational workflow passes through real API routes and persisten
     result = await request('/bookings/payment-method', auth.customer, 'POST', { bookingId: bankBooking.id, method: 'bank_transfer' })
     assert.equal(result.response.status, 201, '12: customer must select bank transfer')
     const proofUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/khobra/${tenant.id}/payment-proofs/proof.png`
+    await db.uploadAsset.create({ data: { tenantId: tenant.id, userId: customerUser.id, url: proofUrl, publicId: `khobra/${tenant.id}/payment-proofs/proof`, purpose: 'payment-proofs', mimeType: 'image/png', size: 1024 } })
     result = await request('/bookings/bank-transfer', auth.customer, 'POST', { bookingId: bankBooking.id, companyBankAccountId: account.id, referenceNo: `REJECT-${suffix}`, customerBankName: 'Customer Bank', accountHolderName: 'Customer', transferDate: new Date().toISOString(), transferAmount: 200, proofUrl })
     assert.equal(result.response.status, 201, `14: valid bank transfer must submit (${result.data.error || ''})`)
     assert.equal(await db.payment.count({ where: { invoiceId: result.data.invoiceId, status: { in: ['paid', 'verified'] } } }), 0, 'Submitting transfer evidence must not create a confirmed transaction')
     result = await request('/bookings/bank-transfer', auth.admin, 'PUT', { paymentId: result.data.id, decision: 'reject', remarks: 'Validation rejection' })
     assert.equal(result.response.status, 200, '15: admin must reject transfer')
     assert.equal(result.data.status, 'rejected')
-    assert.equal((await db.invoice.findFirstOrThrow({ where: { bookingId: bankBooking.id } })).paidAmount, 0, 'Rejected submissions must not create bank inflow')
+    assert.equal(Number((await db.invoice.findFirstOrThrow({ where: { bookingId: bankBooking.id } })).paidAmount), 0, 'Rejected submissions must not create bank inflow')
     assert.equal(await db.payment.count({ where: { invoiceId: result.data.invoiceId, status: { in: ['paid', 'verified'] } } }), 0, 'Rejected transfer must leave zero confirmed transactions')
     await request('/bookings/payment-method', auth.customer, 'POST', { bookingId: bankBooking.id, method: 'bank_transfer' })
     result = await request('/bookings/bank-transfer', auth.customer, 'POST', { bookingId: bankBooking.id, companyBankAccountId: account.id, referenceNo: `APPROVE-${suffix}`, customerBankName: 'Customer Bank', accountHolderName: 'Customer', transferDate: new Date().toISOString(), transferAmount: 200, proofUrl })
@@ -269,22 +275,12 @@ test('complete operational workflow passes through real API routes and persisten
     result = await request('/invoices', auth.admin, 'POST', { customerId: customer.id, totalAmount: 50, status: 'issued', notes: 'Manual finance invoice' })
     assert.equal(result.response.status, 201, `Manual invoice creation failed: ${result.data.error || ''}`)
     const manualInvoice = result.data
-    assert.equal(manualInvoice.paidAmount, 0)
+    assert.equal(Number(manualInvoice.paidAmount), 0)
     result = await request('/payments', auth.customer, 'POST', { invoiceId: manualInvoice.id, amount: 1, method: 'cash', referenceNo: `UNAUTHORIZED-${suffix}` })
-    assert.equal(result.response.status, 403, 'Unauthorized users cannot create finance transactions')
-    result = await request('/payments', auth.admin, 'POST', { invoiceId: manualInvoice.id, amount: 20, method: 'cash', referenceNo: `MANUAL-1-${suffix}`, status: 'verified' })
-    assert.equal(result.response.status, 400, 'Clients cannot set transaction status')
+    assert.equal(result.response.status, 403, 'Unauthorized users cannot access generic transaction creation')
     result = await request('/payments', auth.admin, 'POST', { invoiceId: manualInvoice.id, amount: 20, method: 'cash', referenceNo: `MANUAL-1-${suffix}` })
-    assert.equal(result.response.status, 201)
-    assert.equal(result.data.status, 'verified')
-    result = await request('/payments', auth.admin, 'POST', { invoiceId: manualInvoice.id, amount: 20, method: 'cash', referenceNo: `MANUAL-1-${suffix}` })
-    assert.equal(result.response.status, 400, 'Duplicate transaction references must be rejected')
-    result = await request('/payments', auth.admin, 'POST', { invoiceId: manualInvoice.id, amount: 31, method: 'cash', referenceNo: `MANUAL-OVER-${suffix}` })
-    assert.equal(result.response.status, 400, 'Transactions cannot exceed the invoice balance')
-    result = await request('/payments', auth.admin, 'POST', { invoiceId: manualInvoice.id, amount: 30, method: 'bank_transfer', referenceNo: `MANUAL-2-${suffix}` })
-    assert.equal(result.response.status, 201)
-    assert.equal((await db.invoice.findUniqueOrThrow({ where: { id: manualInvoice.id } })).status, 'paid')
-    assert.equal(await db.payment.count({ where: { invoiceId: manualInvoice.id } }), 2)
+    assert.equal(result.response.status, 405, 'Admin must use the approved cash or bank workflow')
+    assert.equal(await db.payment.count({ where: { invoiceId: manualInvoice.id } }), 0)
 
     const foreignTenant = await db.tenant.create({ data: { name: 'Foreign Workflow', slug: `foreign-${suffix}` } })
     ids.foreignTenantId = foreignTenant.id
@@ -292,10 +288,13 @@ test('complete operational workflow passes through real API routes and persisten
     const foreignCustomer = await db.customer.create({ data: { tenantId: foreignTenant.id, userId: foreignUser.id } })
     const foreignInvoice = await db.invoice.create({ data: { tenantId: foreignTenant.id, customerId: foreignCustomer.id, invoiceNo: `FOREIGN-${suffix}`, subtotal: 10, totalAmount: 10 } })
     result = await request('/payments', auth.admin, 'POST', { invoiceId: foreignInvoice.id, amount: 10, method: 'cash', referenceNo: `FOREIGN-${suffix}` })
-    assert.equal(result.response.status, 404, 'Transactions cannot cross tenant boundaries')
+    assert.equal(result.response.status, 405, 'The disabled generic endpoint cannot bypass tenant-safe workflows')
     result = await request('/dashboard', auth.admin)
     assert.equal(result.response.status, 200)
-    assert.equal(result.data.stats.totalRevenue, cashCollectible + 250, 'Revenue must equal collected transaction amounts, including partial payments')
+    assert.equal(result.data.stats.totalRevenue, cashCollectible + 200, 'Revenue must equal confirmed cash and bank transaction amounts')
+    assert.equal(result.data.stats.cashOutflow, 200, 'Cash flow must include approved driver and business expenses')
+    assert.equal(result.data.stats.netCashFlow, result.data.stats.totalRevenue - 200, 'Net cash flow must subtract recorded outflows')
+    assert.equal(result.data.stats.bookingStatusCounts.completed, 2, 'Dashboard status metrics must use actual grouped statuses')
     result = await request('/payments', auth.admin)
     assert.equal(result.response.status, 200)
     for (const transaction of result.data.filter(item => ['paid', 'verified'].includes(item.status))) {
@@ -313,12 +312,22 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(cashTransaction.master.cleanerCollectingCash, cleanerOneUser.name)
     assert.ok(cashTransaction.history.some(item => item.event === 'Cash received'))
 
+    result = await request('/rbac', auth.admin, 'PATCH', { userId: otherCleanerUser.id })
+    assert.equal(result.response.status, 200, 'Admin must be able to establish login credentials for a passwordless operational user')
+    const resetUser = await db.user.findUniqueOrThrow({ where: { id: otherCleanerUser.id } })
+    assert.ok(resetUser.passwordHash && verifyPassword(result.data.temporaryPassword, resetUser.passwordHash), 'Reset credential must authenticate against the persisted hash')
+
+    assert.equal((await request('/auth/me', auth.otherDriver)).response.status, 200)
+    assert.equal((await request('/auth/logout', auth.otherDriver, 'POST')).response.status, 200)
+    assert.equal((await request('/auth/me', auth.otherDriver)).response.status, 401, 'Logout must revoke the server session, not only clear the client token')
+
     const finalCash = await db.booking.findUniqueOrThrow({ where: { id: cashBooking.id }, include: { invoices: true, pickupAlerts: true, rating: true, statusHistory: true } })
     assert.equal(finalCash.status, 'completed')
     assert.equal(finalCash.invoices[0].status, 'paid')
     assert.equal(finalCash.pickupAlerts.length, 1)
     assert.ok(finalCash.rating)
     assert.ok(finalCash.statusHistory.length >= 3, '20: operational actions must remain in status history')
+    assert.ok(finalCash.statusHistory.every(item => item.changedByUserId && ['driver', 'cleaner'].includes(item.changedByRole)), 'Every operational transition must retain a typed actor')
     const finalBank = await db.booking.findUniqueOrThrow({ where: { id: bankBooking.id }, include: { invoices: { include: { payments: true } } } })
     assert.equal(finalBank.status, 'completed', '19: payment must not mutate booking status')
     assert.equal(finalBank.invoices[0].status, 'paid')
@@ -340,6 +349,8 @@ test('complete operational workflow passes through real API routes and persisten
     await db.bookingPickupAlert.deleteMany({ where: { bookingId: { in: ids.bookingIds } } })
     await db.bookingCompletionTimingResponse.deleteMany({ where: { bookingId: { in: ids.bookingIds } } })
     await db.payment.deleteMany({ where: { tenantId: ids.tenantId } })
+    await db.uploadAsset.deleteMany({ where: { tenantId: ids.tenantId } })
+    await db.companyBankAccount.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.invoice.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.bookingStatusHistory.deleteMany({ where: { bookingId: { in: ids.bookingIds } } })
     await db.assignment.deleteMany({ where: { tenantId: ids.tenantId } })

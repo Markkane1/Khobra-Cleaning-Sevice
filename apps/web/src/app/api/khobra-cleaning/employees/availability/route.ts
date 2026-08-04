@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
-import { parseTimeToMinutes, calculateDurationHours, calculateEndTimeFromDuration, isTimeSlotOverlapping, validateBookingHours } from '@repo/core'
+import { parseTimeToMinutes, calculateDurationHours, calculateEndTimeFromDuration, isTimeSlotOverlapping, validateBookingHours, calendarDayRange } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
@@ -40,11 +40,7 @@ export async function GET(req: NextRequest) {
     const hoursCheck = validateBookingHours(startTime, endTime || calculateEndTimeFromDuration(startTime, duration), tenant.firstBookingTime, tenant.lastWorkingTime)
     if (!hoursCheck.isValid) return NextResponse.json({ error: hoursCheck.error }, { status: 400 })
 
-    const targetDate = new Date(dateStr)
-    const startOfDay = new Date(targetDate)
-    startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay = new Date(targetDate)
-    endOfDay.setHours(23, 59, 59, 999)
+    const { start: startOfDay, end: endOfDay } = calendarDayRange(dateStr, tenant.timezone || 'UTC')
 
     // 1. Fetch active employees with assignment metrics
     const employees = await db.employee.findMany({
@@ -67,7 +63,7 @@ export async function GET(req: NextRequest) {
       where: {
         tenantId,
         status: 'approved',
-        startDate: { lte: endOfDay },
+        startDate: { lt: endOfDay },
         endDate: { gte: startOfDay },
       },
     })
@@ -77,7 +73,7 @@ export async function GET(req: NextRequest) {
     const dayBookings = await db.booking.findMany({
       where: {
         tenantId,
-        scheduledDate: { gte: startOfDay, lte: endOfDay },
+        scheduledDate: { gte: startOfDay, lt: endOfDay },
         status: { notIn: ['cancelled', 'completed', 'no_show'] },
       },
       include: {
@@ -117,7 +113,7 @@ export async function GET(req: NextRequest) {
       const currentWorkload = emp.assignments.filter(a =>
         a.booking &&
         a.booking.scheduledDate >= startOfDay &&
-        a.booking.scheduledDate <= endOfDay &&
+        a.booking.scheduledDate < endOfDay &&
         a.status !== 'cancelled'
       ).length
 

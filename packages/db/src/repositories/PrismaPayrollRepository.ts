@@ -1,13 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 import { IPayrollRepository, PayrollSummary, PayrollRecord } from '@repo/application';
-import { UpdatePayrollDTO } from '@repo/core';
+import { UpdatePayrollDTO, zonedMonthRange } from '@repo/core';
 
 export class PrismaPayrollRepository implements IPayrollRepository {
   constructor(private readonly db: PrismaClient) {}
 
+  async getTimezone(tenantId: string): Promise<string> {
+    return (await this.db.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }))?.timezone || 'UTC';
+  }
+
   async getPayrollSummary(tenantId: string, year: number, month: string): Promise<PayrollSummary> {
-    const monthStart = new Date(year, new Date().getMonth(), 1);
-    const monthEnd = new Date(year, new Date().getMonth() + 1, 0, 23, 59, 59, 999);
+    const monthNumber = new Date(`${month} 1, 2000 UTC`).getUTCMonth() + 1;
+    if (!Number.isInteger(monthNumber)) throw new Error('Invalid payroll month');
+    const { start: monthStart, end: monthEnd } = zonedMonthRange(year, monthNumber, await this.getTimezone(tenantId));
 
     const existingRecords = await this.db.payrollRecord.findMany({
       where: { tenantId, year, month },
@@ -19,13 +24,13 @@ export class PrismaPayrollRepository implements IPayrollRepository {
       include: {
         user: { select: { name: true, email: true } },
         attendances: {
-          where: { date: { gte: monthStart, lte: monthEnd } },
+          where: { date: { gte: monthStart, lt: monthEnd } },
           select: { id: true, status: true, date: true },
         },
         assignments: {
           where: {
             status: 'completed',
-            completedAt: { gte: monthStart, lte: monthEnd },
+            completedAt: { gte: monthStart, lt: monthEnd },
           },
           select: { id: true, actualHours: true, overtimeHours: true },
         },
@@ -34,7 +39,7 @@ export class PrismaPayrollRepository implements IPayrollRepository {
 
     const records = employees.map((emp) => {
       const dbRec = existingMap.get(emp.id);
-      const baseSalary = emp.baseSalary || 0;
+      const baseSalary = Number(emp.baseSalary || 0);
       const dailyRate = baseSalary / 22;
       const hourlyRate = dailyRate / 8;
 
@@ -52,8 +57,8 @@ export class PrismaPayrollRepository implements IPayrollRepository {
       
       const overtimeHours = totalOvertimeHours + additionalOvertime;
       const overtimePay = overtimeHours * hourlyRate * 1.5;
-      const deductions = dbRec ? dbRec.deductions : daysAbsent * dailyRate;
-      const netSalary = dbRec ? dbRec.netSalary : baseSalary - deductions + overtimePay;
+      const deductions = dbRec ? Number(dbRec.deductions) : daysAbsent * dailyRate;
+      const netSalary = dbRec ? Number(dbRec.netSalary) : baseSalary - deductions + overtimePay;
 
       return {
         id: emp.id,
@@ -88,10 +93,10 @@ export class PrismaPayrollRepository implements IPayrollRepository {
   }
 
   async updateOrCreateRecord(tenantId: string, year: number, month: string, data: UpdatePayrollDTO): Promise<PayrollRecord> {
-    const emp = await this.db.employee.findUnique({ where: { id: data.employeeId } });
+    const emp = await this.db.employee.findFirst({ where: { id: data.employeeId, tenantId } });
     if (!emp) throw new Error('Employee not found');
 
-    const currentBase = data.baseSalary ?? emp.baseSalary ?? 0;
+    const currentBase = data.baseSalary ?? Number(emp.baseSalary ?? 0);
     const currentDeductions = data.deductions ?? 0;
     const currentAllowances = data.allowances ?? 0;
     const currentNet = data.netSalary ?? (currentBase - currentDeductions + currentAllowances);

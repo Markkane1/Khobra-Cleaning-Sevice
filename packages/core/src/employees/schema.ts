@@ -9,9 +9,10 @@ export const CreateEmployeeSchema = z.object({
   area: z.string().optional(),
   skills: z.string().optional(),
   baseSalary: z.number().optional().default(0),
+  temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters'),
 });
 
-export const UpdateEmployeeSchema = CreateEmployeeSchema.partial().extend({
+export const UpdateEmployeeSchema = CreateEmployeeSchema.omit({ temporaryPassword: true }).partial().extend({
   id: z.string(),
   status: z.string().optional(),
 });

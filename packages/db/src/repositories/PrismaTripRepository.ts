@@ -7,15 +7,15 @@ export class PrismaTripRepository implements ITripRepository {
 
   async findManyByTenant(tenantId: string): Promise<Trip[]> {
     return this.db.trip.findMany({
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       include: { driver: { include: { user: { select: { name: true } } } }, stops: true },
       orderBy: { date: 'desc' },
     }) as unknown as Trip[];
   }
 
   async findById(id: string): Promise<Trip | null> {
-    return this.db.trip.findUnique({
-      where: { id },
+    return this.db.trip.findFirst({
+      where: { id, deletedAt: null },
       include: { driver: { include: { user: { select: { name: true } } } }, stops: true },
     }) as unknown as Trip | null;
   }
@@ -69,7 +69,6 @@ export class PrismaTripRepository implements ITripRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.db.tripStop.deleteMany({ where: { tripId: id } });
-    await this.db.trip.delete({ where: { id } });
+    await this.db.trip.update({ where: { id }, data: { status: 'cancelled', deletedAt: new Date() } });
   }
 }

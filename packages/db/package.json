@@ -3,10 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./password": "./src/password.ts",
+    "./src/*": "./src/*.ts"
+  },
   "scripts": {
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:rehearse": "node scripts/rehearse-migrations.mjs",
+    "db:backup": "node scripts/database-backup.mjs",
+    "db:rehearse-backup": "node scripts/database-backup.mjs --rehearse",
+    "db:validate": "prisma validate",
+    "test:retention": "tsx scripts/test-operational-retention.ts",
+    "audit:actors": "tsx scripts/audit-actor-fields.ts",
+    "audit:timezones": "tsx scripts/audit-timezones.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
@@ -14,11 +27,12 @@
   "dependencies": {
     "@prisma/client": "^6.11.1",
     "@repo/application": "*",
-    "@repo/core": "*"
+    "@repo/core": "*",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@types/web-push": "^3.6.4",
     "prisma": "^6.11.1",
     "tsx": "^4.19.2"
   }
 }
-

@@ -35,6 +35,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Progress } from '@/components/ui/progress'
 import { exportToCSV } from '@/lib/csv-export'
 import { useSortable } from '@/hooks/use-sort'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -91,7 +92,7 @@ const getGradient = (n: string) => {
 
 const emptyForm = {
   name: '', email: '', phone: '', address: '',
-  city: '', area: '', skills: '', baseSalary: 0, status: 'active',
+  city: '', area: '', skills: '', baseSalary: 0, status: 'active', temporaryPassword: '',
 }
 
 /* ------------------------------------------------------------------ */
@@ -146,6 +147,7 @@ function EmpAvatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' | '
 /* ------------------------------------------------------------------ */
 
 export function Employees() {
+  const currency = useTenantCurrency()
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null)
@@ -219,6 +221,7 @@ export function Employees() {
       skills: e.skills || '',
       baseSalary: e.baseSalary || 0,
       status: e.status || 'active',
+      temporaryPassword: '',
     })
     setEditId(e.id)
     setOpen(true)
@@ -368,13 +371,14 @@ export function Employees() {
                     <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                   </div>
                 </div>
+                {!editId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} /></div>}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Phone</Label>
                     <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Base Salary (AED)</Label>
+                    <Label>Base Salary ({currency})</Label>
                     <Input type="number" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: Number(e.target.value) })} />
                   </div>
                 </div>
@@ -425,7 +429,7 @@ export function Employees() {
           { icon: Users, label: 'Total Staff', value: stats.total, color: 'bg-emerald-600', sub: stats.active > 0 ? `${stats.active} active` : 'No staff yet' },
           { icon: UserCheck, label: 'Active', value: stats.active, color: 'bg-teal-600', sub: `${stats.total > 0 ? Math.round((stats.active / stats.total) * 100) : 0}% of total` },
           { icon: Users, label: 'On Leave', value: stats.onLeave, color: 'bg-amber-500', sub: stats.onLeave > 0 ? 'Needs coverage' : 'All present' },
-          { icon: Wallet, label: 'Monthly Payroll', value: `AED ${(stats.totalPayroll / 1000).toFixed(0)}K`, color: 'bg-cyan-600', sub: 'Base salary sum' },
+          { icon: Wallet, label: 'Monthly Payroll', value: `${currency} ${(stats.totalPayroll / 1000).toFixed(0)}K`, color: 'bg-cyan-600', sub: 'Base salary sum' },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card className="border-0 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -701,7 +705,7 @@ export function Employees() {
                         {/* salary + status badge */}
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-emerald-700 dark:text-emerald-400 text-sm">
-                            AED {(e.baseSalary || 0).toLocaleString()}
+                            {currency} {(e.baseSalary || 0).toLocaleString()}
                           </span>
                           <Badge className={`${empStatusColor(e.status)} text-[10px]`}>
                             {e.status?.replace('_', ' ')}
@@ -811,7 +815,7 @@ export function Employees() {
                                   {e.area}{e.area && e.city ? ', ' : ''}{e.city}
                                 </TableCell>
                                 <TableCell className="hidden md:table-cell text-sm font-semibold">
-                                  AED {(e.baseSalary || 0).toLocaleString()}
+                                  {currency} {(e.baseSalary || 0).toLocaleString()}
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="outline" className="text-xs">{e._count?.assignments || 0}</Badge>
@@ -906,7 +910,7 @@ export function Employees() {
                   <div>
                     <p className="text-xs text-muted-foreground">Base Salary</p>
                     <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                      AED {(selectedEmployee.baseSalary || 0).toLocaleString()}
+                      {currency} {(selectedEmployee.baseSalary || 0).toLocaleString()}
                     </p>
                   </div>
                 </div>

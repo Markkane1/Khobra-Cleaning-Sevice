@@ -3,6 +3,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { createTransactionSnapshot } from '../transaction-snapshot';
 
+const money = (value: Prisma.Decimal | number | null | undefined) => Number(value || 0)
+
 export class PrismaPaymentRepository implements IPaymentRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -31,16 +33,17 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     return payments.map(payment => {
       const { payments: invoicePayments, ...invoice } = payment.invoice;
       const booking = invoice.booking;
+      const invoiceSubtotal = money(invoice.subtotal), invoiceTotal = money(invoice.totalAmount), paymentAmount = money(payment.amount)
       const transactionDate = payment.receivedAt || payment.verifiedAt || payment.createdAt;
-      const serviceAmount = booking ? Math.round(((booking.items.length ? booking.items.reduce((sum, item) => sum + item.totalAmount, 0) : booking.hourlyRate * booking.employeeCount * booking.duration)) * 100) / 100 : invoice.subtotal;
-      const materialCharges = booking ? Math.round(((booking.materials.length ? booking.materials.reduce((sum, item) => sum + item.totalAmount, 0) : booking.materialsCost) || 0) * 100) / 100 : 0;
-      const discount = booking?.discount || invoice.discount || 0;
-      const tax = booking ? Math.max(0, Math.round((booking.totalAmount - serviceAmount - materialCharges) * 100) / 100) : invoice.taxAmount;
-      const additionalCharges = Math.round((materialCharges + invoice.totalAmount - (serviceAmount + materialCharges + tax - discount)) * 100) / 100;
+      const serviceAmount = booking ? Math.round((booking.items.length ? booking.items.reduce((sum, item) => sum + money(item.totalAmount), 0) : money(booking.hourlyRate) * booking.employeeCount * booking.duration) * 100) / 100 : invoiceSubtotal;
+      const materialCharges = booking ? Math.round((booking.materials.length ? booking.materials.reduce((sum, item) => sum + money(item.totalAmount), 0) : money(booking.materialsCost)) * 100) / 100 : 0;
+      const discount = money(booking?.discount || invoice.discount);
+      const tax = booking ? Math.max(0, Math.round((money(booking.totalAmount) - serviceAmount - materialCharges) * 100) / 100) : money(invoice.taxAmount);
+      const additionalCharges = Math.round((materialCharges + invoiceTotal - (serviceAmount + materialCharges + tax - discount)) * 100) / 100;
       const priorPaid = invoicePayments
         .filter(item => item.id !== payment.id && ['paid', 'verified'].includes(item.status) && (item.receivedAt || item.verifiedAt || item.createdAt) < transactionDate)
-        .reduce((sum, item) => sum + item.amount, 0);
-      const remainingAfter = Math.max(0, Math.round((invoice.totalAmount - priorPaid - payment.amount) * 100) / 100);
+        .reduce((sum, item) => sum + money(item.amount), 0);
+      const remainingAfter = Math.max(0, Math.round((invoiceTotal - priorPaid - paymentAmount) * 100) / 100);
       let companyBankAccount: Record<string, any> | null = null;
       try { companyBankAccount = payment.companyBankAccountSnapshot ? JSON.parse(payment.companyBankAccountSnapshot) : null; } catch { /* Preserve transaction even if a legacy snapshot is malformed. */ }
       const detailTotal = Math.round((serviceAmount + additionalCharges + tax - discount - priorPaid - remainingAfter) * 100) / 100;
@@ -67,7 +70,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           customer: invoice.customer.user.name,
           paymentMethod: payment.method,
           transactionDate,
-          totalAmount: payment.amount,
+          totalAmount: paymentAmount,
           currency: companyBankAccount?.currency || 'AED',
           transactionStatus: payment.status,
           reconciliationStatus: payment.reconciliationStatus,
@@ -79,7 +82,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         details: {
           services: snapshot?.services || booking?.items.map(item => ({ name: item.service.name, hourlyRate: item.hourlyRate, employeeCount: item.employeeCount, hours: item.hours, amount: item.totalAmount })) || [],
           bookingServiceAmount: snapshot?.serviceAmount ?? serviceAmount,
-          hourlyRate: booking?.hourlyRate || 0,
+          hourlyRate: money(booking?.hourlyRate),
           assignedEmployees: booking?.assignments.length || 0,
           totalBillableHours: booking ? Math.round(((booking.items.length ? booking.items.reduce((sum, item) => sum + item.hours * item.employeeCount, 0) : booking.duration * booking.employeeCount)) * 100) / 100 : 0,
           additionalCharges: snapshot?.materials ?? additionalCharges,
@@ -87,7 +90,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           tax: snapshot?.taxAmount ?? tax,
           priorAmountPaid: Math.round(priorPaid * 100) / 100,
           remainingAfterTransaction: remainingAfter,
-          finalAmountReceived: payment.amount,
+          finalAmountReceived: paymentAmount,
           detailTotal: snapshot ? snapshot.amountReceived : detailTotal,
         },
         bookingInformation: booking ? { reference: booking.bookingNo, status: booking.status, scheduledDate: booking.scheduledDate, startTime: booking.startTime, endTime: booking.endTime, address: booking.address, city: booking.city, area: booking.area } : null,
@@ -105,12 +108,12 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       const invoice = await tx.invoice.findFirst({ where: { id: data.invoiceId, tenantId } });
       if (!invoice) throw Object.assign(new Error('Invoice not found'), { status: 404 });
       if (invoice.status === 'cancelled') throw new Error('Cancelled invoices cannot receive payments');
-      const remaining = Math.max(0, Math.round((invoice.totalAmount - invoice.paidAmount) * 100) / 100);
+      const remaining = Math.max(0, Math.round((money(invoice.totalAmount) - money(invoice.paidAmount)) * 100) / 100);
       if (remaining <= 0) throw new Error('Invoice is already fully paid');
       if (data.amount > remaining + 0.001) throw new Error(`Payment cannot exceed the remaining balance of ${remaining}`);
       if (await tx.payment.findFirst({ where: { tenantId, referenceNo: data.referenceNo } })) throw new Error('This transaction reference has already been recorded');
       const now = new Date();
-      const paidAmount = invoice.paidAmount + data.amount;
+      const paidAmount = money(invoice.paidAmount) + data.amount;
       const payment = await tx.payment.create({
         data: {
           tenantId,
@@ -130,7 +133,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         },
         include: { invoice: { include: { booking: { select: { id: true, bookingNo: true } } } } },
       });
-      await tx.invoice.update({ where: { id: invoice.id }, data: { paidAmount, status: paidAmount + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid' } });
+      await tx.invoice.update({ where: { id: invoice.id }, data: { paidAmount, status: paidAmount + 0.001 >= money(invoice.totalAmount) ? 'paid' : 'partially_paid' } });
       return payment;
     });
   }
@@ -177,7 +180,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         });
       }
 
-      const remainingPayable = Math.max(0, Math.round((invoice.totalAmount - invoice.paidAmount) * 100) / 100);
+      const remainingPayable = Math.max(0, Math.round((money(invoice.totalAmount) - money(invoice.paidAmount)) * 100) / 100);
       if (remainingPayable <= 0) {
         throw new Error('This booking has no outstanding payable amount');
       }
@@ -222,13 +225,13 @@ export class PrismaPaymentRepository implements IPaymentRepository {
 
       const latestPayment = [...invoice.payments].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
       if (!latestPayment || latestPayment.status === 'rejected') throw new Error('There is no locked payment to reopen');
-      const reversedAmount = ['verified', 'paid'].includes(latestPayment.status) ? latestPayment.amount : 0;
+      const reversedAmount = ['verified', 'paid'].includes(latestPayment.status) ? money(latestPayment.amount) : 0;
       await tx.payment.update({
         where: { id: latestPayment.id },
         data: { status: 'rejected', rejectedAt: new Date(), verifiedBy: adminUserId, decisionRemarks: reason || 'Payment reopened by Admin' },
       });
 
-      const paidAmount = Math.max(0, invoice.paidAmount - reversedAmount);
+      const paidAmount = Math.max(0, money(invoice.paidAmount) - reversedAmount);
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
@@ -285,6 +288,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
           assignments: { include: { employee: { select: { id: true, userId: true, user: { select: { name: true } } } } } },
           invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
           customer: { include: { user: { select: { name: true } } } },
+          tenant: { select: { currency: true } },
         },
       });
 
@@ -309,8 +313,8 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${invoice.id} FOR UPDATE`);
       invoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { payments: { orderBy: { createdAt: 'desc' } } } });
 
-      const existingPaid = invoice.paidAmount || 0;
-      const remainingPayable = Math.max(0, Math.round((invoice.totalAmount - existingPaid) * 100) / 100);
+      const existingPaid = money(invoice.paidAmount);
+      const remainingPayable = Math.max(0, Math.round((money(invoice.totalAmount) - existingPaid) * 100) / 100);
 
       if (remainingPayable <= 0) {
         throw new Error('Cash payment has already been completed for this booking');
@@ -326,7 +330,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       const now = new Date();
       const cleanerName = assignedAssignment.employee?.user?.name || 'Cleaner';
 
-      if (legacyCashSelection && Math.abs(legacyCashSelection.amount - remainingPayable) > 0.001) throw new Error('Collectible amount changed. Ask the customer or Admin to reselect the payment method');
+      if (legacyCashSelection && Math.abs(money(legacyCashSelection.amount) - remainingPayable) > 0.001) throw new Error('Collectible amount changed. Ask the customer or Admin to reselect the payment method');
       const paymentData = {
         transactionNo: legacyCashSelection?.transactionNo || `TXN-${randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`,
         status: 'paid', reconciliationStatus: 'pending', receivedBy: cleanerUserId, receivedAt: now, verifiedBy: null, verifiedAt: null,
@@ -349,8 +353,8 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
-          paidAmount: invoice.paidAmount + remainingPayable,
-          status: invoice.paidAmount + remainingPayable + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid',
+          paidAmount: existingPaid + remainingPayable,
+          status: existingPaid + remainingPayable + 0.001 >= money(invoice.totalAmount) ? 'paid' : 'partially_paid',
           selectedPaymentMethod: null,
           paymentSelectedBy: null,
           paymentSelectedAt: null,
@@ -364,7 +368,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         bookingNo: booking.bookingNo,
         customerName: booking.customer?.user?.name || 'Customer',
         amountReceived: remainingPayable,
-        currency: 'AED',
+        currency: booking.tenant.currency,
         cleanerName,
         receivedAt: now,
       };
@@ -412,7 +416,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     return this.prisma.$transaction(async tx => {
       if (values.isDefault) await tx.companyBankAccount.updateMany({ where: { tenantId, currency: normalizedCurrency, isDeleted: false }, data: { isDefault: false, updatedBy: userId } });
       return isNew
-        ? tx.companyBankAccount.create({ data: { tenantId, isDeleted: false, ...values } })
+        ? tx.companyBankAccount.create({ data: { tenantId, isDeleted: false, ...values, createdBy: userId } })
         : tx.companyBankAccount.update({ where: { id: existing!.id, tenantId }, data: values });
     });
   }

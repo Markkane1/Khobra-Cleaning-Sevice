@@ -14,6 +14,7 @@ import { NewBookingScreen } from './src/presentation/new-booking-screen'
 import { OperationsScreen } from './src/presentation/operations-screen'
 import { DriverExpensesScreen } from './src/presentation/driver-expenses-screen'
 import { clearWorkspaceSession, WorkspaceScreen } from './src/presentation/workspace-screen'
+import { setUnauthorizedHandler } from './src/infrastructure/http/api-client'
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000').replace(/\/$/, '') + '/api/khobra-cleaning'
 
@@ -26,6 +27,14 @@ export default function App() {
 
   useEffect(() => {
     secureSessionStore.read().then(setSession).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    setUnauthorizedHandler(async () => {
+      await Promise.all([clearWorkspaceSession(), secureSessionStore.clear()])
+      setSession(null)
+    })
+    return () => setUnauthorizedHandler()
   }, [])
 
   useEffect(() => {
@@ -122,7 +131,7 @@ function Overview({ stats, loading, pickupAlerts, onRefresh, onPickupViewed }: {
 
     <View style={styles.hero}>
       <View style={styles.heroGlow} />
-      <View style={styles.heroTop}><View><Text style={styles.heroLabel}>TOTAL REVENUE</Text><Text style={styles.revenue}>AED {(stats?.totalRevenue ?? 0).toLocaleString()}</Text></View><View style={styles.trend}><Ionicons name="trending-up" size={17} color="#a7f3d0" /><Text style={styles.trendText}>Live</Text></View></View>
+      <View style={styles.heroTop}><View><Text style={styles.heroLabel}>TOTAL REVENUE</Text><Text style={styles.revenue}>{(stats?.totalRevenue ?? 0).toLocaleString()}</Text></View><View style={styles.trend}><Ionicons name="trending-up" size={17} color="#a7f3d0" /><Text style={styles.trendText}>Live</Text></View></View>
       <View style={styles.heroStats}>
         <HeroStat label="Today" value={stats?.todayBookings ?? 0} />
         <View style={styles.heroDivider} />
@@ -157,7 +166,7 @@ function Metric({ icon, label, value, tint, color }: { icon: React.ComponentProp
 
 function BottomNavigation({ screen, role, onChange }: { screen: MainScreen; role: Session['user']['role']; onChange: (screen: Screen) => void }) {
   return <View style={styles.nav}>
-    {navigation.filter(item => item.id !== 'expenses' || role === 'driver').map((item) => {
+    {navigation.filter(item => (item.id !== 'expenses' || role === 'driver') && (item.id !== 'operations' || role !== 'admin')).map((item) => {
       const active = screen === item.id
       return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => onChange(item.id)} style={styles.navItem}>
         <View style={[styles.navIcon, active && styles.activeNavIcon]}><Ionicons name={active ? item.activeIcon : item.icon} size={21} color={active ? '#fff' : palette.muted} /></View>

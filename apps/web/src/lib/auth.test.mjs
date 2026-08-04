@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createSessionToken, hashPassword, verifyPassword, verifySessionToken } from './auth-crypto.ts'
 
-const user = { userId: 'u1', tenantId: 't1', email: 'user@example.com', role: 'admin', name: 'User' }
+process.env.AUTH_SECRET = 'test-only-auth-secret-with-sufficient-entropy'
+const { createSessionToken, hashPassword, verifyPassword, verifySessionToken } = await import('./auth-crypto.ts')
+
+const user = { userId: 'u1', tenantId: 't1', email: 'user@example.com', role: 'admin', name: 'User', sessionVersion: 0 }
 
 test('sessions reject tampering and expiry; passwords require the original secret', () => {
   const token = createSessionToken(user)

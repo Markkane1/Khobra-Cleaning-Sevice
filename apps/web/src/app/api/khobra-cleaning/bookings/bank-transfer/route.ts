@@ -7,16 +7,6 @@ import { randomUUID } from 'crypto'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 
-const proofBelongsToTenant = (proofUrl: string, tenantId: string) => {
-  try {
-    const url = new URL(proofUrl)
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-    return url.protocol === 'https:' && url.hostname === 'res.cloudinary.com' && Boolean(cloudName) && url.pathname.includes(`/${cloudName}/`) && url.pathname.includes(`/${tenantId}/payment-proofs/`) && /\.(jpe?g|png|webp|pdf)$/i.test(url.pathname)
-  } catch {
-    return false
-  }
-}
-
 const getActiveBankAccount = async (tenantId: string, accountId: string) => {
   return db.companyBankAccount.findFirst({ where: { id: accountId, tenantId, isActive: true, isDeleted: false } })
 }
@@ -24,7 +14,11 @@ const getActiveBankAccount = async (tenantId: string, accountId: string) => {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req, ['customer', 'admin'])
   if ('response' in auth) return auth.response
-  const bankAccount = await db.companyBankAccount.findFirst({ where: { tenantId: auth.session.tenantId, isActive: true, isDeleted: false }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] })
+  const bankAccount = await db.companyBankAccount.findFirst({
+    where: { tenantId: auth.session.tenantId, isActive: true, isDeleted: false },
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, bankName: true, accountTitle: true, accountNumber: true, iban: true, branchName: true, branchCode: true, currency: true, instructions: true, isDefault: true },
+  })
   return NextResponse.json({ bankAccount })
 }
 
@@ -33,7 +27,6 @@ export async function POST(req: NextRequest) {
     const auth = await requireAuth(req, ['customer'])
     if ('response' in auth) return auth.response
     const data = SubmitBankTransferSchema.parse(await req.json())
-    if (!proofBelongsToTenant(data.proofUrl, auth.session.tenantId)) return NextResponse.json({ error: 'Upload payment proof through the secure payment-proof uploader' }, { status: 400 })
     if (!await db.uploadAsset.findFirst({ where: { url: data.proofUrl, tenantId: auth.session.tenantId, userId: auth.session.userId, purpose: 'payment-proofs' } })) return NextResponse.json({ error: 'Payment proof was not uploaded by this customer.' }, { status: 400 })
     const companyBankAccount = await getActiveBankAccount(auth.session.tenantId, data.companyBankAccountId)
     if (!companyBankAccount) return NextResponse.json({ error: 'The selected company bank account is no longer active. Please select another account.' }, { status: 409 })
@@ -59,7 +52,7 @@ export async function POST(req: NextRequest) {
       }
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${invoice.id} FOR UPDATE`)
       if (invoice.selectedPaymentMethod !== 'bank_transfer') throw new Error('Customer must select Bank Transfer before submitting transfer details')
-      const remaining = Math.max(0, invoice.totalAmount - invoice.paidAmount)
+      const remaining = Math.max(0, Number(invoice.totalAmount) - Number(invoice.paidAmount))
       if (remaining <= 0) throw new Error('This invoice has no outstanding payable amount')
       if (data.transferAmount > remaining + 0.001) throw new Error(`Transfer amount cannot exceed the remaining payable amount of ${remaining}`)
       if (invoice.payments.some(item => item.method === 'bank_transfer' && item.status === 'under_verification')) throw new Error('A bank transfer is already under verification')
@@ -97,7 +90,7 @@ export async function POST(req: NextRequest) {
     try {
       const booking = await db.booking.findFirst({ where: { id: data.bookingId }, select: { bookingNo: true } })
       const admins = await db.user.findMany({ where: { tenantId: auth.session.tenantId, role: 'admin', status: 'active' }, select: { id: true } })
-      if (admins.length) await db.notification.createMany({ data: admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, title: 'Bank transfer verification required', message: `Booking ${booking?.bookingNo || data.bookingId}: transfer ${payment.referenceNo} for AED ${payment.amount} requires verification.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
+      if (admins.length) await db.notification.createMany({ data: admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, title: 'Bank transfer verification required', message: `Booking ${booking?.bookingNo || data.bookingId}: transfer ${payment.referenceNo} for ${companyBankAccount.currency} ${payment.amount} requires verification.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
     } catch (error) { console.error('Bank transfer admin notification failed', error) }
     broadcast('payment:created', { paymentId: payment.id, status: payment.status, bookingId: data.bookingId }, auth.session.tenantId)
     broadcast('booking:updated', { bookingId: data.bookingId }, auth.session.tenantId)
@@ -130,15 +123,16 @@ export async function PUT(req: NextRequest) {
       if (payment.invoice.booking?.status !== 'completed') throw new Error('Bank transfer can only be approved for a completed booking')
       if (invoice.selectedPaymentMethod !== 'bank_transfer' && payment.selectedBy !== payment.invoice.customer.userId) throw new Error('Bank Transfer was not selected by this booking customer')
       if (!payment.referenceNo || !payment.customerBankName || !payment.accountHolderName || !payment.transferDate || !payment.submittedAt) throw new Error('Required bank-transfer details are incomplete')
-      if (!payment.proofUrl || !proofBelongsToTenant(payment.proofUrl, auth.session.tenantId)) throw new Error('A valid uploaded payment proof is required')
+      if (!payment.proofUrl || !await tx.uploadAsset.findFirst({ where: { url: payment.proofUrl, tenantId: auth.session.tenantId, userId: payment.invoice.customer.userId, purpose: 'payment-proofs' } })) throw new Error('A valid uploaded payment proof is required')
       if (!payment.companyBankAccountId || !payment.companyBankAccountSnapshot) throw new Error('The submitted transfer is not linked to a company bank account')
-      if (!Number.isFinite(payment.amount) || payment.amount <= 0) throw new Error('Transfer amount must be greater than zero')
+      const paymentAmount = Number(payment.amount)
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('Transfer amount must be greater than zero')
       if (await tx.payment.findFirst({ where: { invoiceId: invoice.id, id: { not: payment.id }, status: { in: ['paid', 'verified'] } } })) throw new Error('A confirmed transaction already exists for this invoice')
-      const remaining = Math.max(0, invoice.totalAmount - invoice.paidAmount)
+      const remaining = Math.max(0, Number(invoice.totalAmount) - Number(invoice.paidAmount))
       if (remaining <= 0) throw new Error('This invoice is already fully paid')
-      if (payment.amount > remaining + 0.001) throw new Error('Payment exceeds the current invoice balance and cannot be approved')
-      const paidAmount = invoice.paidAmount + payment.amount
-      await tx.invoice.update({ where: { id: payment.invoiceId }, data: { paidAmount, status: paidAmount + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid', selectedPaymentMethod: null, paymentSelectedBy: null, paymentSelectedAt: null } })
+      if (paymentAmount > remaining + 0.001) throw new Error('Payment exceeds the current invoice balance and cannot be approved')
+      const paidAmount = Number(invoice.paidAmount) + paymentAmount
+      await tx.invoice.update({ where: { id: payment.invoiceId }, data: { paidAmount, status: paidAmount + 0.001 >= Number(invoice.totalAmount) ? 'paid' : 'partially_paid', selectedPaymentMethod: null, paymentSelectedBy: null, paymentSelectedAt: null } })
       const updated = await tx.payment.update({ where: { id: payment.id }, data: { transactionNo: payment.transactionNo || `TXN-${randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`, status: 'paid', reconciliationStatus: 'not_required', receivedAt: now, verifiedBy: auth.session.userId, verifiedAt: now, rejectedAt: null, decisionRemarks: data.remarks } })
       await tx.paymentEvent.create({ data: { tenantId: auth.session.tenantId, paymentId: payment.id, event: 'Bank transfer approved', status: 'paid', actorId: auth.session.userId, remarks: data.remarks } })
       await createTransactionSnapshot(tx, auth.session.tenantId, payment.id)

@@ -220,6 +220,7 @@ export function Bookings() {
   })
   const firstBookingTime = tenantSettings?.tenant?.firstBookingTime || '08:00'
   const lastWorkingTime = tenantSettings?.tenant?.lastWorkingTime || '20:00'
+  const currency = tenantSettings?.tenant?.currency || 'AED'
 
   const createMut = useMutation({
     mutationFn: (d: any) => fetch('/api/khobra-cleaning/bookings', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => {
@@ -266,7 +267,7 @@ export function Bookings() {
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
-      toast.success(`Booking ${data.bookingNo} assigned! Total recalculated: AED ${data.netAmount}`)
+      toast.success(`Booking ${data.bookingNo} assigned! Total recalculated: ${currency} ${data.netAmount}`)
       setAssigningBooking(null)
       setSelectedAssignEmpIds([])
     },
@@ -470,7 +471,7 @@ export function Bookings() {
       qc.invalidateQueries({ queryKey: ['bookings'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['payments'] })
-      toast.success(`Cash payment of AED ${data.amountReceived} recorded successfully!`)
+      toast.success(`Cash payment of ${data.currency || currency} ${data.amountReceived} recorded successfully!`)
       setCleanerCashBooking(null)
     },
     onError: (err: any) => {
@@ -774,7 +775,7 @@ export function Bookings() {
                           />
                           <span className="truncate">{s.name}</span>
                         </div>
-                        <span className="font-semibold shrink-0 ml-1">AED {s.baseRate}/hr</span>
+                        <span className="font-semibold shrink-0 ml-1">{currency} {s.baseRate}/hr</span>
                       </div>
                     )
                   }) : <p className="col-span-full p-2 text-sm text-muted-foreground">No services available for this account.</p>}
@@ -1029,14 +1030,14 @@ export function Bookings() {
                     {multiPricing.items.map(it => (
                       <div key={it.serviceId} className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground">
-                          • {it.serviceName} (AED {it.hourlyRate}/hr × {it.employeeCount} cleaner{it.employeeCount === 1 ? '' : 's'} × {it.hours}h)
+                          • {it.serviceName} ({currency} {it.hourlyRate}/hr × {it.employeeCount} cleaner{it.employeeCount === 1 ? '' : 's'} × {it.hours}h)
                         </span>
-                        <span className="font-semibold">AED {it.totalAmount.toLocaleString()}</span>
+                        <span className="font-semibold">{currency} {it.totalAmount.toLocaleString()}</span>
                       </div>
                     ))}
                     <div className="flex justify-between items-center font-medium pt-0.5 text-xs text-muted-foreground">
                       <span>Total Labour Charges</span>
-                      <span className="font-semibold text-foreground">AED {multiPricing.labourSubtotal.toLocaleString()}</span>
+                      <span className="font-semibold text-foreground">{currency} {multiPricing.labourSubtotal.toLocaleString()}</span>
                     </div>
 
                     {/* Itemized Materials Breakdown */}
@@ -1045,26 +1046,26 @@ export function Bookings() {
                         <span className="text-muted-foreground font-medium block text-[11px] uppercase tracking-wider">Materials Breakdown</span>
                         {multiPricing.materials.map((mat, idx) => (
                           <div key={idx} className="flex justify-between items-center text-xs">
-                            <span className="text-muted-foreground">• {mat.name || 'Material'} ({mat.quantity} {mat.unit} × AED {mat.unitPrice})</span>
-                            <span className="font-semibold">AED {mat.totalAmount.toLocaleString()}</span>
+                            <span className="text-muted-foreground">• {mat.name || 'Material'} ({mat.quantity} {mat.unit} × {currency} {mat.unitPrice})</span>
+                            <span className="font-semibold">{currency} {mat.totalAmount.toLocaleString()}</span>
                           </div>
                         ))}
                         <div className="flex justify-between items-center font-medium pt-0.5 text-xs text-muted-foreground">
                           <span>Total Material Charges</span>
-                          <span className="font-semibold text-foreground">AED {multiPricing.materialsSubtotal.toLocaleString()}</span>
+                          <span className="font-semibold text-foreground">{currency} {multiPricing.materialsSubtotal.toLocaleString()}</span>
                         </div>
                       </div>
                     )}
                     {multiPricing.taxAmount > 0 && (
                       <div className="flex justify-between items-center text-xs text-muted-foreground">
                         <span>Tax ({(multiPricing.taxRate * 100).toLocaleString()}%)</span>
-                        <span className="font-semibold text-foreground">AED {multiPricing.taxAmount.toLocaleString()}</span>
+                        <span className="font-semibold text-foreground">{currency} {multiPricing.taxAmount.toLocaleString()}</span>
                       </div>
                     )}
 
                     <div className="flex justify-between items-center pt-2 border-t border-border/40 font-bold">
                       <span>Final Booking Total</span>
-                      <span className="text-emerald-700 dark:text-emerald-400 text-sm">AED {multiPricing.netAmount.toLocaleString()}</span>
+                      <span className="text-emerald-700 dark:text-emerald-400 text-sm">{currency} {multiPricing.netAmount.toLocaleString()}</span>
                     </div>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-border/40">
@@ -1273,7 +1274,7 @@ export function Bookings() {
                               <TableCell className="text-sm">{format(parseISO(b.scheduledDate), 'MMM dd')}</TableCell>
                               <TableCell className="hidden md:table-cell text-sm">{b.startTime}{b.endTime ? ` - ${b.endTime}` : ` - ${calculateEndTimeFromDuration(b.startTime, b.duration)}`}</TableCell>
                               <TableCell className="hidden md:table-cell text-sm font-medium text-emerald-700 dark:text-emerald-400">{b.duration}h</TableCell>
-                              <TableCell className="font-semibold">AED {b.netAmount.toLocaleString()}</TableCell>
+                              <TableCell className="font-semibold">{currency} {b.netAmount.toLocaleString()}</TableCell>
                               <TableCell>
                                 {(() => {
                                   const fin = calculateBookingFinancials(b)
@@ -1371,7 +1372,7 @@ export function Bookings() {
                                           {currentRole === 'cleaner' && fin.paymentStatus === 'cash_selected' && fin.remainingPayableAmount > 0 && (
                                             <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold shadow-sm" onClick={() => setCleanerCashBooking(b)}>
                                               <Banknote className="h-3.5 w-3.5 mr-1 text-emerald-600" />
-                                              Mark Cash Received (AED {fin.remainingPayableAmount})
+                                              Mark Cash Received ({currency} {fin.remainingPayableAmount})
                                             </Button>
                                           )}
                                           {(currentRole === 'cleaner' || currentRole === 'admin') && b.invoices?.[0]?.payments?.some((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)) && (
@@ -1735,15 +1736,15 @@ export function Bookings() {
                         <div key={it.id} className="flex justify-between text-sm items-center">
                           <div>
                             <p className="font-medium text-sm">{it.service?.name}</p>
-                            <p className="text-xs text-muted-foreground">AED {it.hourlyRate}/hr × {it.employeeCount || selectedBooking.employeeCount || 1} staff × {it.hours || selectedBooking.duration}h</p>
+                            <p className="text-xs text-muted-foreground">{currency} {it.hourlyRate}/hr × {it.employeeCount || selectedBooking.employeeCount || 1} staff × {it.hours || selectedBooking.duration}h</p>
                           </div>
-                          <span className="font-semibold text-sm">AED {it.totalAmount.toLocaleString()}</span>
+                          <span className="font-semibold text-sm">{currency} {it.totalAmount.toLocaleString()}</span>
                         </div>
                       ))
                     ) : (
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{selectedBooking.service?.name} (AED {selectedBooking.hourlyRate}/hr × {selectedBooking.employeeCount || 1} staff × {selectedBooking.duration}h)</span>
-                        <span className="font-medium">AED {selectedBooking.totalAmount.toLocaleString()}</span>
+                        <span className="text-muted-foreground">{selectedBooking.service?.name} ({currency} {selectedBooking.hourlyRate}/hr × {selectedBooking.employeeCount || 1} staff × {selectedBooking.duration}h)</span>
+                        <span className="font-medium">{currency} {selectedBooking.totalAmount.toLocaleString()}</span>
                       </div>
                     )}
                   </div>
@@ -1754,33 +1755,33 @@ export function Bookings() {
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Materials Charges</p>
                       {selectedBooking.materials.map((mat: any) => (
                         <div key={mat.id} className="flex justify-between text-xs items-center">
-                          <span className="text-muted-foreground">• {mat.name} ({mat.quantity} {mat.unit} × AED {mat.unitPrice})</span>
-                          <span className="font-semibold">AED {mat.totalAmount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">• {mat.name} ({mat.quantity} {mat.unit} × {currency} {mat.unitPrice})</span>
+                          <span className="font-semibold">{currency} {mat.totalAmount.toLocaleString()}</span>
                         </div>
                       ))}
                       <div className="flex justify-between text-xs font-medium pt-1">
                         <span className="text-muted-foreground">Total Material Charges</span>
-                        <span>AED {(selectedBooking.materialsCost || 0).toLocaleString()}</span>
+                        <span>{currency} {(selectedBooking.materialsCost || 0).toLocaleString()}</span>
                       </div>
                     </div>
                   ) : selectedBooking.materialsCost > 0 ? (
                     <div className="flex justify-between text-sm pt-1 border-t border-border/40">
                       <span className="text-muted-foreground">Materials Charge</span>
-                      <span className="font-medium">AED {selectedBooking.materialsCost.toLocaleString()}</span>
+                      <span className="font-medium">{currency} {selectedBooking.materialsCost.toLocaleString()}</span>
                     </div>
                   ) : null}
 
                   {selectedBooking.discount > 0 && (
                     <div className="flex justify-between text-sm pt-1 border-t border-border/40">
                       <span className="text-muted-foreground">Discount</span>
-                      <span className="text-red-500">- AED {selectedBooking.discount.toLocaleString()}</span>
+                      <span className="text-red-500">- {currency} {selectedBooking.discount.toLocaleString()}</span>
                     </div>
                   )}
 
                   <Separator />
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-sm">Authoritative Final Total</span>
-                    <span className="font-bold text-emerald-600 text-lg">AED {selectedBooking.netAmount.toLocaleString()}</span>
+                    <span className="font-bold text-emerald-600 text-lg">{currency} {selectedBooking.netAmount.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -2162,27 +2163,27 @@ export function Bookings() {
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between text-muted-foreground">
                       <span>Booking Amount</span>
-                      <span className="font-medium text-foreground">AED {financials.bookingAmount.toLocaleString()}</span>
+                      <span className="font-medium text-foreground">{currency} {financials.bookingAmount.toLocaleString()}</span>
                     </div>
                     {financials.discount > 0 && (
                       <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
                         <span>Applicable Discount</span>
-                        <span className="font-medium">-AED {financials.discount.toLocaleString()}</span>
+                        <span className="font-medium">-{currency} {financials.discount.toLocaleString()}</span>
                       </div>
                     )}
                     {financials.taxAmount > 0 && (
                       <div className="flex justify-between text-muted-foreground">
                         <span>Tax</span>
-                        <span className="font-medium text-foreground">AED {financials.taxAmount.toLocaleString()}</span>
+                        <span className="font-medium text-foreground">{currency} {financials.taxAmount.toLocaleString()}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-muted-foreground">
                       <span>Amount Already Paid</span>
-                      <span className="font-medium text-foreground">AED {financials.paidAmount.toLocaleString()}</span>
+                      <span className="font-medium text-foreground">{currency} {financials.paidAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-sm font-bold text-emerald-800 dark:text-emerald-200 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/40">
                       <span>Remaining Payable</span>
-                      <span className="text-base text-emerald-600 dark:text-emerald-400">AED {financials.remainingPayableAmount.toLocaleString()}</span>
+                      <span className="text-base text-emerald-600 dark:text-emerald-400">{currency} {financials.remainingPayableAmount.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -2253,7 +2254,7 @@ export function Bookings() {
                                   onClick={() => setSelectedBankAccountId(acc.id)}
                                   className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors border ${selectedAcc.id === acc.id ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background hover:bg-muted text-muted-foreground border-border'}`}
                                 >
-                                  {acc.bankName} ({acc.currency || 'AED'})
+                                  {acc.bankName} ({acc.currency || currency})
                                 </button>
                               ))}
                             </div>
@@ -2390,7 +2391,7 @@ export function Bookings() {
                           />
                         </div>
                         <div>
-                          <span className="text-xs">Transfer Amount (AED) *</span>
+                          <span className="text-xs">Transfer Amount ({currency}) *</span>
                           <input
                             type="number"
                             min="0.01"
@@ -2454,7 +2455,7 @@ export function Bookings() {
                   }
                   const remaining = calculateBookingFinancials(paymentBooking).remainingPayableAmount
                   if (amount > remaining + 0.001) {
-                    toast.error(`Transfer amount cannot exceed AED ${remaining}`)
+                    toast.error(`Transfer amount cannot exceed ${currency} ${remaining}`)
                     return
                   }
                   submitBankTransferMut.mutate({
@@ -2519,13 +2520,13 @@ export function Bookings() {
 
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Currency</span>
-                    <span className="font-semibold text-foreground">AED</span>
+                    <span className="font-semibold text-foreground">{currency}</span>
                   </div>
 
                   <div className="flex justify-between items-center pt-2 border-t border-emerald-200/60 dark:border-emerald-800/40">
                     <span className="font-bold text-xs uppercase tracking-wider text-emerald-900 dark:text-emerald-200">Amount Collected</span>
                     <span className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">
-                      AED {financials.remainingPayableAmount.toLocaleString()}
+                      {currency} {financials.remainingPayableAmount.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -2608,7 +2609,7 @@ export function Bookings() {
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Transfer Amount</span>
                     <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400">
-                      AED {(payment?.amount || financials.remainingPayableAmount).toLocaleString()}
+                      {currency} {(payment?.amount || financials.remainingPayableAmount).toLocaleString()}
                     </span>
                   </div>
 

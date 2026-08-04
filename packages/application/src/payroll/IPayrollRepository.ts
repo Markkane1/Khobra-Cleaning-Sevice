@@ -21,6 +21,7 @@ export interface PayrollSummary {
 }
 
 export interface IPayrollRepository {
+  getTimezone(tenantId: string): Promise<string>;
   getPayrollSummary(tenantId: string, year: number, month: string): Promise<PayrollSummary>;
   updateOrCreateRecord(tenantId: string, year: number, month: string, data: UpdatePayrollDTO): Promise<PayrollRecord>;
 }

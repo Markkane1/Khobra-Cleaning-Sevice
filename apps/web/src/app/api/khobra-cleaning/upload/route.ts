@@ -16,7 +16,7 @@ function isValidSignature(type: string, bytes: Uint8Array): boolean {
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
   if ('response' in auth) return auth.response
-  if (!checkRateLimit(`upload:${auth.session.userId}`, 30, 60_000).allowed) return NextResponse.json({ error: 'Too many uploads. Please wait and try again.' }, { status: 429 })
+  if (!(await checkRateLimit(`upload:${auth.session.userId}`, 30, 60_000)).allowed) return NextResponse.json({ error: 'Too many uploads. Please wait and try again.' }, { status: 429 })
 
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME
   const apiKey = process.env.CLOUDINARY_API_KEY
@@ -39,12 +39,10 @@ export async function POST(request: NextRequest) {
 
     const purpose = String(formData.get('folder') || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'general'
     
-    // Restrict purpose by role
-    if (purpose === 'service-images' || purpose === 'inventory') {
-      if (auth.session.role !== 'admin' && auth.session.role !== 'manager') {
-        return NextResponse.json({ error: 'Forbidden. Role cannot upload to this folder.' }, { status: 403 })
-      }
-    }
+    const allowedPurposes = auth.session.role === 'admin'
+      ? ['general', 'service-gallery', 'service-hero', 'inventory', 'payment-proofs']
+      : auth.session.role === 'customer' ? ['general', 'payment-proofs'] : ['general']
+    if (!allowedPurposes.includes(purpose)) return NextResponse.json({ error: 'Forbidden. Role cannot upload to this folder.' }, { status: 403 })
 
     const validation = FileValidationSchema.safeParse({ name: file.name, type: file.type, size: file.size })
     if (!validation.success) {

@@ -66,14 +66,14 @@ const tooltipStyle: React.CSSProperties = {
   fontSize: 13,
 }
 
-function AedTooltip({ active, payload, label }: any) {
+function AedTooltip({ active, payload, label, currency }: any) {
   if (!active || !payload?.length) return null
   return (
     <div style={tooltipStyle} className="px-3 py-2">
       <p className="font-medium text-xs mb-1">{label}</p>
       {payload.map((entry: any, i: number) => (
         <p key={i} className="text-xs" style={{ color: entry.color || '#10b981' }}>
-          {entry.name}: AED {(entry.value ?? 0).toLocaleString()}
+          {entry.name}: {currency} {(entry.value ?? 0).toLocaleString()}
         </p>
       ))}
     </div>
@@ -178,6 +178,8 @@ export function Reports() {
     queryKey: ['complaints'],
     queryFn: () => fetch('/api/khobra-cleaning/complaints').then(r => r.json()),
   })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()) })
+  const currency = settings?.tenant?.currency || 'AED'
 
   const { data: ratingSubmissions = [] } = useQuery({
     queryKey: ['booking-ratings'],
@@ -221,14 +223,7 @@ export function Reports() {
   })
 
   /* ── Booking status distribution ── */
-  const confirmedBookings = Math.max(0, stats.totalBookings - (stats.completedBookings + stats.pendingBookings + stats.cancelledBookings + stats.inProgressBookings))
-  const statusData = [
-    { name: 'Completed', value: stats.completedBookings },
-    { name: 'Confirmed', value: confirmedBookings },
-    { name: 'In Progress', value: stats.inProgressBookings },
-    { name: 'Pending', value: stats.pendingBookings },
-    { name: 'Cancelled', value: stats.cancelledBookings },
-  ].filter(d => d.value > 0)
+  const statusData = Object.entries(stats.bookingStatusCounts || {}).map(([status, value]) => ({ name: status.replaceAll('_', ' '), value: Number(value) })).filter(d => d.value > 0)
 
   /* ── Service popularity ── */
   const serviceMap: Record<string, number> = {}
@@ -325,10 +320,10 @@ export function Reports() {
 
   /* ── KPIs ── */
   const kpis = [
-    { icon: DollarSign, label: 'Total Revenue', value: `AED ${totalRevenue.toLocaleString()}`, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500', sub: `Cash ${stats.cashInflow || 0} · Bank ${stats.bankInflow || 0}` },
+    { icon: DollarSign, label: 'Total Revenue', value: `${currency} ${totalRevenue.toLocaleString()}`, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500', sub: `Cash ${stats.cashInflow || 0} · Bank ${stats.bankInflow || 0}` },
     { icon: Briefcase, label: 'Total Bookings', value: stats.totalBookings, color: 'bg-teal-600', gradient: 'from-teal-400 to-cyan-500', sub: `${completionRate}% completion rate` },
     { icon: Users, label: 'Customers', value: stats.totalCustomers, color: 'bg-emerald-700', gradient: 'from-emerald-500 to-green-500', sub: `${retentionRate}% returning` },
-    { icon: TrendingUp, label: 'Avg Booking Value', value: `AED ${avgBookingValue.toLocaleString()}`, color: 'bg-teal-700', gradient: 'from-teal-500 to-cyan-600' },
+    { icon: TrendingUp, label: 'Avg Booking Value', value: `${currency} ${avgBookingValue.toLocaleString()}`, color: 'bg-teal-700', gradient: 'from-teal-500 to-cyan-600' },
   ]
 
   /* ================================================================== */
@@ -343,7 +338,7 @@ export function Reports() {
         <p className="text-sm text-muted-foreground">Operational insights and performance metrics</p>
       </motion.div>
 
-      <OperationalReports bookings={bookings} />
+      <OperationalReports bookings={bookings} currency={currency} />
 
       {/* ── Summary KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -460,7 +455,7 @@ export function Reports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                       <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<AedTooltip />} />
+                      <Tooltip content={<AedTooltip currency={currency} />} />
                       <Area
                         type="monotone" dataKey="revenue" name="Revenue"
                         stroke="#10b981" strokeWidth={2.5}
@@ -563,7 +558,7 @@ export function Reports() {
                         <Tooltip
                           contentStyle={tooltipStyle}
                           formatter={(value: number, name: string) => {
-                            if (name === 'revenue') return [`AED ${value.toLocaleString()}`, 'Revenue']
+                            if (name === 'revenue') return [`${currency} ${value.toLocaleString()}`, 'Revenue']
                             return [value, name]
                           }}
                         />

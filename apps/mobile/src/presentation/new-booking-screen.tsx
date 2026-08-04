@@ -10,9 +10,10 @@ import { cardShadow, LoadingState, MessageState, PageHeading, palette, PrimaryBu
 
 export function NewBookingScreen({ session, onCreated, onCancel }: { session: Session; onCreated: () => void; onCancel: () => void }) {
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([])
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([])
   const [customerId, setCustomerId] = useState('')
-  const [serviceId, setServiceId] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [serviceIds, setServiceIds] = useState<string[]>([])
+  const [date, setDate] = useState(new Date(Date.now() + 86_400_000).toISOString().slice(0, 10))
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('11:00')
   const [address, setAddress] = useState('')
@@ -26,8 +27,9 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
     ])
       .then(([serviceRecords, customerRecords]) => {
         setServices(serviceRecords.map((service) => ({ id: service.id, name: String(service.name || 'Service') })))
+        setCustomers(customerRecords.map(customer => ({ id: customer.id, name: String((customer.user as { name?: string } | undefined)?.name || customer.email || customer.id) })))
         const customer = customerRecords.find((item) => item.userId === session.user.userId)
-        setCustomerId(customer?.id || '')
+        setCustomerId(session.user.role === 'customer' ? customer?.id || '' : '')
       })
       .catch((error) => Alert.alert('Could not prepare booking', error instanceof Error ? error.message : 'Try again.'))
       .finally(() => setLoading(false))
@@ -36,7 +38,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
   const submit = async () => {
     try {
       setSubmitting(true)
-      await createBooking(khobraBookingGateway, { customerId, serviceId, scheduledDate: date, startTime, endTime, address }, session.token)
+      await createBooking(khobraBookingGateway, { customerId, serviceIds, scheduledDate: date, startTime, endTime, address }, session.token)
       onCreated()
     } catch (error) {
       Alert.alert('Could not create booking', error instanceof Error ? error.message : 'Try again.')
@@ -46,16 +48,18 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
   }
 
   if (loading) return <LoadingState label="Preparing your booking..." />
-  if (!customerId) return <MessageState icon="person-circle-outline" title="Customer account required" detail="Booking creation is currently available to customer accounts." action={<SecondaryButton label="Back to bookings" icon="arrow-back" onPress={onCancel} />} />
+  if (session.user.role === 'customer' && !customerId) return <MessageState icon="person-circle-outline" title="Customer account required" detail="Your customer profile could not be found." action={<SecondaryButton label="Back to bookings" icon="arrow-back" onPress={onCancel} />} />
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
     <PageHeading title="New booking" subtitle="Choose a service, time, and location." action={<Pressable accessibilityLabel="Close booking form" onPress={onCancel} style={styles.close}><Ionicons name="close" size={22} color={palette.inkSoft} /></Pressable>} />
 
+    {session.user.role === 'admin' ? <View style={styles.section}><View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>1</Text></View><View><Text style={styles.sectionHeading}>Choose a customer</Text><Text style={styles.sectionHint}>The booking will be created for this customer.</Text></View></View><View style={styles.services}>{customers.map(customer => <Pressable accessibilityRole="radio" accessibilityState={{ selected: customer.id === customerId }} key={customer.id} onPress={() => setCustomerId(customer.id)} style={[styles.service, customer.id === customerId && styles.selectedService]}><Ionicons name="person-outline" size={19} color={customer.id === customerId ? '#fff' : palette.primary} /><Text style={[styles.serviceText, customer.id === customerId && styles.selectedText]}>{customer.name}</Text></Pressable>)}</View></View> : null}
+
     <View style={styles.section}>
       <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>1</Text></View><View><Text style={styles.sectionHeading}>Choose a service</Text><Text style={styles.sectionHint}>Select the cleaning service you need.</Text></View></View>
       <View style={styles.services}>{services.map((service) => {
-        const selected = service.id === serviceId
-        return <Pressable accessibilityRole="radio" accessibilityState={{ selected }} key={service.id} onPress={() => setServiceId(service.id)} style={[styles.service, selected && styles.selectedService]}>
+        const selected = serviceIds.includes(service.id)
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={service.id} onPress={() => setServiceIds(current => selected ? current.filter(id => id !== service.id) : [...current, service.id])} style={[styles.service, selected && styles.selectedService]}>
           <View style={[styles.serviceIcon, selected && styles.selectedServiceIcon]}><Ionicons name="sparkles-outline" size={19} color={selected ? '#fff' : palette.primary} /></View>
           <Text style={[styles.serviceText, selected && styles.selectedText]}>{service.name}</Text>
           <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={21} color={selected ? '#fff' : '#a8bbb2'} />
@@ -77,7 +81,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
       <Field label="Address" icon="location-outline" value={address} onChangeText={setAddress} placeholder="Building, street, apartment" autoComplete="street-address" />
     </View>
 
-    <PrimaryButton label="Confirm booking" icon="checkmark" onPress={submit} loading={submitting} />
+    <PrimaryButton label="Confirm booking" icon="checkmark" onPress={submit} loading={submitting} disabled={!customerId || serviceIds.length === 0} />
     <SecondaryButton label="Cancel" onPress={onCancel} />
   </ScrollView>
 }

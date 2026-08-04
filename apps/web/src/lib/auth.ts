@@ -38,6 +38,14 @@ export async function requireAuth(
     }
   }
 
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !req.headers.get('authorization')) {
+    const origin = req.headers.get('origin')
+    const forwardedHost = req.headers.get('x-forwarded-host')
+    const forwardedProto = req.headers.get('x-forwarded-proto') || 'https'
+    const allowed = new Set([new URL(req.url).origin, process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, forwardedHost ? `${forwardedProto}://${forwardedHost}` : undefined].filter(Boolean))
+    if (!origin || !allowed.has(origin)) return { response: NextResponse.json({ error: 'Forbidden request origin.' }, { status: 403 }) }
+  }
+
   if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(session.role)) {
     return {
       response: NextResponse.json({ error: `Forbidden. Role '${session.role}' is not allowed.` }, { status: 403 }),

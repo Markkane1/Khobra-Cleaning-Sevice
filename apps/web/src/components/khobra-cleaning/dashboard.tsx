@@ -22,6 +22,7 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/store/app-store'
 import { useRealtime } from '@/hooks/use-realtime'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 
 /* ------------------------------------------------------------------ */
 /*  Animation Variants                                                 */
@@ -167,14 +168,14 @@ const tooltipStyle: React.CSSProperties = {
   fontSize: 13,
 }
 
-function AedTooltip({ active, payload, label }: any) {
+function AedTooltip({ active, payload, label, currency }: any) {
   if (!active || !payload?.length) return null
   return (
     <div style={tooltipStyle} className="px-3 py-2">
       <p className="font-medium text-xs mb-1">{label}</p>
       {payload.map((entry: any, i: number) => (
         <p key={i} className="text-xs" style={{ color: entry.color || '#10b981' }}>
-          {entry.name}: AED {(entry.value ?? 0).toLocaleString()}
+          {entry.name}: {currency} {(entry.value ?? 0).toLocaleString()}
         </p>
       ))}
     </div>
@@ -186,6 +187,7 @@ function AedTooltip({ active, payload, label }: any) {
 /* ------------------------------------------------------------------ */
 
 export function Dashboard() {
+  const currency = useTenantCurrency()
   const currentRole = useAppStore(s => s.currentRole)
   const qc = useQueryClient()
   const { subscribe, onEvent } = useRealtime()
@@ -272,14 +274,7 @@ export function Dashboard() {
   })
 
   /* ── Booking status distribution for donut ── */
-  const confirmedBookings = Math.max(0, stats.totalBookings - (stats.completedBookings + stats.pendingBookings + stats.cancelledBookings + stats.inProgressBookings))
-  const statusDonutData = [
-    { name: 'Pending', value: stats.pendingBookings || 0 },
-    { name: 'Confirmed', value: confirmedBookings },
-    { name: 'In Progress', value: stats.inProgressBookings || 0 },
-    { name: 'Completed', value: stats.completedBookings || 0 },
-    { name: 'Cancelled', value: stats.cancelledBookings || 0 },
-  ].filter(d => d.value > 0)
+  const statusDonutData = Object.entries(stats.bookingStatusCounts || {}).map(([status, value]) => ({ name: status.replaceAll('_', ' '), value: Number(value) })).filter(d => d.value > 0)
 
   /* ── Completion rate ── */
   const completionRate = stats.totalBookings > 0
@@ -302,6 +297,12 @@ export function Dashboard() {
   const avgPerBooking = stats.totalBookings > 0
     ? Math.round(stats.totalRevenue / stats.totalBookings)
     : 0
+  const revenueSeries = (revenueByDay || []).map((item: any) => ({ date: new Date(item.issuedAt), amount: Number(item.totalAmount || 0) }))
+  const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+  const currentRevenue = revenueSeries.filter(item => item.date >= sevenDaysAgo).reduce((sum, item) => sum + item.amount, 0)
+  const previousRevenue = revenueSeries.filter(item => item.date >= fourteenDaysAgo && item.date < sevenDaysAgo).reduce((sum, item) => sum + item.amount, 0)
+  const revenueTrend = previousRevenue > 0 ? Math.round(((currentRevenue - previousRevenue) / previousRevenue) * 100) : null
 
   /* ── Next booking today ── */
   const nextBooking = (todaysBookings || [])
@@ -331,8 +332,8 @@ export function Dashboard() {
     { icon: Briefcase, label: 'Total Bookings', value: stats.totalBookings, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500', sub: `${stats.todayBookings} today` },
     { icon: CalendarCheck, label: "Today's Schedule", value: stats.todayBookings, color: 'bg-teal-600', gradient: 'from-teal-400 to-cyan-500' },
     { icon: Clock, label: 'Active Jobs', value: stats.inProgressBookings, color: 'bg-orange-500', gradient: 'from-orange-400 to-amber-500' },
-    { icon: DollarSign, label: 'Total Revenue', value: `AED ${stats.totalRevenue.toLocaleString()}`, color: 'bg-emerald-700', gradient: 'from-emerald-500 to-green-500', sub: `${stats.paidInvoices}/${stats.totalInvoices} invoices paid`, trend: { value: '12%', up: true } },
-    { icon: DollarSign, label: 'Pending Payments', value: `AED ${Math.round(stats.pendingPaymentAmount || 0).toLocaleString()}`, color: 'bg-amber-600', gradient: 'from-amber-400 to-orange-500' },
+    { icon: DollarSign, label: 'Total Revenue', value: `${currency} ${stats.totalRevenue.toLocaleString()}`, color: 'bg-emerald-700', gradient: 'from-emerald-500 to-green-500', sub: `${stats.paidInvoices}/${stats.totalInvoices} invoices paid`, trend: revenueTrend === null ? undefined : { value: `${Math.abs(revenueTrend)}%`, up: revenueTrend >= 0 } },
+    { icon: DollarSign, label: 'Pending Payments', value: `${currency} ${Math.round(stats.pendingPaymentAmount || 0).toLocaleString()}`, color: 'bg-amber-600', gradient: 'from-amber-400 to-orange-500' },
     { icon: Users, label: 'Customers', value: stats.totalCustomers, color: 'bg-teal-700', gradient: 'from-teal-500 to-cyan-600' },
     { icon: UserCheck, label: 'Active Cleaners', value: stats.activeEmployees, color: 'bg-emerald-500', gradient: 'from-emerald-400 to-teal-600', sub: `${stats.onLeaveEmployees} on leave`, fraction: `${stats.activeEmployees}/${stats.activeEmployees + stats.onLeaveEmployees}` },
     { icon: PackageX, label: 'Low Stock Alerts', value: stats.lowStockItems, color: stats.lowStockItems > 0 ? 'bg-red-500' : 'bg-emerald-600', gradient: stats.lowStockItems > 0 ? 'from-red-400 to-orange-500' : 'from-emerald-400 to-teal-500', pulse: stats.lowStockItems > 0 },
@@ -491,12 +492,12 @@ export function Dashboard() {
               <span className="hidden sm:inline text-muted-foreground/30">\u00b7</span>
               <span className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="font-semibold text-foreground">AED {Math.round(weekRevenue).toLocaleString()}</span> revenue
+                <span className="font-semibold text-foreground">{currency} {Math.round(weekRevenue).toLocaleString()}</span> revenue
               </span>
               <span className="hidden sm:inline text-muted-foreground/30">\u00b7</span>
               <span className="flex items-center gap-1.5">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="font-semibold text-foreground">AED {avgPerBooking.toLocaleString()}</span> avg/booking
+                <span className="font-semibold text-foreground">{currency} {avgPerBooking.toLocaleString()}</span> avg/booking
               </span>
             </div>
           </CardContent>
@@ -510,7 +511,7 @@ export function Dashboard() {
           <Card className="border-0 shadow-sm rounded-xl h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold">Revenue Trend</CardTitle>
-              <CardDescription className="text-xs">Last 7 days \u00b7 Paid invoices in AED</CardDescription>
+              <CardDescription className="text-xs">Last 7 days · Paid invoices in {currency}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[280px]">
@@ -519,7 +520,7 @@ export function Dashboard() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                     <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<AedTooltip />} />
+                    <Tooltip content={<AedTooltip currency={currency} />} />
                     <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -604,7 +605,7 @@ export function Dashboard() {
                       <p className="text-xs text-muted-foreground truncate mt-0.5">{b.service?.name} \u00b7 {format(parseISO(b.scheduledDate), 'MMM dd')} {b.startTime}</p>
                     </div>
                     <div className="flex items-center gap-2 ml-3 shrink-0">
-                      <span className="text-xs font-semibold text-foreground">AED {(b.netAmount || 0).toLocaleString()}</span>
+                      <span className="text-xs font-semibold text-foreground">{currency} {Number(b.netAmount || 0).toLocaleString()}</span>
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0">{b.status}</Badge>
                     </div>
                   </div>

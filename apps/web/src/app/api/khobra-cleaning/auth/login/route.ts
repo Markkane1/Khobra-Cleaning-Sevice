@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
-import { createSessionToken, SESSION_TTL_SECONDS, verifyPassword } from '@/lib/auth'
+import { createSessionToken, isRoleId, SESSION_TTL_SECONDS, verifyPassword } from '@/lib/auth'
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for') || 'anonymous'
-    const rate = checkRateLimit(`login:${ip}`, 10, 60_000)
+    const rate = await checkRateLimit(`login:${ip}`, 10, 60_000)
     if (!rate.allowed) {
       return NextResponse.json({ error: 'Too many login attempts. Please wait a minute and try again.' }, { status: 429 })
     }
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } })
-    if (!user?.passwordHash || user.status !== 'active' || !user.tenantId || !verifyPassword(password, user.passwordHash)) {
+    if (!user?.passwordHash || user.status !== 'active' || !user.tenantId || !isRoleId(user.role) || !verifyPassword(password, user.passwordHash)) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 

@@ -1,6 +1,6 @@
 import type { Session, SignupInput } from '../domain/auth/types'
 import type { DashboardStats } from '../domain/dashboard/types'
-import type { Booking, CleanerRatingInput, CompletionTimingResponse, CreateBookingInput, DriverTrip, PickupAlert } from '../domain/bookings/types'
+import type { BankTransferInput, Booking, CleanerRatingInput, CompanyBankAccount, CompletionTimingResponse, CreateBookingInput, DriverTrip, PickupAlert } from '../domain/bookings/types'
 import type { OperationModule, OperationRecord } from '../domain/operations/types'
 import type { CreateDriverExpenseInput, DriverExpense } from '../domain/expenses/types'
 
@@ -23,6 +23,9 @@ export interface BookingGateway {
   getTrips(token: string): Promise<DriverTrip[]>
   markPickupAlertViewed(id: string, token: string): Promise<PickupAlert>
   selectPaymentMethod(bookingId: string, method: 'cash' | 'bank_transfer', token: string): Promise<unknown>
+  getCompanyBankAccounts(token: string): Promise<CompanyBankAccount[]>
+  uploadPaymentProof(file: { uri: string; name: string; mimeType: string }, token: string): Promise<string>
+  submitBankTransfer(input: BankTransferInput, token: string): Promise<unknown>
   receiveCash(bookingId: string, token: string): Promise<{ amountReceived: number; receivedAt: string }>
   reportCustomerIssue(bookingId: string, description: string, token: string): Promise<unknown>
   submitRating(bookingId: string, overallRating: number, overallComment: string, ratings: CleanerRatingInput[], token: string): Promise<Booking>

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSortable } from '@/hooks/use-sort'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { exportToCSV } from '@/lib/csv-export'
 
 interface PayrollRecord {
@@ -62,7 +63,7 @@ const fadeUp = {
   transition: { duration: 0.35 },
 }
 
-function SalaryBreakdownBar({ base, overtime, deductions }: { base: number; overtime: number; deductions: number }) {
+function SalaryBreakdownBar({ base, overtime, deductions, currency }: { base: number; overtime: number; deductions: number; currency: string }) {
   const total = base + overtime + deductions
   if (total === 0) return <div className="w-full h-2 rounded-full bg-muted" />
 
@@ -84,18 +85,18 @@ function SalaryBreakdownBar({ base, overtime, deductions }: { base: number; over
           <div className="text-xs space-y-1">
             <p className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Base: AED {base.toLocaleString()}
+              Base: {currency} {base.toLocaleString()}
             </p>
             {overtime > 0 && (
               <p className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-teal-400" />
-                Overtime: AED {overtime.toLocaleString()}
+                Overtime: {currency} {overtime.toLocaleString()}
               </p>
             )}
             {deductions > 0 && (
               <p className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-red-400" />
-                Deductions: AED {deductions.toLocaleString()}
+                Deductions: {currency} {deductions.toLocaleString()}
               </p>
             )}
           </div>
@@ -106,6 +107,7 @@ function SalaryBreakdownBar({ base, overtime, deductions }: { base: number; over
 }
 
 export function Payroll() {
+  const currency = useTenantCurrency()
   const [search, setSearch] = useState('')
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set())
   const qc = useQueryClient()
@@ -244,10 +246,10 @@ export function Payroll() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
-          { icon: Wallet, label: 'Total Gross Pay', value: `AED ${(summary.totalGross || 0).toLocaleString()}`, color: 'bg-emerald-600', sub: `${summary.employeeCount || 0} cleaners` },
-          { icon: TrendingDown, label: 'Total Deductions', value: `AED ${(summary.totalDeductions || 0).toLocaleString()}`, color: 'bg-red-500', sub: (summary.totalDeductions || 0) > 0 ? 'from absences' : 'no deductions' },
-          { icon: Banknote, label: 'Total Net Pay', value: `AED ${(summary.totalNet || 0).toLocaleString()}`, color: 'bg-teal-600', sub: 'after adjustments' },
-          { icon: BarChart3, label: 'Overtime Pay', value: `AED ${(summary.totalOvertime || 0).toLocaleString()}`, color: 'bg-cyan-600', sub: 'extra hours bonus' },
+          { icon: Wallet, label: 'Total Gross Pay', value: `${currency} ${(summary.totalGross || 0).toLocaleString()}`, color: 'bg-emerald-600', sub: `${summary.employeeCount || 0} cleaners` },
+          { icon: TrendingDown, label: 'Total Deductions', value: `${currency} ${(summary.totalDeductions || 0).toLocaleString()}`, color: 'bg-red-500', sub: (summary.totalDeductions || 0) > 0 ? 'from absences' : 'no deductions' },
+          { icon: Banknote, label: 'Total Net Pay', value: `${currency} ${(summary.totalNet || 0).toLocaleString()}`, color: 'bg-teal-600', sub: 'after adjustments' },
+          { icon: BarChart3, label: 'Overtime Pay', value: `${currency} ${(summary.totalOvertime || 0).toLocaleString()}`, color: 'bg-cyan-600', sub: 'extra hours bonus' },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card className="border-0 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -388,11 +390,12 @@ export function Payroll() {
                                 base={r.baseSalary}
                                 overtime={r.overtimePay}
                                 deductions={r.deductions}
+                                currency={currency}
                               />
                             </div>
                           </TableCell>
                           <TableCell className="hidden md:table-cell text-sm">
-                            AED {r.baseSalary.toLocaleString()}
+                            {currency} {r.baseSalary.toLocaleString()}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
                             <span className="inline-flex items-center gap-1.5 text-sm">
@@ -409,7 +412,7 @@ export function Payroll() {
                           <TableCell className="hidden md:table-cell text-sm">
                             {r.overtimePay > 0 ? (
                               <span className="text-teal-600 dark:text-teal-400 font-medium">
-                                +AED {r.overtimePay.toLocaleString()}
+                                +{currency} {r.overtimePay.toLocaleString()}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">—</span>
@@ -418,13 +421,13 @@ export function Payroll() {
                           <TableCell className="hidden lg:table-cell text-sm">
                             {r.deductions > 0 ? (
                               <span className="text-red-600 dark:text-red-400 font-medium">
-                                -AED {r.deductions.toLocaleString()}
+                                -{currency} {r.deductions.toLocaleString()}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell className="font-semibold text-sm">AED {r.netSalary.toLocaleString()}</TableCell>
+                          <TableCell className="font-semibold text-sm">{currency} {r.netSalary.toLocaleString()}</TableCell>
                           <TableCell>
                             <Badge className={payrollStatusColors [pStatus] || ''}>{pStatus}</Badge>
                           </TableCell>

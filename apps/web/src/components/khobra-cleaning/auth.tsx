@@ -271,12 +271,13 @@ export function AuthPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">City</Label>
+                      <Label htmlFor="signup-city" className="text-xs font-semibold">City</Label>
                       <Select
+                        name="city"
                         value={signupForm.city}
                         onValueChange={(v) => setSignupForm({ ...signupForm, city: v })}
                       >
-                        <SelectTrigger className="h-9 text-xs">
+                        <SelectTrigger id="signup-city" className="h-9 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -289,8 +290,10 @@ export function AuthPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">Area</Label>
+                      <Label htmlFor="signup-area" className="text-xs font-semibold">Area</Label>
                       <Input
+                        id="signup-area"
+                        name="area"
                         value={signupForm.area}
                         onChange={(e) => setSignupForm({ ...signupForm, area: e.target.value })}
                         placeholder="e.g. Marina / Downtown"
@@ -300,10 +303,12 @@ export function AuthPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Street Address</Label>
+                    <Label htmlFor="signup-address" className="text-xs font-semibold">Street Address</Label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="signup-address"
+                        name="address"
                         value={signupForm.address}
                         onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
                         placeholder="Building 4, Apt 1201..."
@@ -313,15 +318,19 @@ export function AuthPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Password</Label>
+                    <Label htmlFor="signup-password" className="text-xs font-semibold">Password</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="signup-password"
+                        name="password"
                         type="password"
                         value={signupForm.password}
                         onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
                         placeholder="Create password"
                         className="pl-9 h-9 text-xs"
+                        minLength={8}
+                        required
                       />
                     </div>
                   </div>

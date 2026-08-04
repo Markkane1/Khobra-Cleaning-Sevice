@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     if (data.tripId && !await db.trip.findFirst({ where: { id: data.tripId, tenantId: auth.session.tenantId, driverId: driver.id } })) {
       return NextResponse.json({ error: 'The selected trip is not assigned to this driver' }, { status: 403 })
     }
+    const tenant = await db.tenant.findUniqueOrThrow({ where: { id: auth.session.tenantId }, select: { currency: true } })
     return NextResponse.json(await db.driverExpense.create({
       data: {
         tenantId: auth.session.tenantId,
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
         category: data.category,
         typeDetail: data.typeDetail,
         amount: data.amount,
-        currency: data.currency.toUpperCase(),
+        currency: (data.currency || tenant.currency).toUpperCase(),
         expenseDate: data.expenseDate,
         notes: data.notes,
         receiptUrl: data.receiptUrl,

@@ -25,6 +25,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { useSortable } from '@/hooks/use-sort'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -39,13 +40,15 @@ const tripStatusColors : Record<string, string> = {
 const emptyTrip = { driverId: '', date: '', notes: '', startMileage: 0, fuelCost: 0 }
 
 export function Dispatch() {
+  const currency = useTenantCurrency()
   const currentRole = useAppStore(s => s.currentRole)
   const [tab, setTab] = useState('today')
   const [tripOpen, setTripOpen] = useState(false)
   const [tripForm, setTripForm] = useState(emptyTrip)
   const [driverOpen, setDriverOpen] = useState(false)
   const [driverEditId, setDriverEditId] = useState<string | null>(null)
-  const [driverForm, setDriverForm] = useState({ name: '', phone: '', email: '', licenseNo: '', vehicleNo: '' })
+  const emptyDriverForm = { name: '', phone: '', email: '', licenseNo: '', vehicleNo: '', temporaryPassword: '' }
+  const [driverForm, setDriverForm] = useState(emptyDriverForm)
   const qc = useQueryClient()
 
   const { data: drivers = [], isLoading: drvLoading } = useQuery({
@@ -65,13 +68,13 @@ export function Dispatch() {
 
   const createDriverMut = useMutation({
     mutationFn: (d: any) => fetch('/api/khobra-cleaning/drivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver created'); setDriverOpen(false); setDriverForm({ name: '', phone: '', email: '', licenseNo: '', vehicleNo: '' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver created'); setDriverOpen(false); setDriverForm(emptyDriverForm) },
     onError: () => toast.error('Failed to create driver'),
   })
 
   const updateDriverMut = useMutation({
     mutationFn: (d: any) => fetch('/api/khobra-cleaning/drivers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver updated'); setDriverOpen(false); setDriverForm({ name: '', phone: '', email: '', licenseNo: '', vehicleNo: '' }); setDriverEditId(null) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver updated'); setDriverOpen(false); setDriverForm(emptyDriverForm); setDriverEditId(null) },
     onError: () => toast.error('Failed to update driver'),
   })
 
@@ -207,7 +210,7 @@ export function Dispatch() {
           <p className="text-sm text-muted-foreground">Driver management and trip scheduling</p>
         </div>
         <div className={currentRole === 'admin' ? 'flex gap-2' : 'hidden'}>
-          <Dialog open={driverOpen} onOpenChange={(v) => { setDriverOpen(v); if (!v) { setDriverForm({ name: '', phone: '', email: '', licenseNo: '', vehicleNo: '' }); setDriverEditId(null) } }}>
+          <Dialog open={driverOpen} onOpenChange={(v) => { setDriverOpen(v); if (!v) { setDriverForm(emptyDriverForm); setDriverEditId(null) } }}>
             <DialogTrigger asChild>
               <Button variant="outline"><Plus className="h-4 w-4 mr-2" />Add Driver</Button>
             </DialogTrigger>
@@ -219,6 +222,7 @@ export function Dispatch() {
                   <div className="grid gap-2"><Label>Phone</Label><Input value={driverForm.phone} onChange={e => setDriverForm({ ...driverForm, phone: e.target.value })} placeholder="+971..." /></div>
                   <div className="grid gap-2"><Label>Email (optional)</Label><Input type="email" value={driverForm.email} onChange={e => setDriverForm({ ...driverForm, email: e.target.value })} placeholder="driver@khobra.ae" /></div>
                 </div>
+                {!driverEditId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={driverForm.temporaryPassword} onChange={e => setDriverForm({ ...driverForm, temporaryPassword: e.target.value })} /></div>}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>License No.</Label><Input value={driverForm.licenseNo} onChange={e => setDriverForm({ ...driverForm, licenseNo: e.target.value })} placeholder="LIC-12345" /></div>
                   <div className="grid gap-2"><Label>Vehicle No.</Label><Input value={driverForm.vehicleNo} onChange={e => setDriverForm({ ...driverForm, vehicleNo: e.target.value })} placeholder="UAE-5678" /></div>
@@ -247,7 +251,7 @@ export function Dispatch() {
               <div className="grid gap-2"><Label>Date</Label><Input type="date" value={tripForm.date} onChange={e => setTripForm({ ...tripForm, date: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2"><Label>Start Mileage</Label><Input type="number" value={tripForm.startMileage || ''} onChange={e => setTripForm({ ...tripForm, startMileage: Number(e.target.value) })} /></div>
-                <div className="grid gap-2"><Label>Fuel Cost (AED)</Label><Input type="number" value={tripForm.fuelCost || ''} onChange={e => setTripForm({ ...tripForm, fuelCost: Number(e.target.value) })} /></div>
+                <div className="grid gap-2"><Label>Fuel Cost ({currency})</Label><Input type="number" value={tripForm.fuelCost || ''} onChange={e => setTripForm({ ...tripForm, fuelCost: Number(e.target.value) })} /></div>
               </div>
               <div className="grid gap-2"><Label>Notes</Label><Textarea value={tripForm.notes} onChange={e => setTripForm({ ...tripForm, notes: e.target.value })} /></div>
             </div>
@@ -367,7 +371,7 @@ export function Dispatch() {
                               <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 to-teal-500 rounded-l-lg" />
                               <div className="flex items-start justify-between">
                                 <span className="font-mono text-xs font-semibold">{b.bookingNo}</span>
-                                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">AED {b.netAmount.toLocaleString()}</span>
+                                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">{currency} {b.netAmount.toLocaleString()}</span>
                               </div>
                               <p className="font-medium text-sm">{b.customer?.user?.name}</p>
                               <p className="text-xs text-muted-foreground">{b.service?.name}</p>
@@ -436,7 +440,7 @@ export function Dispatch() {
                           {d.status?.toLowerCase()}
                         </Badge>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => {
-                          setDriverForm({ name: d.user?.name || '', phone: d.phone || '', email: d.user?.email || '', licenseNo: d.licenseNo || '', vehicleNo: d.vehicleInfo || '' })
+                          setDriverForm({ name: d.user?.name || '', phone: d.phone || '', email: d.user?.email || '', licenseNo: d.licenseNo || '', vehicleNo: d.vehicleInfo || '', temporaryPassword: '' })
                           setDriverEditId(d.id)
                           setDriverOpen(true)
                         }}>
@@ -569,7 +573,7 @@ export function Dispatch() {
                       <TableCell className="hidden md:table-cell text-sm">
                         {t.fuelCost ? (
                           <span className="flex items-center gap-1 text-muted-foreground">
-                            <Fuel className="h-3 w-3" />AED {t.fuelCost.toLocaleString()}
+                            <Fuel className="h-3 w-3" />{currency} {t.fuelCost.toLocaleString()}
                           </span>
                         ) : '-'}
                       </TableCell>

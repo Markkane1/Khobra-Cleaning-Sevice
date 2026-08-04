@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ArrowRight, BadgeCheck, CalendarCheck, Clock3, Quote, ShieldCheck, Sparkles, Star, WandSparkles } from 'lucide-react'
+import { ArrowRight, BadgeCheck, CalendarCheck, Clock3, Sparkles, WandSparkles } from 'lucide-react'
 import { Logo } from '@/components/ui/logo'
 
 export type PublicService = {
@@ -18,7 +18,7 @@ export type PublicService = {
 }
 
 export function usePublicServices() {
-  return useQuery<{ services: PublicService[]; business: { name: string; firstBookingTime: string; lastWorkingTime: string } | null }>({
+  return useQuery<{ services: PublicService[]; business: { name: string; currency: string; firstBookingTime: string; lastWorkingTime: string } | null }>({
     queryKey: ['public-services'],
     queryFn: async () => {
       const response = await fetch('/api/khobra-cleaning/public/services')
@@ -57,10 +57,13 @@ export function ServiceVisual({ service, className = '' }: { service: PublicServ
 }
 
 export function ServiceCards({ limit }: { limit?: number }) {
-  const { data, isLoading } = usePublicServices()
+  const { data, isLoading, isError, refetch } = usePublicServices()
   const services = limit ? data?.services.slice(0, limit) : data?.services
+  const currency = data?.business?.currency || 'AED'
 
   if (isLoading) return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-[430px] animate-pulse rounded-[2rem] bg-white/60" />)}</div>
+  if (isError) return <div role="alert" className="rounded-[2rem] border border-amber-200 bg-amber-50 p-8 text-center"><h3 className="font-black text-slate-900">Services are temporarily unavailable</h3><p className="mt-2 text-sm text-slate-600">Please try loading the service list again.</p><button type="button" onClick={() => void refetch()} className="mt-5 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white">Try again</button></div>
+  if (!services?.length) return <div className="rounded-[2rem] border border-slate-200 bg-white/70 p-8 text-center text-sm font-semibold text-slate-600">No services are available for online booking right now.</div>
   return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
     {services?.map((service, index) => <motion.article key={service.id} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .05 }} whileHover={{ y: -8 }} className="group overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-[0_22px_60px_-28px_rgba(15,118,110,.45)] backdrop-blur-xl">
       <ServiceVisual service={service} className="h-56" />
@@ -72,7 +75,7 @@ export function ServiceCards({ limit }: { limit?: number }) {
         <h3 className="text-xl font-black tracking-tight text-slate-900">{service.name}</h3>
         <p className="mt-2 min-h-10 text-sm leading-6 text-slate-500">{service.description || 'Professional care, tailored to your space.'}</p>
         <div className="mt-5 flex items-end justify-between border-t border-slate-100 pt-5">
-          <div><span className="text-xs text-slate-400">From</span><p className="text-2xl font-black text-slate-900"><span className="text-sm font-bold text-emerald-600">AED</span> {service.baseRate.toLocaleString()}</p></div>
+          <div><span className="text-xs text-slate-400">From</span><p className="text-2xl font-black text-slate-900"><span className="text-sm font-bold text-emerald-600">{currency}</span> {service.baseRate.toLocaleString()}</p></div>
           <a href={`/book?service=${service.id}`} className="flex h-11 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-bold text-white shadow-lg transition group-hover:bg-emerald-600">Book <ArrowRight className="h-4 w-4" /></a>
         </div>
       </div>
@@ -83,6 +86,7 @@ export function ServiceCards({ limit }: { limit?: number }) {
 export function PublicLanding() {
   const { data } = usePublicServices()
   const featured = useMemo(() => data?.services[0], [data])
+  const currency = data?.business?.currency || 'AED'
   return <main className="min-h-screen overflow-hidden bg-[#f3fbf8] text-slate-950">
     <header className="fixed inset-x-0 top-0 z-50 mx-auto mt-3 flex max-w-6xl items-center justify-between rounded-2xl border border-white/80 bg-white/75 px-4 py-3 shadow-xl shadow-emerald-950/5 backdrop-blur-xl sm:px-6">
       <a href="/"><Logo size={40} textClassName="font-black text-sm text-slate-950" subtextClassName="text-[10px] text-emerald-600" /></a>
@@ -95,24 +99,23 @@ export function PublicLanding() {
       <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} className="relative z-10">
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-xs font-bold uppercase tracking-[.18em] text-emerald-700 shadow-sm"><WandSparkles className="h-4 w-4" /> Dubai&apos;s effortless clean</div>
         <h1 className="max-w-3xl text-5xl font-black leading-[.98] tracking-[-.055em] sm:text-7xl">A cleaner space.<br/><span className="bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-500 bg-clip-text text-transparent">A lighter life.</span></h1>
-        <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">Trusted professionals, transparent hourly pricing, and a beautifully simple booking experience—at your door when you need it.</p>
+        <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">Browse currently configured services, see hourly pricing, and send your booking request directly to the operations team.</p>
         <div className="mt-9 flex flex-col gap-3 sm:flex-row"><a href="/book" className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-7 py-4 font-bold text-white shadow-2xl shadow-slate-950/20 transition hover:-translate-y-1">Book your clean <ArrowRight className="h-5 w-5" /></a><a href="#services" className="rounded-2xl border border-slate-200 bg-white/70 px-7 py-4 text-center font-bold backdrop-blur">Explore services</a></div>
-        <div className="mt-9 flex flex-wrap gap-5 text-sm font-semibold text-slate-600"><span className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-600" /> Vetted team</span><span className="flex items-center gap-2"><BadgeCheck className="h-5 w-5 text-emerald-600" /> Quality assured</span><span className="flex items-center gap-2"><Star className="h-5 w-5 fill-amber-400 text-amber-400" /> Loved across Dubai</span></div>
+        <div className="mt-9 flex flex-wrap gap-5 text-sm font-semibold text-slate-600"><span className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-emerald-600" /> Configured services</span><span className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-emerald-600" /> Hourly estimates</span><span className="flex items-center gap-2"><CalendarCheck className="h-5 w-5 text-emerald-600" /> Online requests</span></div>
       </motion.div>
 
       <motion.div initial={{ opacity: 0, scale: .9, rotateY: -12 }} animate={{ opacity: 1, scale: 1, rotateY: 0 }} transition={{ duration: .8 }} className="relative mx-auto w-full max-w-[560px] [perspective:1200px]">
         <div className="absolute -inset-6 rotate-3 rounded-[3rem] bg-gradient-to-br from-emerald-400 to-cyan-500 opacity-20 blur-2xl" />
         <div className="relative rotate-[2deg] overflow-hidden rounded-[2.6rem] border-[10px] border-white bg-slate-900 shadow-[0_45px_90px_-25px_rgba(6,78,59,.55)]">
           {featured ? <ServiceVisual service={featured} className="h-[550px]" /> : <div className="h-[550px] bg-gradient-to-br from-emerald-400 to-teal-800" />}
-          <div className="absolute inset-x-6 bottom-6 rounded-[1.7rem] border border-white/20 bg-slate-950/70 p-5 text-white backdrop-blur-xl"><p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-300">Most loved</p><p className="mt-1 text-2xl font-black">{featured?.name || 'Deep home cleaning'}</p><div className="mt-3 flex justify-between text-sm text-white/70"><span>Professional • Insured</span><span className="font-bold text-white">from AED {featured?.baseRate.toLocaleString() || '500'}</span></div></div>
+          <div className="absolute inset-x-6 bottom-6 rounded-[1.7rem] border border-white/20 bg-slate-950/70 p-5 text-white backdrop-blur-xl"><p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-300">Featured service</p><p className="mt-1 text-2xl font-black">{featured?.name || 'Service catalogue'}</p><div className="mt-3 flex justify-between text-sm text-white/70"><span>{featured ? `${featured.minDuration}h minimum` : 'Loading current services'}</span>{featured ? <span className="font-bold text-white">from {currency} {featured.baseRate.toLocaleString()}</span> : null}</div></div>
         </div>
-        <div className="absolute -left-5 top-16 rounded-2xl border border-white bg-white/90 p-4 shadow-2xl backdrop-blur"><p className="text-2xl font-black text-emerald-600">4.9</p><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Customer rating</p></div>
       </motion.div>
     </section>
 
     <section id="services" className="mx-auto max-w-7xl px-6 py-24 lg:px-10"><div className="mb-12 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><p className="text-xs font-black uppercase tracking-[.25em] text-emerald-600">Made for your space</p><h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Cleaning that fits your life.</h2></div><p className="max-w-md text-slate-500">Every service uses the exact gallery and hero imagery configured by your Khobra team.</p></div><ServiceCards /></section>
 
-    <section id="why" className="mx-auto max-w-6xl px-6 py-20"><div className="grid overflow-hidden rounded-[2.5rem] bg-slate-950 text-white shadow-2xl lg:grid-cols-2"><div className="p-8 sm:p-14"><Quote className="h-10 w-10 text-emerald-400"/><h2 className="mt-7 text-3xl font-black leading-tight sm:text-4xl">“It feels less like booking a service and more like getting your weekend back.”</h2><div className="mt-8 flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-full bg-emerald-500 font-black">SA</div><div><p className="font-bold">Sara A.</p><p className="text-sm text-white/50">Khobra customer</p></div></div></div><div className="grid grid-cols-2 gap-px bg-white/10"><Stat value="4.9/5" label="average rating"/><Stat value="2 hrs" label="minimum booking"/><Stat value="100%" label="transparent pricing"/><Stat value="7 days" label="available weekly"/></div></div></section>
+    <section id="why" className="mx-auto max-w-6xl px-6 py-20"><div className="grid overflow-hidden rounded-[2.5rem] bg-slate-950 text-white shadow-2xl lg:grid-cols-2"><div className="p-8 sm:p-14"><Sparkles className="h-10 w-10 text-emerald-400"/><h2 className="mt-7 text-3xl font-black leading-tight sm:text-4xl">A direct path from service selection to a tracked booking request.</h2><p className="mt-6 max-w-lg leading-7 text-white/60">Choose from the live service catalogue, review the estimate, select a time, and keep the booking reference for follow-up.</p></div><div className="grid grid-cols-2 gap-px bg-white/10"><Stat value="01" label="choose a service"/><Stat value="02" label="select a time"/><Stat value="03" label="enter the location"/><Stat value="04" label="receive a reference"/></div></div></section>
 
     <section id="process" className="mx-auto max-w-6xl px-6 py-24"><div className="text-center"><p className="text-xs font-black uppercase tracking-[.25em] text-emerald-600">Three tiny steps</p><h2 className="mt-3 text-4xl font-black">From messy to effortless.</h2></div><div className="mt-14 grid gap-5 md:grid-cols-3"><Step icon={Sparkles} number="01" title="Choose your clean" text="Browse clear service details and real imagery."/><Step icon={CalendarCheck} number="02" title="Pick a time" text="Choose your date, crew size and duration."/><Step icon={BadgeCheck} number="03" title="We handle it" text="Your request lands directly with operations."/></div></section>
 

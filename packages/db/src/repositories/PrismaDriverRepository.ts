@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { IDriverRepository, Driver } from '@repo/application/src/drivers/IDriverRepository';
 import { CreateDriverDTO, UpdateDriverDTO } from '@repo/core/src/drivers/schema';
+import { nextReference } from '../reference-sequence';
+import { hashPassword } from '../password';
 
 export class PrismaDriverRepository implements IDriverRepository {
   constructor(private readonly db: PrismaClient) {}
@@ -27,12 +29,14 @@ export class PrismaDriverRepository implements IDriverRepository {
     const status = data.status || 'active';
 
     return this.db.$transaction(async tx => {
+      const driverCode = await nextReference(tx, tenantId, 'driver', 'DRV', 4, 0);
       const user = await tx.user.create({
         data: {
           tenantId,
           name: data.name,
           email: driverEmail,
           phone: data.phone || null,
+          passwordHash: hashPassword(data.temporaryPassword),
           role: 'driver',
           status: 'active',
         },
@@ -42,7 +46,7 @@ export class PrismaDriverRepository implements IDriverRepository {
         data: {
           tenantId,
           userId: user.id,
-          driverCode: `DRV-${Math.floor(1000 + Math.random() * 9000)}`,
+          driverCode,
           licenseNo,
           vehicleInfo: vehicleNo,
           status,

@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
+import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { Logo } from '@/components/ui/logo'
 import {
   Dialog, DialogContent, DialogTitle,
@@ -25,6 +26,7 @@ import {
 import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useRealtime } from '@/hooks/use-realtime'
+import { PushToggle } from '@/components/push-toggle'
 
 const Dashboard = dynamic(() => import('@/components/khobra-cleaning/dashboard').then(m => ({ default: m.Dashboard })), { loading: () => <PageSkeleton />, ssr: false })
 const Services = dynamic(() => import('@/components/khobra-cleaning/services').then(m => ({ default: m.Services })), { loading: () => <PageSkeleton />, ssr: false })
@@ -360,6 +362,7 @@ function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <h3 className="font-semibold text-sm">Notifications</h3>
           <div className="flex items-center gap-2">
+            <PushToggle />
             {unreadCount > 0 && (
               <>
                 <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 dark:border-emerald-700">
@@ -454,6 +457,7 @@ function ViewRenderer({ view, currentRole, allowedPages }: { view: ViewId; curre
 }
 
 export default function HomePage() {
+  const currency = useTenantCurrency()
   const { currentView, currentRole, currentUser, logout, sidebarOpen, setView, setUser, toggleSidebar, setSidebarOpen } = useAppStore()
   const { theme, setTheme } = useTheme()
 
@@ -568,7 +572,7 @@ export default function HomePage() {
 
   const miniStats = [
     { icon: CalendarCheck, label: 'Bookings Today', value: stats?.todayBookings ?? '--', color: 'text-emerald-600 dark:text-emerald-400' },
-    { icon: DollarSign, label: 'Revenue', value: stats ? `AED ${(stats.totalRevenue / 1000).toFixed(1)}k` : '--', color: 'text-amber-600 dark:text-amber-400' },
+    { icon: DollarSign, label: 'Revenue', value: stats ? `${currency} ${(stats.totalRevenue / 1000).toFixed(1)}k` : '--', color: 'text-amber-600 dark:text-amber-400' },
     { icon: UsersRound, label: 'Cleaners', value: stats?.activeEmployees ?? '--', color: 'text-cyan-600 dark:text-cyan-400' },
   ]
 

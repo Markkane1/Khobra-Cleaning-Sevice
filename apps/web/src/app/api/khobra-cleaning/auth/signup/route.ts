@@ -3,11 +3,12 @@ import { db } from '@repo/db'
 import { createSessionToken, hashPassword, SESSION_TTL_SECONDS } from '@/lib/auth'
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { getPublicTenant } from '@/lib/public-tenant'
 
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'anonymous'
-    if (!checkRateLimit(`signup:${ip}`, 5, 60_000).allowed) return NextResponse.json({ error: 'Too many signup attempts. Please wait and try again.' }, { status: 429 })
+    if (!(await checkRateLimit(`signup:${ip}`, 5, 60_000)).allowed) return NextResponse.json({ error: 'Too many signup attempts. Please wait and try again.' }, { status: 429 })
     const { name, email, phone, city, area, address, password, turnstileToken } = await req.json()
 
     if (!name || !email || !phone || typeof password !== 'string' || password.length < 8) {
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Please complete the security check again' }, { status: 400 })
     }
 
-    const tenant = await db.tenant.findFirst()
+    const tenant = await getPublicTenant()
     if (!tenant) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
     }

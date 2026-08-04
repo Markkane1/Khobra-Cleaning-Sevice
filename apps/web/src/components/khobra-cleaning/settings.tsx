@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
   Building2, Globe, Clock, Receipt, Hash, Monitor, Paintbrush,
-  Sun, Moon, Database, Trash2, ShieldAlert, Save, Server,
+  Sun, Moon, Database, ShieldAlert, Save, Server,
   Layers , HardDrive, Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -32,12 +32,6 @@ const fadeUp = {
   transition: { duration: 0.35 },
 }
 
-const colorPresets = [
-  { name: 'Emerald', value: 'emerald', className: 'bg-emerald-500' },
-  { name: 'Teal', value: 'teal', className: 'bg-teal-500' },
-  { name: 'Amber', value: 'amber', className: 'bg-amber-500' },
-]
-
 export function Settings() {
   const [activeTab, setActiveTab] = useState('company')
 
@@ -53,10 +47,6 @@ export function Settings() {
   const [firstBookingTime, setFirstBookingTime] = useState('08:00')
   const [lastWorkingTime, setLastWorkingTime] = useState('20:00')
 
-  const [compactMode, setCompactMode] = useState(false)
-
-  // Danger zone
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [cacheDialogOpen, setCacheDialogOpen] = useState(false)
 
   const { data: settingsData, isLoading } = useQuery({
@@ -151,31 +141,12 @@ export function Settings() {
     toast.success(checked ? 'Dark mode enabled' : 'Light mode enabled')
   }
 
-  const handleSelectColor = (color: string) => {
-    toast.success(`Accent color set to ${color}`)
-  }
-
-  const handleCompactToggle = (checked: boolean) => {
-    setCompactMode(checked)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('khobra_compact_mode', String(checked))
-      if (checked) document.documentElement.classList.add('compact-layout')
-      else document.documentElement.classList.remove('compact-layout')
-    }
-    toast.success(`Compact mode ${checked ? 'enabled' : 'disabled'}`)
-  }
-
   const handleClearCache = () => {
     localStorage.clear()
     sessionStorage.clear()
     setCacheDialogOpen(false)
     toast.success('Browser cache and local storage cleared')
     window.location.reload()
-  }
-
-  const handleDataReset = () => {
-    setResetDialogOpen(false)
-    toast.error('Database reset must be executed via administrative seed CLI (npm run db:seed).')
   }
 
   const companyFields = [
@@ -468,39 +439,6 @@ export function Settings() {
                 </CardContent>
               </Card>
 
-              {/* Danger Zone */}
-              <Card className="border-0 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-400 to-orange-500" />
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-red-100 dark:bg-red-950/30">
-                      <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base text-red-600 dark:text-red-400">Danger Zone</CardTitle>
-                      <CardDescription>Irrevers ible and destructive actions.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
-                    <div>
-                      <p className="text-sm font-medium text-red-700 dark:text-red-400">Reset All Data</p>
-                      <p className="text-xs text-red-600/70 dark:text-red-400/70">
-                        This will permanently delete all data and re-seed the database. This action cannot be undone.
-                      </p>
-                    </div>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setResetDialogOpen(true)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1.5" />
-                      Reset Data
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
             </motion.div>
           </TabsContent>
@@ -545,66 +483,6 @@ export function Settings() {
                 </CardContent>
               </Card>
 
-              {/* Primary Color */}
-              <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted/50">
-                      <Paintbrush className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">Primary Color</CardTitle>
-                      <CardDescription>Choose your preferred accent color.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border border-border/50">
-                    {colorPresets.map((preset) => (
-                      <button
-                        key={preset.value}
-                        className="flex items-center gap-3 p-3 rounded-lg border-2 transition-all hover:scale-105"
-                        style={{
-                          borderColor: 'hsl(var(--border))',
-                          backgroundColor: 'transparent',
-                        }}
-                        onClick={() => handleSelectColor(preset.value)}
-                      >
-                        <div className={`h-8 w-8 rounded-full ${preset.className} shadow-md`} />
-                        <span className="text-sm font-medium">{preset.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Compact Mode */}
-              <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted/50">
-                      <Layers className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">Display Mode</CardTitle>
-                      <CardDescription>Adjust density and spacing preferences.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border/50">
-                    <div>
-                      <p className="text-sm font-medium">Compact Mode</p>
-                      <p className="text-xs text-muted-foreground">
-                        {compactMode
-                          ? 'Reduce padding and spacing for denser layouts'
-                          : 'Standard spacing for comfortable reading'}
-                      </p>
-                    </div>
-                    <Switch checked={compactMode} onCheckedChange={handleCompactToggle} />
-                  </div>
-                </CardContent>
-              </Card>
             </div>
             </motion.div>
           </TabsContent>
@@ -633,30 +511,6 @@ export function Settings() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Data Reset Dialog */}
-      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-600 dark:text-red-400">
-              Reset All Data?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This is a destructive and irrevers ible action. All data will be permanently deleted and
-              the database will be re-seeded with demo data. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDataReset}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-1.5" />
-              Reset Everything
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

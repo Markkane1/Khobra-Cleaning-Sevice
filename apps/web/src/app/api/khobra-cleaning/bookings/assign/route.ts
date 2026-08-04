@@ -27,13 +27,14 @@ export async function POST(req: NextRequest) {
     const updatedBooking = await bookingService.assignEmployees(
       validated.bookingId,
       validated.employeeIds || [],
-      validated.autoAssign
+      validated.autoAssign,
+      { userId: auth.session.userId, role: 'admin', name: auth.session.name }
     )
 
     broadcast('booking:updated', {
       bookingNo: updatedBooking.bookingNo,
       status: updatedBooking.status,
-    })
+    }, auth.session.tenantId)
 
     return NextResponse.json(updatedBooking, { status: 200 })
   } catch (error: any) {

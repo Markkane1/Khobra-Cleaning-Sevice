@@ -25,7 +25,7 @@ export class PrismaStatsRepository implements IStatsRepository {
       where: { tenantId, status: { in: ['paid', 'verified'] } },
       _sum: { amount: true },
     });
-    return revenueResult._sum.amount || 0;
+    return Number(revenueResult._sum.amount || 0);
   }
 
   async getAttendanceStats(tenantId: string): Promise<{ status: string; _count: { status: number } }[]> {

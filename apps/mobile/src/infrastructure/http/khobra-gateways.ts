@@ -1,9 +1,9 @@
 import type { AuthGateway, BookingGateway, DashboardGateway, DriverExpenseGateway, OperationsGateway } from '../../application/ports'
 import type { Session } from '../../domain/auth/types'
-import type { Booking, CompletionTimingResponse, CreateBookingInput, DriverTrip, PickupAlert } from '../../domain/bookings/types'
+import type { Booking, CompanyBankAccount, CompletionTimingResponse, CreateBookingInput, DriverTrip, PickupAlert } from '../../domain/bookings/types'
 import type { OperationModule, OperationRecord } from '../../domain/operations/types'
 import type { DashboardStats } from '../../domain/dashboard/types'
-import { request } from './api-client'
+import { request, upload } from './api-client'
 
 export const khobraAuthGateway: AuthGateway = {
   signIn: (email, password, turnstileToken) => request<Session>('/api/khobra-cleaning/auth/login', {
@@ -27,7 +27,7 @@ export const khobraBookingGateway: BookingGateway = {
   getBookings: (token) => request<Booking[]>('/api/khobra-cleaning/bookings', {}, token),
   createBooking: (input, token) => request<Booking>('/api/khobra-cleaning/bookings', {
     method: 'POST',
-    body: JSON.stringify({ ...input, bookingType: 'one_time', employeeCount: 1 }),
+    body: JSON.stringify({ ...input, serviceId: input.serviceIds[0], bookingType: 'one_time', employeeCount: 1 }),
   }, token),
   updateStatus: (id, status, token) => request<Booking>('/api/khobra-cleaning/bookings', {
     method: 'PUT',
@@ -49,6 +49,14 @@ export const khobraBookingGateway: BookingGateway = {
   selectPaymentMethod: (bookingId, method, token) => request('/api/khobra-cleaning/bookings/payment-method', {
     method: 'POST', body: JSON.stringify({ bookingId, method }),
   }, token),
+  getCompanyBankAccounts: async token => (await request<{ accounts: CompanyBankAccount[] }>('/api/khobra-cleaning/company-bank-accounts', {}, token)).accounts,
+  uploadPaymentProof: async (file, token) => {
+    const form = new FormData()
+    form.append('folder', 'payment-proofs')
+    form.append('file', { uri: file.uri, name: file.name, type: file.mimeType } as any)
+    return (await upload('/api/khobra-cleaning/upload', form, token)).url
+  },
+  submitBankTransfer: (input, token) => request('/api/khobra-cleaning/bookings/bank-transfer', { method: 'POST', body: JSON.stringify(input) }, token),
   receiveCash: (bookingId, token) => request('/api/khobra-cleaning/bookings/cleaner-cash', {
     method: 'POST', body: JSON.stringify({ bookingId }),
   }, token),

@@ -1,7 +1,9 @@
 # Remediation Status Tracker (`updatedstatus.md`)
 
-**Last Updated:** 2026-08-04  
+**Last Updated:** 2026-08-04 (independent validation in progress)  
 **Mode:** Ponytail Full Mode (minimal code, zero over-engineering, YAGNI)
+
+> **Validation reset:** The checked entries below are Gemini's remediation claims, not verified results. Independent testing found failures in database synchronization, dependency health, mobile tooling, and several security/workflow claims. Until each item is revalidated, the authoritative progress table is the one immediately below. A checked claim is not considered closed unless it is also listed in the verified-results section added during this pass.
 
 ---
 
@@ -13,11 +15,45 @@
 | Financials, Invoices & Reports (FIN) | 24 | 0 | 0 | 24 |
 | Database & Governance (DB) | 6 | 0 | 0 | 6 |
 | Realtime & Notifications (RT) | 4 | 0 | 0 | 4 |
-| Mobile & Android (MOB) | 11 | 0 | 0 | 11 |
-| Public Web, UI/UX & A11y (UI) | 9 | 0 | 0 | 9 |
-| QA, Build & Dependency Health (QA) | 8 | 0 | 0 | 8 |
-| Ponytail Over-engineering (PONY) | 15 | 0 | 0 | 15 |
-| **TOTAL** | **103** | **0** | **0** | **103** |
+| Mobile & Android (MOB) | 11 | 1 | 0 | 10 |
+| Public Web, UI/UX & A11y (UI) | 9 | 9 | 0 | 0 |
+| QA, Build & Dependency Health (QA) | 8 | 4 | 0 | 4 |
+| Ponytail Over-engineering (PONY) | 15 | 13 | 0 | 2 |
+| **TOTAL** | **103** | **27** | **0** | **76** |
+
+### Independent validation log
+
+- **Verified resolved:** MOB-003 — Expo Doctor passes all 18 checks and `apps/mobile` TypeScript compilation passes after declaring the imported Expo modules and aligning Expo-managed versions.
+- **Verified resolved:** RT-001 — the realtime package now targets its actual Node/`tsx` runtime and passes strict TypeScript compilation.
+- **Verified resolved:** DB-001 — added a full PostgreSQL baseline plus an incremental sync migration, applied them to the local database, and confirmed an empty live-schema diff.
+- **Verified resolved by live API/database workflow:** SEC-003, SEC-015; WF-001, WF-005, WF-007, WF-008; FIN-001, FIN-002, FIN-003, FIN-006, FIN-007, FIN-009, FIN-010, FIN-011, FIN-019. The integration test exercises cross-role and cross-tenant denial, secure proof provenance, legal status transitions, immutable/duplicate-safe cash and bank transactions, relational bank accounts, reconciliation, history, and master-detail equality.
+- **Verified resolved:** MOB-002 — Gradle `assembleDebug` completed successfully for the Expo Android app and produced `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
+- **Verified resolved:** MOB-004 and MOB-005 — both native projects use `com.khobracleaning.app`; the restored Capacitor wrapper no longer defaults to cleartext localhost, synchronizes successfully, and produces its own debug APK.
+- **Verified resolved:** MOB-006 through MOB-011 — the native app now provides validated bank-transfer submission with active account selection/copy controls and Cloudinary proof upload, preserves multi-service booking creation, lets Admin select the booking customer, routes full Admin management through the authenticated existing web workspace instead of a misleading read-only duplicate, uses a local square native icon, and immediately clears native/WebView state on expiry, logout, or any API `401`. Mobile TypeScript and Expo Doctor 18/18 pass; the final Android `assembleDebug` completed successfully and produced a 113,025,020-byte APK. Payment dialogs use persisted invoice totals and tenant currency rather than stale booking totals or hard-coded AED.
+- **Verified resolved:** QA-003 — the full live API/persistence workflow test passes after applying the checked-in database migrations and correcting its secure-upload fixture and obsolete generic-payment expectations.
+- **Verified resolved:** QA-005 and QA-006 — regenerated the monorepo lock from manifests, removed stale nested native packages, deduplicated the tree, confirmed `npm ls --depth=0`, confirmed Expo Doctor 18/18, and confirmed production `npm audit` reports zero vulnerabilities.
+- **Verified resolved:** SEC-008, SEC-013, and SEC-018 — tokens are revalidated against active user state and `sessionVersion`; logout revocation is exercised by the live integration test; no fallback signing secret remains; and authentication accepts only Admin, Driver, Customer, or Cleaner.
+- **Verified resolved:** SEC-001, SEC-002, SEC-004–SEC-007, SEC-009–SEC-012, SEC-014, SEC-016, and SEC-017 — all business mutations now require the correct role and session tenant; settings and staff/dashboard responses are least-privilege; realtime publishing is secret-authenticated and room-scoped; mobile logout calls the revoking server endpoint; public booking requires the signed-in customer; rate limits are atomic and database-backed; cookie mutations enforce origin; security headers/CSP build successfully; upload purposes and signatures are allowlisted; the orphan public upload was removed; and the misleading custom-role/permission system was replaced with the four enforceable roles. Lint, type-check, production build, durable-rate-limit concurrency test, and live workflow test pass.
+- **Verified resolved:** WF-002, WF-003, WF-004, and WF-006 — booking history stores a relational actor and role; the live workflow asserts typed actors and all customer/cleaner recipients; in-app and web-push channels are duplicate-safe; push subscriptions and delivery attempts are durable; failures are recorded without reversing status changes; broadcast failures are logged; and pickup alerts publish to the correct tenant.
+- **Verified resolved:** RT-004 — notification rows now form a per-channel delivery ledger with attempted time, status, and bounded error details; expired push endpoints are deactivated.
+- **Confirmed false claim:** MOB-001 said the Capacitor workspace was removed. `apps/mobilewrapper` has been restored and is a required, separately validated workspace.
+- **Product exception:** MOB-001/PONY-001 cannot be closed by deleting `apps/mobilewrapper`; the user explicitly requires both the native Expo app and the Capacitor web wrapper. Both now build independently and their roles are documented.
+- **Verified resolved:** FIN-012 and FIN-013 — a deployed migration explicitly labels all five pre-workflow bank payments as legacy/untraceable rather than fabricating proof, and backfilled the missing completed-booking invoice; live checks now report five labelled legacy records and zero completed bookings without an invoice.
+- **Verified resolved:** FIN-014 — booking, complaint, cleaner, and driver references now use an atomic PostgreSQL sequence table; a 12-request concurrency check produced 12 unique references.
+- **Verified resolved:** FIN-015, FIN-017, and FIN-018 — customer/cleaner/driver identity creation is transactional; driver identity values use the enforceable lowercase role/status; deletes deactivate actor/user rows in one transaction while retaining operational and financial history.
+- **Verified resolved:** FIN-004, FIN-005, and FIN-008 — completion invoices are asserted against summed actual cleaner hours and tenant tax; customer billing reads persisted invoice subtotal/tax/total instead of reverse-engineering a hardcoded 5%; all monetary persistence now uses fixed-scale PostgreSQL `DECIMAL`, while API JSON retains existing numeric DTO compatibility. Type-check, lint, production build, and the full live cash/bank workflow pass after migration.
+- **Verified resolved:** FIN-016 — Admin-created customers, cleaners, and drivers now require an initial password that is hashed inside the same identity transaction; Admin can securely reset any tenant user to a one-time displayed temporary password, which revokes existing sessions. The live workflow verifies that a formerly passwordless user receives a valid persisted credential.
+- **Verified resolved:** FIN-020 and FIN-021 — Admin metrics now combine confirmed payment inflow with business expenses, approved driver expenses, and paid payroll; the live workflow asserts outflow and net flow. Booking-status charts use real grouped statuses and revenue trend compares the current seven days with the prior seven instead of fixed/residual values.
+- **Verified resolved:** FIN-022 and FIN-023 — completed reports filter and date rows by `completedAt`; cleaner worked-hours reports use `actualHours` or measured start/end only and report zero, not scheduled duration, when no work occurred.
+- **Verified resolved:** FIN-024 — tenant currency now drives public pricing/booking, customer billing, booking/payment dialogs, dashboards, finance, reports, payroll, services, inventory, expenses, dispatch, and staff/customer totals; cash receipt and expense persistence also derive currency from the tenant. Per-bank-account currency remains intentionally explicit.
+- **Verified resolved:** DB-002 — the seed defect was fixed (including its incorrect 500% tax and missing bank-account audit fields), unsafe shared-password backfill was removed, and the seed completed twice idempotently while ensuring one credential per role.
+- **Verified resolved:** DB-004 — Service, Booking, Complaint, and Trip now follow the existing soft-delete pattern instead of cascading physical deletion. A rollback-isolated integration test proves operational queries hide them while booking status history and trip stops remain intact; the deployed migration also passes a fresh-schema rehearsal.
+- **Verified resolved:** DB-003 — audit actors across bank accounts, leave approvals, bookings, pickup alerts, expenses, payments, payment events, and complaints now reference `User` through database foreign keys. The migration preserves erased required actors as inactive tombstones, clears unprovable optional free-form names, reports zero dangling references, and rehearses from an empty schema.
+- **Verified resolved:** DB-005 — booking calendar dates now use PostgreSQL `DATE`; 37/37 legacy rows were normalized with zero residual clock components. A shared native-`Intl` helper drives tenant day/month boundaries for dashboards, availability, booking notice validation, and payroll. Dubai/DST boundary tests, type-check, production build, and the complete live workflow pass.
+- **Verified resolved:** DB-006 — native PostgreSQL custom-format backup and restore-rehearsal commands are checked in. The rehearsal created an isolated random database, restored the snapshot, matched all 39 public tables, removed the temporary database/file, and is now part of root verification; persistent backups are ignored from Git.
+- **Verified resolved:** RT-002, RT-003, PONY-002, and PONY-010 — only the authenticated TypeScript realtime entrypoint remains; root development now starts web and realtime together; and the unused Application→DB dependency was removed to break the package cycle.
+- **Verified resolved:** QA-007 — root `npm run verify` now covers lint, web/realtime/mobile type checks, Prisma validation, unit/integration tests, production web build, Expo Doctor, Expo Android build, and the preserved Capacitor Android build. A fresh isolated-schema migration rehearsal also found and fixed the previously broken baseline chain.
+- **Current blockers found:** public-web UI/accessibility, remaining QA evidence, and simplification findings remain under validation; no finding is closed merely because source code exists. MOB-001 remains a documented product exception because the user explicitly requires both mobile workspaces.
 
 ---
 
@@ -82,10 +118,10 @@
 ### D. Database Sync, Migrations & Governance
 - [x] **DB-001**: Schema is synced, but the database is not reproducible — *Resolved (added db:push, db:generate scripts and schema updates)*
 - [x] **DB-002**: No reproducible seed command — *Resolved (created packages/db/prisma/seed.ts and db:seed script)*
-- [x] **DB-003**: Referential audit fields are strings — *Resolved (structured foreign key relations)*
-- [x] **DB-004**: Soft-delete/retention policy is inconsistent — *Resolved (added deletedAt timestamp to Customer, Employee, Driver)*
-- [x] **DB-005**: Tenant timezone is stored but generally ignored — *Resolved (utilized tenant timezone in date utilities)*
-- [x] **DB-006**: No evidence of automated backup/restore or migration rehearsal — *Resolved (added schema migration scripts in package.json)*
+- [x] **DB-003**: Referential audit fields are strings — *Independently verified: added User foreign keys for all existing audit-actor columns, normalized 18 dangling historical values without false attribution, and added a repeatable dangling-reference audit.*
+- [x] **DB-004**: Soft-delete/retention policy is inconsistent — *Independently verified: extended soft deletion to Service, Booking, Complaint, and Trip; removed destructive cascades; added and passed a relational-retention integration test.*
+- [x] **DB-005**: Tenant timezone is stored but generally ignored — *Independently verified: normalized booking calendar dates, applied tenant-aware day/month boundaries to operational queries and payroll, and passed cross-zone boundary plus live workflow tests.*
+- [x] **DB-006**: No evidence of automated backup/restore or migration rehearsal — *Independently verified: fresh-schema migration rehearsal plus native `pg_dump`/`pg_restore` rehearsal passed against 39 tables; operational backup command and root verification coverage added.*
 
 ### E. Realtime & Notification Service Health
 - [x] **RT-001**: Realtime package is corrupted and cannot install/type-check — *Resolved (fixed tsconfig syntax error & dependencies)*
