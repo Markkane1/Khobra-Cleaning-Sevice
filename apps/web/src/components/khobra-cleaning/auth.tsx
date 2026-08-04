@@ -49,7 +49,7 @@ export function AuthPage() {
     email: '',
     phone: '',
     city: 'Dubai',
-    area: 'Downtown',
+    area: '',
     address: '',
     password: '',
   })
@@ -173,6 +173,7 @@ export function AuthPage() {
                         id="login-email"
                         name="email"
                         type="email"
+                        autoComplete="email"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         className="pl-9 h-10"
@@ -190,6 +191,7 @@ export function AuthPage() {
                         id="login-password"
                         name="password"
                         type="password"
+                        autoComplete="current-password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         className="pl-9 h-10"
@@ -224,6 +226,7 @@ export function AuthPage() {
                       <Input
                         id="signup-name"
                         name="name"
+                        autoComplete="name"
                         value={signupForm.name}
                         onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
                         placeholder="John Doe"
@@ -242,6 +245,7 @@ export function AuthPage() {
                           id="signup-email"
                           name="email"
                           type="email"
+                          autoComplete="email"
                           value={signupForm.email}
                           onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
                           placeholder="john@example.com"
@@ -258,6 +262,8 @@ export function AuthPage() {
                         <Input
                           id="signup-phone"
                           name="phone"
+                          type="tel"
+                          autoComplete="tel"
                           value={signupForm.phone}
 
                           onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
@@ -309,6 +315,7 @@ export function AuthPage() {
                       <Input
                         id="signup-address"
                         name="address"
+                        autoComplete="street-address"
                         value={signupForm.address}
                         onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
                         placeholder="Building 4, Apt 1201..."
@@ -325,6 +332,7 @@ export function AuthPage() {
                         id="signup-password"
                         name="password"
                         type="password"
+                        autoComplete="new-password"
                         value={signupForm.password}
                         onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
                         placeholder="Create password"

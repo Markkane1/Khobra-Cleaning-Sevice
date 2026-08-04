@@ -24,8 +24,6 @@ export * from './invoices/IInvoiceRepository';
 export * from './invoices/InvoiceService';
 export * from './leave/ILeaveRepository';
 export * from './leave/LeaveService';
-export * from './notifications/INotificationRepository';
-export * from './notifications/NotificationService';
 export * from './payments/IPaymentRepository';
 export * from './payments/PaymentService';
 export * from './payroll/IPayrollRepository';
@@ -42,4 +40,3 @@ export * from './vendor-items/IVendorItemRepository';
 export * from './vendor-items/VendorItemService';
 export * from './vendors/IVendorRepository';
 export * from './vendors/VendorService';
-

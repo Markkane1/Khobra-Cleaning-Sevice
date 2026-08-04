@@ -519,6 +519,7 @@ export default function HomePage() {
   }, [currentUser?.expiresAt, logout])
 
   useEffect(() => {
+    if (!currentUser) { setStats(null); return }
     fetch('/api/khobra-cleaning/dashboard')
       .then((r) => r.json())
       .then((data) => {
@@ -535,11 +536,12 @@ export default function HomePage() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [currentUser?.userId])
 
   const { data: rbacData } = useQuery({
-    queryKey: ['rbac'],
+    queryKey: ['rbac', currentRole, currentUser?.userId],
     queryFn: () => fetch('/api/khobra-cleaning/rbac').then(r => r.json()),
+    enabled: Boolean(currentUser),
   })
 
   const rolePermissions: Record<string, string[]> = rbacData?.permissions || {}
@@ -572,8 +574,13 @@ export default function HomePage() {
 
   const miniStats = [
     { icon: CalendarCheck, label: 'Bookings Today', value: stats?.todayBookings ?? '--', color: 'text-emerald-600 dark:text-emerald-400' },
-    { icon: DollarSign, label: 'Revenue', value: stats ? `${currency} ${(stats.totalRevenue / 1000).toFixed(1)}k` : '--', color: 'text-amber-600 dark:text-amber-400' },
-    { icon: UsersRound, label: 'Cleaners', value: stats?.activeEmployees ?? '--', color: 'text-cyan-600 dark:text-cyan-400' },
+    ...(currentRole === 'admin' ? [
+      { icon: DollarSign, label: 'Revenue', value: stats ? `${currency} ${(stats.totalRevenue / 1000).toFixed(1)}k` : '--', color: 'text-amber-600 dark:text-amber-400' },
+      { icon: UsersRound, label: 'Cleaners', value: stats?.activeEmployees ?? '--', color: 'text-cyan-600 dark:text-cyan-400' },
+    ] : [
+      { icon: UserCheck, label: 'Completed', value: stats?.completedBookings ?? '--', color: 'text-cyan-600 dark:text-cyan-400' },
+      { icon: Clock, label: 'Pending', value: stats?.pendingBookings ?? '--', color: 'text-amber-600 dark:text-amber-400' },
+    ]),
   ]
 
   if (!sessionChecked) return <div className="min-h-screen bg-background p-8"><PageSkeleton /></div>

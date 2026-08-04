@@ -16,10 +16,10 @@
 | Database & Governance (DB) | 6 | 0 | 0 | 6 |
 | Realtime & Notifications (RT) | 4 | 0 | 0 | 4 |
 | Mobile & Android (MOB) | 11 | 1 | 0 | 10 |
-| Public Web, UI/UX & A11y (UI) | 9 | 9 | 0 | 0 |
-| QA, Build & Dependency Health (QA) | 8 | 4 | 0 | 4 |
+| Public Web, UI/UX & A11y (UI) | 9 | 1 | 0 | 8 |
+| QA, Build & Dependency Health (QA) | 8 | 1 | 0 | 7 |
 | Ponytail Over-engineering (PONY) | 15 | 13 | 0 | 2 |
-| **TOTAL** | **103** | **27** | **0** | **76** |
+| **TOTAL** | **103** | **16** | **0** | **87** |
 
 ### Independent validation log
 
@@ -30,6 +30,9 @@
 - **Verified resolved:** MOB-002 — Gradle `assembleDebug` completed successfully for the Expo Android app and produced `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
 - **Verified resolved:** MOB-004 and MOB-005 — both native projects use `com.khobracleaning.app`; the restored Capacitor wrapper no longer defaults to cleartext localhost, synchronizes successfully, and produces its own debug APK.
 - **Verified resolved:** MOB-006 through MOB-011 — the native app now provides validated bank-transfer submission with active account selection/copy controls and Cloudinary proof upload, preserves multi-service booking creation, lets Admin select the booking customer, routes full Admin management through the authenticated existing web workspace instead of a misleading read-only duplicate, uses a local square native icon, and immediately clears native/WebView state on expiry, logout, or any API `401`. Mobile TypeScript and Expo Doctor 18/18 pass; the final Android `assembleDebug` completed successfully and produced a 113,025,020-byte APK. Payment dialogs use persisted invoice totals and tenant currency rather than stale booking totals or hard-coded AED.
+- **Verified resolved:** UI-001 and UI-003 through UI-009 — unsupported ratings, named testimonials, and marketing statistics were removed; login/signup fields expose programmatic names and autofill semantics; narrow booking cards are compact; public API failures have explicit retry/empty states; fake settings controls and destructive reset theatre were removed; customer invoice download uses the authorized PDF endpoint; dead portal components remain absent; and authenticated browser journeys were exercised for Admin, Cleaner, Driver, and Customer. The browser pass also found and fixed CSP-blocked Turnstile, hardcoded Admin greetings, non-admin Admin quick actions/finance panels, and cross-role React Query/sidebar cache leakage.
+- **Verified resolved:** QA-001, QA-002, and QA-004 — production type errors are not ignored, React strict mode is enabled, and automated checks now cover authentication, durable concurrent rate limiting, legal workflow transitions, transaction idempotency/master-detail equality, tenant denial, migration rehearsal, backup restore, retention, actor FKs, timezone boundaries, the live cash/bank/rating workflow, and both Android builds. A clean root `npm run verify` passes the complete chain.
+- **Still open:** UI-002 and QA-008 — the live database still has no configured service hero/gallery images and the audited environment contains no Cloudinary credentials. Local/demo fallback storage was intentionally not reintroduced; these require an owned Cloudinary test/production account to exercise a real upload and populate the service records.
 - **Verified resolved:** QA-003 — the full live API/persistence workflow test passes after applying the checked-in database migrations and correcting its secure-upload fixture and obsolete generic-payment expectations.
 - **Verified resolved:** QA-005 and QA-006 — regenerated the monorepo lock from manifests, removed stale nested native packages, deduplicated the tree, confirmed `npm ls --depth=0`, confirmed Expo Doctor 18/18, and confirmed production `npm audit` reports zero vulnerabilities.
 - **Verified resolved:** SEC-008, SEC-013, and SEC-018 — tokens are revalidated against active user state and `sessionVersion`; logout revocation is exercised by the live integration test; no fallback signing secret remains; and authentication accepts only Admin, Driver, Customer, or Cleaner.

@@ -189,6 +189,7 @@ function AedTooltip({ active, payload, label, currency }: any) {
 export function Dashboard() {
   const currency = useTenantCurrency()
   const currentRole = useAppStore(s => s.currentRole)
+  const currentUser = useAppStore(s => s.currentUser)
   const qc = useQueryClient()
   const { subscribe, onEvent } = useRealtime()
   useEffect(() => { subscribe('dispatch:updated'); onEvent('dispatch:updated', () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] })) }, [onEvent, qc, subscribe])
@@ -211,14 +212,15 @@ export function Dashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] }),
   })
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard'],
+    queryKey: ['dashboard', currentRole, currentUser?.userId],
     queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()),
     refetchInterval: 30000,
   })
 
   const { data: activityData = [] } = useQuery({
-    queryKey: ['activity'],
-    queryFn: () => fetch('/api/khobra-cleaning/activity').then(r => r.json()),
+    queryKey: ['activity', currentRole, currentUser?.userId],
+    queryFn: () => fetch('/api/khobra-cleaning/activity').then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Could not load activity'); return body }),
+    enabled: currentRole === 'admin',
     refetchInterval: 20000,
   })
   const setView = useAppStore((s) => s.setView)
@@ -231,12 +233,13 @@ export function Dashboard() {
   const timeStr = format(now, 'HH:mm')
 
   const quickActions = [
-    { label: 'New Booking', icon: CalendarDays, view: 'bookings' as const },
-    { label: 'Add Customer', icon: UserPlus, view: 'customers' as const },
-    { label: 'Record Payment', icon: CreditCard, view: 'finance' as const },
-    { label: 'File Complaint', icon: MessageSquarePlus, view: 'complaints' as const },
-    { label: 'Add Cleaner', icon: UserPlus, view: 'employees' as const },
-  ]
+    { label: 'New Booking', icon: CalendarDays, view: 'bookings' as const, roles: ['admin', 'customer'] },
+    { label: 'Add Customer', icon: UserPlus, view: 'customers' as const, roles: ['admin'] },
+    { label: 'Record Payment', icon: CreditCard, view: 'finance' as const, roles: ['admin'] },
+    { label: 'File Complaint', icon: MessageSquarePlus, view: 'complaints' as const, roles: ['admin', 'customer', 'cleaner'] },
+    { label: 'Add Cleaner', icon: UserPlus, view: 'employees' as const, roles: ['admin'] },
+    { label: 'Submit Expense', icon: CreditCard, view: 'driver_expenses' as const, roles: ['driver'] },
+  ].filter(action => action.roles.includes(currentRole))
 
   /* ── Loading skeleton ── */
   if (isLoading || !data) {
@@ -338,6 +341,9 @@ export function Dashboard() {
     { icon: UserCheck, label: 'Active Cleaners', value: stats.activeEmployees, color: 'bg-emerald-500', gradient: 'from-emerald-400 to-teal-600', sub: `${stats.onLeaveEmployees} on leave`, fraction: `${stats.activeEmployees}/${stats.activeEmployees + stats.onLeaveEmployees}` },
     { icon: PackageX, label: 'Low Stock Alerts', value: stats.lowStockItems, color: stats.lowStockItems > 0 ? 'bg-red-500' : 'bg-emerald-600', gradient: stats.lowStockItems > 0 ? 'from-red-400 to-orange-500' : 'from-emerald-400 to-teal-500', pulse: stats.lowStockItems > 0 },
   ]
+  const visibleKpis = currentRole === 'admin'
+    ? kpis
+    : kpis.filter(kpi => ['Total Bookings', "Today's Schedule", 'Active Jobs'].includes(kpi.label)).concat({ icon: CalendarCheck, label: 'Completed', value: stats.completedBookings, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500' })
 
   /* ── Activity timeline (enhanced with multi-source data) ── */
   const activityIconMap: Record<string, any> = { calendar: CalendarDays, payment: CreditCard, complaint: MessageSquareWarning, attendance: UserCheck }
@@ -417,7 +423,7 @@ export function Dashboard() {
         <Card className="rounded-2xl border-0 shadow-sm bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-emerald-950/30 overflow-hidden">
           <CardContent className="p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-2">
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Welcome back, Ahmed Khan</h2>
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Welcome back, {currentUser?.name || 'there'}</h2>
               <p className="text-sm text-muted-foreground">Here&apos;s what&apos;s happening at Khobra Cleaning Service today.</p>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
@@ -475,13 +481,13 @@ export function Dashboard() {
 
       {/* ── KPI Grid ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {kpis.map((kpi, i) => (
+        {visibleKpis.map((kpi, i) => (
           <KpiCard key={kpi.label} {...kpi} index={i} />
         ))}
       </div>
 
       {/* ── Summary Stat Strip ── */}
-      <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
+      {currentRole === 'admin' ? <motion.div custom={4} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="border-0 shadow-sm rounded-xl">
           <CardContent className="py-3 px-5">
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
@@ -502,12 +508,12 @@ export function Dashboard() {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </motion.div> : null}
 
       {/* ── Revenue Bar Chart + Donut + Completion Gauge ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Revenue Chart */}
-        <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible" className="lg:col-span-5">
+        {currentRole === 'admin' ? <motion.div custom={5} variants={sectionVariants} initial="hidden" animate="visible" className="lg:col-span-5">
           <Card className="border-0 shadow-sm rounded-xl h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold">Revenue Trend</CardTitle>
@@ -527,10 +533,10 @@ export function Dashboard() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </motion.div> : null}
 
         {/* Donut Chart */}
-        <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible" className="lg:col-span-4">
+        <motion.div custom={6} variants={sectionVariants} initial="hidden" animate="visible" className={currentRole === 'admin' ? 'lg:col-span-4' : 'lg:col-span-7'}>
           <Card className="border-0 shadow-sm rounded-xl h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold">Booking Status</CardTitle>
@@ -566,7 +572,7 @@ export function Dashboard() {
         </motion.div>
 
         {/* Completion Rate Gauge */}
-        <motion.div custom={7} variants={sectionVariants} initial="hidden" animate="visible" className="lg:col-span-3">
+        <motion.div custom={7} variants={sectionVariants} initial="hidden" animate="visible" className={currentRole === 'admin' ? 'lg:col-span-3' : 'lg:col-span-5'}>
           <Card className="border-0 shadow-sm rounded-xl h-full">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold">Completion Rate</CardTitle>
@@ -580,7 +586,7 @@ export function Dashboard() {
       </div>
 
       {/* ── Unassigned Work Queue ── */}
-      <motion.div custom={8} variants={sectionVariants} initial="hidden" animate="visible">
+      {currentRole === 'admin' ? <motion.div custom={8} variants={sectionVariants} initial="hidden" animate="visible">
         <Card className="border-0 shadow-sm rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -614,10 +620,10 @@ export function Dashboard() {
             )}
           </CardContent>
         </Card>
-      </motion.div>
+      </motion.div> : null}
 
       {/* ── Today's Bookings + Activity Feed ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 gap-6 ${currentRole === 'admin' ? 'lg:grid-cols-2' : ''}`}>
         {/* Today's Bookings */}
         <motion.div custom={9} variants={sectionVariants} initial="hidden" animate="visible">
           <Card className="border-0 shadow-sm rounded-xl">
@@ -673,7 +679,7 @@ export function Dashboard() {
         </motion.div>
 
         {/* Recent Activity Timeline */}
-        <motion.div custom={10} variants={sectionVariants} initial="hidden" animate="visible">
+        {currentRole === 'admin' ? <motion.div custom={10} variants={sectionVariants} initial="hidden" animate="visible">
           <Card className="border-0 shadow-sm rounded-xl">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -717,7 +723,7 @@ export function Dashboard() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </motion.div> : null}
       </div>
     </div>
   )

@@ -12,7 +12,6 @@ export * from './repositories/PrismaInventoryItemRepository.ts';
 export * from './repositories/PrismaInvoicePdfRepository.ts';
 export * from './repositories/PrismaInvoiceRepository.ts';
 export * from './repositories/PrismaLeaveRepository.ts';
-export * from './repositories/PrismaNotificationRepository.ts';
 export * from './repositories/PrismaPaymentRepository.ts';
 export * from './repositories/PrismaPayrollRepository.ts';
 export * from './repositories/PrismaServiceRepository.ts';
