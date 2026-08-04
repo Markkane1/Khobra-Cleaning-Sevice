@@ -21,11 +21,11 @@ export class PrismaStatsRepository implements IStatsRepository {
   }
 
   async getTotalRevenue(tenantId: string): Promise<number> {
-    const revenueResult = await this.db.invoice.aggregate({
-      where: { tenantId, status: 'paid' },
-      _sum: { totalAmount: true },
+    const revenueResult = await this.db.payment.aggregate({
+      where: { tenantId, status: { in: ['paid', 'verified'] } },
+      _sum: { amount: true },
     });
-    return revenueResult._sum.totalAmount || 0;
+    return revenueResult._sum.amount || 0;
   }
 
   async getAttendanceStats(tenantId: string): Promise<{ status: string; _count: { status: number } }[]> {

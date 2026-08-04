@@ -5,17 +5,17 @@ import { requireAuth } from '@/lib/auth'
 const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   admin: [
     'dashboard', 'services', 'customers', 'employees', 'bookings',
-    'finance', 'dispatch', 'inventory', 'reports', 'complaints',
+    'finance', 'driver_expenses', 'dispatch', 'inventory', 'reports', 'complaints',
     'settings', 'attendance', 'payroll', 'branches', 'rbac', 'notifications', 'profile',
   ],
   customer: [
     'dashboard', 'bookings', 'complaints', 'profile',
   ],
   cleaner: [
-    'dashboard', 'attendance', 'bookings', 'profile',
+    'dashboard', 'attendance', 'bookings', 'complaints', 'profile',
   ],
   driver: [
-    'dashboard', 'dispatch', 'profile',
+    'dashboard', 'bookings', 'dispatch', 'driver_expenses', 'profile',
   ],
 }
 
@@ -26,9 +26,17 @@ const DEFAULT_CUSTOM_ROLES = [
   { id: 'driver', name: 'Driver', isSystem: true, description: 'Transport driver and trip navigation' },
 ]
 
+const withEssentialRolePermissions = (permissions: Record<string, string[]>) => ({
+  ...permissions,
+  cleaner: [...new Set([...(permissions.cleaner || []), 'bookings', 'complaints'])],
+  driver: [...new Set([...(permissions.driver || []), 'bookings', 'dispatch', 'driver_expenses'])],
+})
+
 export async function GET(req: NextRequest) {
   try {
-    const tenant = await db.tenant.findFirst()
+    const auth = await requireAuth(req)
+    if ('response' in auth) return auth.response
+    const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
     if (!tenant) return NextResponse.json({ roles: [], permissions: {}, users: [] })
 
     // Fetch custom role permissions from AppSettings
@@ -43,6 +51,7 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
     }
+    rolePermissions = withEssentialRolePermissions(rolePermissions)
 
     // Fetch custom roles list from AppSettings
     let rolesSetting = await db.appSettings.findUnique({ where: { key: 'rbac_custom_roles' } })
@@ -57,11 +66,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch all users with their current assigned roles
-    const users = await db.user.findMany({
+    const users = auth.session.role === 'admin' ? await db.user.findMany({
       where: { tenantId: tenant.id },
       select: { id: true, name: true, email: true, phone: true, role: true, status: true },
       orderBy: { createdAt: 'desc' },
-    })
+    }) : []
 
     return NextResponse.json({
       roles: customRoles,
@@ -115,6 +124,7 @@ export async function POST(req: NextRequest) {
         try { rolePermissions = { ...DEFAULT_ROLE_PERMISSIONS, ...JSON.parse(permSetting.value) } } catch {}
       }
       rolePermissions[roleId] = permissions
+      rolePermissions = withEssentialRolePermissions(rolePermissions)
 
       await db.appSettings.upsert({
         where: { key: 'rbac_role_permissions' },
@@ -139,8 +149,10 @@ export async function PUT(req: NextRequest) {
 
     // Case 1: Assign Role to User { userId, role }
     if (body.userId && body.role) {
+      const target = await db.user.findFirst({ where: { id: body.userId, tenantId: auth.session.tenantId } })
+      if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
       const updatedUser = await db.user.update({
-        where: { id: body.userId },
+        where: { id: target.id },
         data: { role: body.role },
         select: { id: true, name: true, email: true, role: true },
       })
@@ -155,7 +167,7 @@ export async function PUT(req: NextRequest) {
         try { rolePermissions = { ...DEFAULT_ROLE_PERMISSIONS, ...JSON.parse(permSetting.value) } } catch {}
       }
 
-      const mergedPermissions = { ...rolePermissions, ...body.permissions }
+      const mergedPermissions = withEssentialRolePermissions({ ...rolePermissions, ...body.permissions })
 
       await db.appSettings.upsert({
         where: { key: 'rbac_role_permissions' },

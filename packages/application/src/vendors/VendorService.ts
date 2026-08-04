@@ -14,15 +14,15 @@ export class VendorService {
     return this.vendorRepository.create(tenantId, data);
   }
 
-  async updateVendor(data: UpdateVendorDTO): Promise<Vendor> {
-    const existing = await this.vendorRepository.findById(data.id);
+  async updateVendor(tenantId: string, data: UpdateVendorDTO): Promise<Vendor> {
+    const existing = await this.vendorRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Vendor not found');
-    return this.vendorRepository.update(data.id, data);
+    return this.vendorRepository.update(tenantId, data.id, data);
   }
 
-  async deleteVendor(id: string): Promise<void> {
-    const existing = await this.vendorRepository.findById(id);
+  async deleteVendor(tenantId: string, id: string): Promise<void> {
+    const existing = await this.vendorRepository.findById(tenantId, id);
     if (!existing) throw new Error('Vendor not found');
-    return this.vendorRepository.delete(id);
+    return this.vendorRepository.delete(tenantId, id);
   }
 }

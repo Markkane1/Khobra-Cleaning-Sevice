@@ -331,6 +331,7 @@ export const CreateBookingSchema = z.object({
   recurringRule: z.string().optional(),
   recurringGroupId: z.string().optional(),
   createdBy: z.string().optional(),
+  preferredPaymentMethod: z.enum(['cash', 'bank_transfer']).optional(),
 }).superRefine((data, ctx) => {
   const hasServiceId = Boolean(data.serviceId);
   const hasServiceIds = Boolean(data.serviceIds && data.serviceIds.length > 0);

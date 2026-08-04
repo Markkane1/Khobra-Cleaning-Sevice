@@ -1,6 +1,7 @@
 import { db, PrismaInvoicePdfRepository } from '@repo/db'
 import { InvoicePdfService } from '@repo/application'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth'
 
 // Dependency Injection
 const invoicePdfRepository = new PrismaInvoicePdfRepository(db)
@@ -8,15 +9,18 @@ const invoicePdfService = new InvoicePdfService(invoicePdfRepository)
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin', 'customer'])
+    if ('response' in auth) return auth.response
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Invoice ID required' }, { status: 400 })
 
-    const tenant = await db.tenant.findFirst()
+    const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
     if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
 
     const invoice = await invoicePdfService.getInvoiceForPdf(tenant.id, id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (auth.session.role === 'customer' && invoice.customer.userId !== auth.session.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { jsPDF } = await import('jspdf')
     const autoTable = (await import('jspdf-autotable')).default

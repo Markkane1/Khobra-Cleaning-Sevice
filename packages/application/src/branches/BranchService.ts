@@ -14,15 +14,15 @@ export class BranchService {
     return this.branchRepository.create(tenantId, data);
   }
 
-  async updateBranch(data: UpdateBranchDTO): Promise<Branch> {
-    const existing = await this.branchRepository.findById(data.id);
+  async updateBranch(tenantId: string, data: UpdateBranchDTO): Promise<Branch> {
+    const existing = await this.branchRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Branch not found');
-    return this.branchRepository.update(data.id, data);
+    return this.branchRepository.update(tenantId, data.id, data);
   }
 
-  async deleteBranch(id: string): Promise<void> {
-    const existing = await this.branchRepository.findById(id);
+  async deleteBranch(tenantId: string, id: string): Promise<void> {
+    const existing = await this.branchRepository.findById(tenantId, id);
     if (!existing) throw new Error('Branch not found');
-    return this.branchRepository.delete(id);
+    return this.branchRepository.delete(tenantId, id);
   }
 }

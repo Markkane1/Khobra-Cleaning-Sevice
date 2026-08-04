@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
 import { createSessionToken, SESSION_TTL_SECONDS, verifyPassword } from '@/lib/auth'
 import { verifyTurnstile } from '@/lib/turnstile'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous'
+    const rate = checkRateLimit(`login:${ip}`, 10, 60_000)
+    if (!rate.allowed) {
+      return NextResponse.json({ error: 'Too many login attempts. Please wait a minute and try again.' }, { status: 429 })
+    }
+
     const { email, password, turnstileToken } = await req.json()
+
 
     if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -25,6 +33,7 @@ export async function POST(req: NextRequest) {
       email: user.email,
       role: user.role,
       name: user.name,
+      sessionVersion: user.sessionVersion,
     }
 
     const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS

@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
     })
 
     if (response.alert && response.driverUserId) await deliverPickupAlert(response.alert, response.driverUserId, auth.session.tenantId)
-    broadcast('booking:updated', { bookingNo: response.bookingNo, message: 'Completion timing updated' })
-    if (response.alert) broadcast('dispatch:updated', { bookingNo: response.bookingNo, pickupAlertId: response.alert.id })
+    broadcast('booking:updated', { bookingNo: response.bookingNo, message: 'Completion timing updated' }, auth.session.tenantId)
+    if (response.alert) broadcast('dispatch:updated', { bookingNo: response.bookingNo, pickupAlertId: response.alert.id }, auth.session.tenantId)
     return NextResponse.json(response.record, { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid response' }, { status: 400 })

@@ -8,15 +8,8 @@ export class PaymentService {
     return this.paymentRepository.getPayments(tenantId);
   }
 
-  async processPayment(tenantId: string, data: CreatePaymentDTO) {
-    const payment = await this.paymentRepository.createPayment(tenantId, data);
-    
-    let invoiceUpdate: any = null;
-    if (data.status === 'verified') {
-      invoiceUpdate = await this.paymentRepository.updateInvoicePaymentStatus(data.invoiceId, data.amount);
-    }
-    
-    return { payment, invoiceUpdate: invoiceUpdate || null };
+  async processPayment(tenantId: string, recordedBy: string, data: CreatePaymentDTO) {
+    return this.paymentRepository.createPayment(tenantId, recordedBy, data);
   }
 
   async selectPaymentMethod(tenantId: string, userId: string, data: SelectPaymentMethodDTO) {
@@ -35,18 +28,6 @@ export class PaymentService {
     return this.paymentRepository.cleanerReceiveCash(tenantId, cleanerUserId, bookingId, remarks);
   }
 
-  async getCompanyBankAccount(tenantId: string) {
-    return this.paymentRepository.getCompanyBankAccount(tenantId);
-  }
-
-  async submitBankTransfer(tenantId: string, userId: string, data: any) {
-    return this.paymentRepository.submitBankTransfer(tenantId, userId, data);
-  }
-
-  async decideBankTransfer(tenantId: string, adminUserId: string, paymentId: string, decision: 'approve' | 'reject', remarks?: string) {
-    return this.paymentRepository.decideBankTransfer(tenantId, adminUserId, paymentId, decision, remarks);
-  }
-
   async getCompanyBankAccounts(tenantId: string, adminMode?: boolean) {
     return this.paymentRepository.getCompanyBankAccounts(tenantId, adminMode);
   }
@@ -63,4 +44,3 @@ export class PaymentService {
     return this.paymentRepository.deleteCompanyBankAccount(tenantId, userId, accountId);
   }
 }
-

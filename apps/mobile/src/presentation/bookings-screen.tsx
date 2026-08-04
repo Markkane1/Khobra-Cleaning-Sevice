@@ -3,18 +3,23 @@ import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextIn
 import { Ionicons } from '@expo/vector-icons'
 import { loadBookings } from '../application/bookings'
 import type { Session } from '../domain/auth/types'
-import type { Booking } from '../domain/bookings/types'
+import type { Booking, DriverTrip } from '../domain/bookings/types'
 import { khobraBookingGateway } from '../infrastructure/http/khobra-gateways'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
 export function BookingsScreen({ session, onNewBooking }: { session: Session; onNewBooking: () => void }) {
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [trips, setTrips] = useState<DriverTrip[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
   const [ratingBooking, setRatingBooking] = useState<Booking | null>(null)
   const [overallRating, setOverallRating] = useState(5)
   const [cleanerRatings, setCleanerRatings] = useState<Record<string, number>>({})
   const [ratingComment, setRatingComment] = useState('')
+  const [cleanerDateScope, setCleanerDateScope] = useState<'today' | 'all'>('today')
+  const [driverScope, setDriverScope] = useState<'today' | 'completed' | 'pending' | 'upcoming'>('today')
+  const [issueBooking, setIssueBooking] = useState<Booking | null>(null)
+  const [issueDescription, setIssueDescription] = useState('')
 
   useEffect(() => {
     loadBookings(khobraBookingGateway, session.token)
@@ -23,15 +28,30 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
       .finally(() => setLoading(false))
   }, [session.token])
 
+  useEffect(() => {
+    if (session.user.role === 'driver') khobraBookingGateway.getTrips(session.token).then(setTrips).catch(() => undefined)
+  }, [session.token, session.user.role])
+
   if (loading) return <LoadingState label="Loading bookings..." />
+  const today = new Date().toDateString()
+  const visibleBookings = bookings.filter(booking => {
+    const bookingDate = new Date(booking.scheduledDate)
+    if (session.user.role === 'cleaner') return cleanerDateScope === 'all' || bookingDate.toDateString() === today
+    if (session.user.role !== 'driver') return true
+    if (driverScope === 'today') return bookingDate.toDateString() === today
+    if (driverScope === 'completed') return bookingDate.toDateString() === today && booking.status === 'completed'
+    if (driverScope === 'pending') return bookingDate.toDateString() === today && ['pending', 'pending_assignment', 'assigned', 'scheduled', 'confirmed'].includes(booking.status)
+    return bookingDate >= new Date(new Date().setHours(0, 0, 0, 0)) && !['completed', 'cancelled', 'no_show'].includes(booking.status)
+  })
+  const upcomingStops = trips.flatMap(trip => new Date(trip.date) >= new Date(new Date().setHours(0, 0, 0, 0)) && trip.status !== 'completed' ? (trip.stops || []).filter(stop => stop.status !== 'completed').map(stop => ({ ...stop, tripDate: trip.date })) : [])
   return <>
   <FlatList
     contentContainerStyle={styles.list}
-    data={bookings}
+    data={visibleBookings}
     keyExtractor={(booking) => booking.id}
-    ListHeaderComponent={<PageHeading title="Bookings" subtitle="Your upcoming and recent cleaning visits." action={['admin', 'customer'].includes(session.user.role) ? <Pressable accessibilityRole="button" onPress={onNewBooking} style={styles.addButton}><Ionicons name="add" size={22} color="#fff" /></Pressable> : undefined} />}
+    ListHeaderComponent={<><PageHeading title="Bookings" subtitle="Your upcoming and recent cleaning visits." action={['admin', 'customer'].includes(session.user.role) ? <Pressable accessibilityRole="button" onPress={onNewBooking} style={styles.addButton}><Ionicons name="add" size={22} color="#fff" /></Pressable> : undefined} />{session.user.role === 'cleaner' ? <View style={styles.scopeTabs}><Pressable onPress={() => setCleanerDateScope('today')} style={[styles.scopeTab, cleanerDateScope === 'today' && styles.scopeTabActive]}><Text style={[styles.scopeTabText, cleanerDateScope === 'today' && styles.scopeTabTextActive]}>Today</Text></Pressable><Pressable onPress={() => setCleanerDateScope('all')} style={[styles.scopeTab, cleanerDateScope === 'all' && styles.scopeTabActive]}><Text style={[styles.scopeTabText, cleanerDateScope === 'all' && styles.scopeTabTextActive]}>All Assigned</Text></Pressable></View> : null}{session.user.role === 'driver' ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scopeTabs}>{([['today', 'Today'], ['completed', 'Completed Today'], ['pending', 'Pending Today'], ['upcoming', 'Upcoming Pickups / Drop-offs']] as const).map(([scope, label]) => <Pressable key={scope} onPress={() => setDriverScope(scope)} style={[styles.scopeTab, driverScope === scope && styles.driverScopeActive]}><Text style={[styles.scopeTabText, driverScope === scope && styles.scopeTabTextActive]}>{label}</Text></Pressable>)}</ScrollView> : null}{session.user.role === 'driver' && driverScope === 'upcoming' ? <View style={styles.transportStops}><Text style={styles.transportTitle}>Assigned transport stops</Text>{upcomingStops.length === 0 ? <Text style={styles.transportEmpty}>No upcoming pickup or drop-off stops.</Text> : upcomingStops.map(stop => <View key={stop.id} style={styles.transportStop}><Ionicons name="location-outline" size={17} color="#7c3aed" /><View style={{ flex: 1 }}><Text style={styles.transportType}>{stop.type || 'Stop'}</Text><Text style={styles.transportAddress}>{stop.address || 'Address not provided'} · {new Date(stop.tripDate).toLocaleDateString('en-AE')}</Text></View></View>)}</View> : null}</>}
     ListEmptyComponent={<MessageState icon="calendar-outline" title="No bookings yet" detail="Your scheduled cleaning visits will appear here." action={session.user.role === 'customer' ? <Pressable onPress={onNewBooking} style={styles.emptyAction}><Text style={styles.emptyActionText}>Book a service</Text></Pressable> : undefined} />}
-    renderItem={({ item }) => <BookingCard booking={item} role={session.user.role} cleanerName={session.user.name} updating={updating === item.id} onRate={() => {
+    renderItem={({ item }) => <BookingCard booking={item} role={session.user.role} cleanerName={session.user.name} updating={updating === item.id} onReportIssue={() => { setIssueBooking(item); setIssueDescription('') }} onRate={() => {
       if (item.rating) {
         const cleanerSummary = (item.assignments || []).map(assignment => `${assignment.employee?.user?.name || 'Assigned cleaner'}: ${assignment.customerRating || '-'} / 5 stars`).join('\n')
         Alert.alert('Rating Submitted', `Overall service: ${item.rating.overallRating} / 5 stars\n${cleanerSummary}\n${item.rating.comment || 'No written comment'}\nSubmitted: ${new Date(item.rating.submittedAt).toLocaleString('en-AE')}`)
@@ -96,6 +116,9 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
       }
     }} />}
   />
+  <Modal visible={Boolean(issueBooking)} transparent animationType="slide" onRequestClose={() => setIssueBooking(null)}>
+    <View style={styles.modalBackdrop}><View style={styles.ratingModal}><View style={styles.ratingContent}><Text style={styles.ratingTitle}>Report Customer Issue</Text><Text style={styles.ratingSubtitle}>{issueBooking?.bookingNo} · {issueBooking?.customer?.user?.name || issueBooking?.customer?.name || 'Customer'}</Text><TextInput value={issueDescription} onChangeText={setIssueDescription} multiline maxLength={2000} placeholder="Describe what happened with the customer..." style={styles.issueInput} /><View style={styles.ratingActions}><Pressable onPress={() => setIssueBooking(null)} style={styles.ratingCancel}><Text style={styles.ratingCancelText}>Cancel</Text></Pressable><Pressable disabled={issueDescription.trim().length < 5 || Boolean(updating)} onPress={async () => { if (!issueBooking) return; setUpdating(issueBooking.id); try { await khobraBookingGateway.reportCustomerIssue(issueBooking.id, issueDescription.trim(), session.token); Alert.alert('Issue reported', 'The customer issue was sent to Admin.'); setIssueBooking(null); setIssueDescription('') } catch (error) { Alert.alert('Could not report issue', error instanceof Error ? error.message : 'Try again.') } finally { setUpdating(null) } }} style={[styles.ratingSubmit, issueDescription.trim().length < 5 && { opacity: 0.5 }]}><Text style={styles.ratingSubmitText}>Submit Issue</Text></Pressable></View></View></View></View>
+  </Modal>
   <Modal visible={Boolean(ratingBooking)} transparent animationType="slide" onRequestClose={() => setRatingBooking(null)}>
     <View style={styles.modalBackdrop}>
       <View style={styles.ratingModal}>
@@ -138,13 +161,14 @@ function StarSelector({ value, onChange }: { value: number; onChange: (rating: n
   return <View style={styles.stars}>{[1, 2, 3, 4, 5].map(star => <Pressable key={star} accessibilityRole="button" accessibilityLabel={`${star} stars`} onPress={() => onChange(star)}><Ionicons name={star <= value ? 'star' : 'star-outline'} size={30} color="#f59e0b" /></Pressable>)}</View>
 }
 
-function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming, onPayment, onCash, onComplete, onRate }: { booking: Booking; role: Session['user']['role']; cleanerName: string; updating: boolean; onStatus: (status: string) => void; onTiming: (withinScheduledTime: boolean) => void; onPayment: (method: 'cash' | 'bank_transfer') => void; onCash: () => void; onComplete: () => void; onRate: () => void }) {
+function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming, onPayment, onCash, onComplete, onRate, onReportIssue }: { booking: Booking; role: Session['user']['role']; cleanerName: string; updating: boolean; onStatus: (status: string) => void; onTiming: (withinScheduledTime: boolean) => void; onPayment: (method: 'cash' | 'bank_transfer') => void; onCash: () => void; onComplete: () => void; onRate: () => void; onReportIssue: () => void }) {
   const date = new Date(booking.scheduledDate).toLocaleDateString('en-AE', { day: '2-digit', month: 'short', year: 'numeric' })
   const tone = statusTones[booking.status.toLowerCase()] || statusTones.default
   const paidAmount = booking.invoices?.[0]?.paidAmount || 0
   const remainingPayable = Math.max(0, booking.netAmount - paidAmount)
   const paymentStatus = booking.invoices?.[0]?.payments?.[0]?.status
   const cashPayment = booking.invoices?.[0]?.payments?.find(payment => payment.method === 'cash')
+  const cashSelected = booking.invoices?.[0]?.selectedPaymentMethod === 'cash' || cashPayment?.status === 'cash_selected'
   return <View style={styles.card}>
     <View style={styles.cardTop}>
       <View style={styles.bookingIcon}><Ionicons name="sparkles-outline" size={20} color={palette.primary} /></View>
@@ -163,8 +187,9 @@ function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming,
     {booking.status === 'completed' && role === 'customer' && remainingPayable > 0 && !['verified', 'paid'].includes(paymentStatus || '') ? <Pressable disabled={updating} onPress={() => Alert.alert('Select Payment Method', `Booking amount: AED ${booking.totalAmount}\nAdjustments: AED ${(booking.netAmount - booking.totalAmount).toFixed(2)}\nAlready paid: AED ${paidAmount}\nRemaining payable: AED ${remainingPayable}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Pay Cash', onPress: () => onPayment('cash') }, { text: 'Bank Transfer', onPress: () => onPayment('bank_transfer') }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : 'Select Payment Method'}</Text></Pressable> : null}
     {booking.status === 'completed' && role === 'customer' ? <Pressable disabled={updating} onPress={onRate} style={styles.ratingAction}><Ionicons name="star" size={16} color="#92400e" /><Text style={styles.ratingActionText}>{booking.rating ? 'View Rating' : 'Rate Service & Cleaners'}</Text></Pressable> : null}
     {role === 'cleaner' && booking.assignments?.[0]?.customerRating ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Your customer rating</Text><Text style={styles.timingResultText}>{booking.assignments[0].customerRating} / 5 stars</Text></View> : null}
-    {booking.status === 'completed' && role === 'cleaner' && cashPayment?.status === 'cash_selected' && remainingPayable > 0 ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Cash Collection', `Booking reference: ${booking.bookingNo}\nCustomer: ${booking.customer?.user?.name || booking.customer?.name || 'Customer'}\nAmount: AED ${remainingPayable}\nCurrency: AED\nCleaner receiving cash: ${cleanerName}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Cash Received', onPress: onCash }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : `Mark Cash Received (AED ${remainingPayable})`}</Text></Pressable> : null}
-    {role === 'cleaner' && cashPayment && ['verified', 'paid'].includes(cashPayment.status) ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Cash Received</Text><Text style={styles.timingResultText}>{cashPayment.verifiedAt ? new Date(cashPayment.verifiedAt).toLocaleString('en-AE') : 'Recorded'}</Text></View> : null}
+    {booking.status === 'completed' && role === 'cleaner' && cashSelected && remainingPayable > 0 ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Cash Collection', `Booking reference: ${booking.bookingNo}\nCustomer: ${booking.customer?.user?.name || booking.customer?.name || 'Customer'}\nAmount: AED ${remainingPayable}\nCurrency: AED\nCleaner receiving cash: ${cleanerName}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm Cash Received', onPress: onCash }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Recording...' : `Mark Cash Received (AED ${remainingPayable})`}</Text></Pressable> : null}
+    {role === 'cleaner' && cashPayment && ['verified', 'paid'].includes(cashPayment.status) ? <View style={styles.timingResult}><Text style={styles.timingResultTitle}>Cash Received</Text><Text style={styles.timingResultText}>{cashPayment.receivedAt || cashPayment.verifiedAt ? new Date(cashPayment.receivedAt || cashPayment.verifiedAt!).toLocaleString('en-AE') : 'Recorded'}</Text></View> : null}
+    {role === 'cleaner' ? <Pressable onPress={onReportIssue} style={styles.issueAction}><Ionicons name="warning-outline" size={16} color="#be123c" /><Text style={styles.issueActionText}>Report Issue Regarding Customer</Text></Pressable> : null}
   </View>
 }
 
@@ -221,4 +246,19 @@ const styles = StyleSheet.create({
   ratingCancelText: { color: palette.ink, fontWeight: '700' },
   ratingSubmit: { backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 11 },
   ratingSubmitText: { color: '#fff', fontWeight: '800' },
+  scopeTabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  scopeTab: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: palette.surface },
+  scopeTabActive: { backgroundColor: palette.primary, borderColor: palette.primary },
+  driverScopeActive: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
+  transportStops: { marginBottom: 14, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: '#ddd6fe', backgroundColor: '#f5f3ff', gap: 8 },
+  transportTitle: { color: '#5b21b6', fontSize: 13, fontWeight: '800' },
+  transportEmpty: { color: palette.muted, fontSize: 12 },
+  transportStop: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#ede9fe' },
+  transportType: { color: palette.ink, fontSize: 12, fontWeight: '800', textTransform: 'capitalize' },
+  transportAddress: { color: palette.muted, fontSize: 11, marginTop: 2 },
+  scopeTabText: { color: palette.muted, fontSize: 12, fontWeight: '700' },
+  scopeTabTextActive: { color: '#fff' },
+  issueAction: { minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3', backgroundColor: '#fff1f2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 9 },
+  issueActionText: { color: '#be123c', fontSize: 12, fontWeight: '800' },
+  issueInput: { minHeight: 120, borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, textAlignVertical: 'top', color: palette.ink, backgroundColor: palette.surfaceMuted },
 })

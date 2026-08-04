@@ -12,9 +12,12 @@ import { BookingsScreen } from './src/presentation/bookings-screen'
 import { cardShadow, headingFont, LoadingState, PageHeading, palette } from './src/presentation/mobile-ui'
 import { NewBookingScreen } from './src/presentation/new-booking-screen'
 import { OperationsScreen } from './src/presentation/operations-screen'
+import { DriverExpensesScreen } from './src/presentation/driver-expenses-screen'
 import { clearWorkspaceSession, WorkspaceScreen } from './src/presentation/workspace-screen'
 
-type MainScreen = 'overview' | 'bookings' | 'operations' | 'workspace'
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000').replace(/\/$/, '') + '/api/khobra-cleaning'
+
+type MainScreen = 'overview' | 'bookings' | 'expenses' | 'operations' | 'workspace'
 type Screen = MainScreen | 'new-booking'
 
 export default function App() {
@@ -36,10 +39,19 @@ export default function App() {
   if (loading) return <SafeAreaView style={styles.screen}><LoadingState /></SafeAreaView>
 
   const signOut = async () => {
+    try {
+      if (session?.token) {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.token}` },
+        }).catch(() => null)
+      }
+    } catch {}
     await clearWorkspaceSession()
     await secureSessionStore.clear()
     setSession(null)
   }
+
 
   return session ? <Dashboard session={session} onSignOut={signOut} /> : <AuthScreen onSignedIn={setSession} />
 }
@@ -76,9 +88,10 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
       {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} /> : null}
       {screen === 'operations' ? <OperationsScreen session={session} /> : null}
+      {screen === 'expenses' ? <DriverExpensesScreen session={session} /> : null}
       {screen === 'workspace' ? <WorkspaceScreen session={session} /> : null}
     </View>
-    <BottomNavigation screen={screen === 'new-booking' ? 'bookings' : screen} onChange={setScreen} />
+    <BottomNavigation screen={screen === 'new-booking' ? 'bookings' : screen} role={session.user.role} onChange={setScreen} />
   </SafeAreaView>
 }
 
@@ -142,9 +155,9 @@ function Metric({ icon, label, value, tint, color }: { icon: React.ComponentProp
   </View>
 }
 
-function BottomNavigation({ screen, onChange }: { screen: MainScreen; onChange: (screen: Screen) => void }) {
+function BottomNavigation({ screen, role, onChange }: { screen: MainScreen; role: Session['user']['role']; onChange: (screen: Screen) => void }) {
   return <View style={styles.nav}>
-    {navigation.map((item) => {
+    {navigation.filter(item => item.id !== 'expenses' || role === 'driver').map((item) => {
       const active = screen === item.id
       return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => onChange(item.id)} style={styles.navItem}>
         <View style={[styles.navIcon, active && styles.activeNavIcon]}><Ionicons name={active ? item.activeIcon : item.icon} size={21} color={active ? '#fff' : palette.muted} /></View>
@@ -157,6 +170,7 @@ function BottomNavigation({ screen, onChange }: { screen: MainScreen; onChange: 
 const navigation: ReadonlyArray<{ id: MainScreen; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; activeIcon: React.ComponentProps<typeof Ionicons>['name'] }> = [
   { id: 'overview', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
   { id: 'bookings', label: 'Bookings', icon: 'calendar-outline', activeIcon: 'calendar' },
+  { id: 'expenses', label: 'Expenses', icon: 'receipt-outline', activeIcon: 'receipt' },
   { id: 'operations', label: 'Operations', icon: 'grid-outline', activeIcon: 'grid' },
   { id: 'workspace', label: 'Workspace', icon: 'globe-outline', activeIcon: 'globe' },
 ]

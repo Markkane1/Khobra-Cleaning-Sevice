@@ -7,6 +7,7 @@ type ViewId =
   | 'employees'
   | 'bookings'
   | 'finance'
+  | 'driver_expenses'
   | 'dispatch'
   | 'inventory'
   | 'reports'

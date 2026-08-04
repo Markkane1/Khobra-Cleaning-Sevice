@@ -9,7 +9,14 @@ import { khobraOperationsGateway } from '../infrastructure/http/khobra-gateways'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
 export function OperationsScreen({ session }: { session: Session }) {
-  const [module, setModule] = useState<OperationModule>('services')
+  const allowedByRole: Record<Session['user']['role'], OperationModule[]> = {
+    admin: operationModules.map(item => item.id),
+    customer: ['services', 'complaints', 'notifications'],
+    cleaner: ['attendance', 'complaints', 'notifications'],
+    driver: ['notifications'],
+  }
+  const visibleModules = operationModules.filter(item => allowedByRole[session.user.role].includes(item.id))
+  const [module, setModule] = useState<OperationModule>(visibleModules[0]?.id || 'notifications')
   const [records, setRecords] = useState<OperationRecord[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -21,12 +28,12 @@ export function OperationsScreen({ session }: { session: Session }) {
       .finally(() => setLoading(false))
   }, [module, session.token])
 
-  const activeLabel = operationModules.find((item) => item.id === module)?.label || module
+  const activeLabel = visibleModules.find((item) => item.id === module)?.label || module
   return <View style={styles.screen}>
     <View style={styles.header}>
       <PageHeading title="Operations" subtitle="Live records from across your service business." />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modules}>
-        {operationModules.map((item) => {
+        {visibleModules.map((item) => {
           const active = module === item.id
           return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => setModule(item.id)} style={[styles.module, active && styles.activeModule]}>
             <Ionicons name={moduleIcons[item.id]} size={16} color={active ? '#fff' : palette.muted} /><Text style={[styles.moduleText, active && styles.activeModuleText]}>{item.label}</Text>

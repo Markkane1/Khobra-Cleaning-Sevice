@@ -16,6 +16,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 400 })
   }
 
-  await db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(newPassword) } })
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(newPassword), sessionVersion: { increment: 1 } } })
   return NextResponse.json({ success: true })
 }

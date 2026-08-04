@@ -14,15 +14,15 @@ export class InventoryItemService {
     return this.inventoryItemRepository.create(tenantId, data);
   }
 
-  async updateInventoryItem(data: UpdateInventoryItemDTO): Promise<InventoryItem> {
-    const existing = await this.inventoryItemRepository.findById(data.id);
+  async updateInventoryItem(tenantId: string, data: UpdateInventoryItemDTO): Promise<InventoryItem> {
+    const existing = await this.inventoryItemRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Item not found');
-    return this.inventoryItemRepository.update(data.id, data);
+    return this.inventoryItemRepository.update(tenantId, data.id, data);
   }
 
-  async deleteInventoryItem(id: string): Promise<void> {
-    const existing = await this.inventoryItemRepository.findById(id);
+  async deleteInventoryItem(tenantId: string, id: string): Promise<void> {
+    const existing = await this.inventoryItemRepository.findById(tenantId, id);
     if (!existing) throw new Error('Item not found');
-    return this.inventoryItemRepository.delete(id);
+    return this.inventoryItemRepository.delete(tenantId, id);
   }
 }

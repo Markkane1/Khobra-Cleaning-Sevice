@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       return { alert, driverUserId: booking.driver.userId }
     })
     await deliverPickupAlert(result.alert, result.driverUserId, auth.session.tenantId)
-    broadcast('dispatch:updated', { bookingNo: result.alert.booking.bookingNo, pickupAlertId: result.alert.id })
+    broadcast('dispatch:updated', { bookingNo: result.alert.booking.bookingNo, pickupAlertId: result.alert.id }, auth.session.tenantId)
     return NextResponse.json(result.alert, { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Booking ID is required' }, { status: 400 })

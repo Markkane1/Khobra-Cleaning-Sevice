@@ -33,6 +33,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV } from '@/lib/csv-export'
+import { useAppStore } from '@/store/app-store'
 
 const priorityColors : Record<string, string> = {
   low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -62,7 +63,7 @@ const priorityIcons: Record<string, React.ReactNode> = {
   critical: <AlertCircle className="h-3.5 w-3.5" />,
 }
 
-const categories = ['Service Quality', 'Staff Behavior', 'Billing', 'Scheduling', 'Other']
+const categories = ['Customer Issue', 'Service Quality', 'Staff Behavior', 'Billing', 'Scheduling', 'Other']
 const priorities = ['low', 'medium', 'high', 'critical']
 
 const statusFilterOptions = ['all', 'open', 'in_progress', 'resolved', 'closed']
@@ -130,6 +131,7 @@ function parseAttachments(attachmentsStr: string | null | undefined): Array<{url
 }
 
 export function Complaints() {
+  const currentRole = useAppStore(state => state.currentRole)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -161,6 +163,7 @@ export function Complaints() {
   const { data: customers= [] } = useQuery({
     queryKey: ['customers'],
     queryFn: () => fetch('/api/khobra-cleaning/customers').then(r => r.json()),
+    enabled: currentRole !== 'cleaner',
   })
 
   const { data: bookings = [] } = useQuery({
@@ -174,7 +177,7 @@ export function Complaints() {
         method: 'PUT',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to update complaint'); return body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
@@ -186,7 +189,7 @@ export function Complaints() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+      fetch(`/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE' }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to delete complaint'); return body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
@@ -217,7 +220,7 @@ export function Complaints() {
         method: 'POST',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...d, attachments: JSON.stringify(uploadResults) }),
-      }).then(r => r.json())
+      }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to file complaint'); return body })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
@@ -248,7 +251,7 @@ export function Complaints() {
   }
 
   const handleFileNew = () => {
-    if (!formCustomerId || !formCategory || !formDescription) {
+    if ((currentRole === 'cleaner' ? !formBookingId : !formCustomerId) || !formCategory || !formDescription) {
       toast.error('Please fill all required fields')
       return
     }
@@ -544,11 +547,11 @@ export function Complaints() {
       <Dialog open={newDialogOpen} onOpenChange={(open) => { setNewDialogOpen(open); if (!open) resetForm() }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>File New Complaint</DialogTitle>
-            <DialogDescription>Submit a new customer complaint for tracking and resolution.</DialogDescription>
+            <DialogTitle>{currentRole === 'cleaner' ? 'Report Customer Issue' : 'File New Complaint'}</DialogTitle>
+            <DialogDescription>{currentRole === 'cleaner' ? 'Report an issue regarding the customer on one of your assigned bookings.' : 'Submit a new customer complaint for tracking and resolution.'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid gap-2">
+            {currentRole !== 'cleaner' && <div className="grid gap-2">
               <Label>Customer <span className="text-red-500">*</span></Label>
               <Select value={formCustomerId} onValueChange={setFormCustomerId}>
                 <SelectTrigger>
@@ -562,10 +565,10 @@ export function Complaints() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
             <div className="grid gap-2">
-              <Label>Booking (optional)</Label>
-              <Select value={formBookingId} onValueChange={setFormBookingId}>
+              <Label>Booking {currentRole === 'cleaner' ? <span className="text-red-500">*</span> : '(optional)'}</Label>
+              <Select value={formBookingId} onValueChange={value => { setFormBookingId(value); if (currentRole === 'cleaner') setFormCustomerId(bookings.find((booking: any) => booking.id === value)?.customerId || '') }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a booking..." />
                 </SelectTrigger>
@@ -865,7 +868,8 @@ export function Complaints() {
 
                 <Separator />
 
-                {/* Update Form */}
+                {/* Admin-only resolution controls */}
+                {currentRole === 'admin' && <>
                 <div className="grid gap-2">
                   <Label>Status</Label>
                   <Select value={newStatus} onValueChange={setNewStatus}>
@@ -889,10 +893,11 @@ export function Complaints() {
                     rows={3}
                   />
                 </div>
+                </>}
               </div>
             )
           })()}
-          <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
+          {currentRole === 'admin' ? <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-red-500 hover:text-red-700 hover:bg-red-50 border-red-200">
@@ -925,7 +930,7 @@ export function Complaints() {
                 {updateMut.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
-          </DialogFooter>
+          </DialogFooter> : <DialogFooter><Button variant="outline" onClick={() => setDetailOpen(false)}>Close</Button></DialogFooter>}
         </DialogContent>
       </Dialog>
     </div>

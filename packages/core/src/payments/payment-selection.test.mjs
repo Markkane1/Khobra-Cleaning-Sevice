@@ -93,7 +93,7 @@ test('validates ReopenPaymentSchema for admin payment reopening', () => {
 })
 
 test('cash receipt requires an assigned cleaner and an explicit cash selection', () => {
-  const booking = { status: 'completed', totalAmount: 100, netAmount: 100, assignments: [{ employeeId: 'cleaner-1' }], invoices: [{ paidAmount: 0, payments: [{ method: 'cash', status: 'cash_selected' }] }] }
+  const booking = { status: 'completed', totalAmount: 100, netAmount: 100, assignments: [{ employeeId: 'cleaner-1' }], invoices: [{ paidAmount: 0, selectedPaymentMethod: 'cash', payments: [] }] }
   assert.equal(canCleanerReceiveCash(booking, 'cleaner-1').canReceive, true)
   assert.equal(canCleanerReceiveCash(booking, 'cleaner-2').canReceive, false)
   assert.equal(canCleanerReceiveCash({ ...booking, invoices: [{ paidAmount: 0, payments: [{ method: 'bank_transfer', status: 'payment_pending' }] }] }, 'cleaner-1').canReceive, false)

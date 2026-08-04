@@ -12,9 +12,9 @@ export class PrismaBranchRepository implements IBranchRepository {
     }) as unknown as Branch[];
   }
 
-  async findById(id: string): Promise<Branch | null> {
-    return this.db.branch.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<Branch | null> {
+    return this.db.branch.findFirst({
+      where: { id, tenantId },
     }) as unknown as Branch | null;
   }
 
@@ -32,16 +32,16 @@ export class PrismaBranchRepository implements IBranchRepository {
     }) as unknown as Branch;
   }
 
-  async update(id: string, data: UpdateBranchDTO): Promise<Branch> {
+  async update(tenantId: string, id: string, data: UpdateBranchDTO): Promise<Branch> {
     const { id: _id, ...updateData } = data;
     
     return this.db.branch.update({
-      where: { id },
+      where: { id, tenantId },
       data: updateData as any,
     }) as unknown as Branch;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.branch.delete({ where: { id } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    await this.db.branch.delete({ where: { id, tenantId } });
   }
 }

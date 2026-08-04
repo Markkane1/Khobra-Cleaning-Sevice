@@ -12,14 +12,14 @@ export class DashboardService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const revenueStart = new Date(today);
+    revenueStart.setDate(revenueStart.getDate() - 13);
 
     const [metrics, recentBookings, todaysBookings, revenueByDay, unassignedBookings] = await Promise.all([
       this.dashboardRepository.getMetrics(tenantId, today, tomorrow),
       this.dashboardRepository.getRecentBookings(tenantId),
       this.dashboardRepository.getTodaysBookings(tenantId, today, tomorrow),
-      this.dashboardRepository.getRevenueByDay(tenantId, sevenDaysAgo),
+      this.dashboardRepository.getRevenueByDay(tenantId, revenueStart),
       this.dashboardRepository.getUnassignedBookings(tenantId),
     ]);
 
@@ -33,7 +33,9 @@ export class DashboardService {
         inProgressBookings: metrics.inProgressBookings,
         totalCustomers: metrics.totalCustomers,
         activeEmployees: metrics.activeEmployees,
-        totalRevenue: metrics.totalRevenue._sum.totalAmount || 0,
+        totalRevenue: metrics.totalRevenue._sum.amount || 0,
+        cashInflow: metrics.inflowByMethod.find((item: any) => item.method === 'cash')?._sum.amount || 0,
+        bankInflow: metrics.inflowByMethod.find((item: any) => item.method === 'bank_transfer')?._sum.amount || 0,
         pendingPaymentAmount: (metrics.pendingPayments._sum.totalAmount || 0) - (metrics.pendingPayments._sum.paidAmount || 0),
         openComplaints: metrics.openComplaints,
         lowStockItems: metrics.lowStockItems,

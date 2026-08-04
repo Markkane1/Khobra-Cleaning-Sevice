@@ -16,18 +16,28 @@ export type BroadcastEvent =
   | 'inventory:updated'
   | 'payroll:updated'
 
-export async function broadcast(type: BroadcastEvent, payload: Record<string, unknown>) {
+export async function broadcast(
+  type: BroadcastEvent,
+  payload: Record<string, unknown>,
+  tenantId?: string,
+  userId?: string,
+) {
   try {
-    fetch(`${WS_BRIDGE_URL}/broadcast`, {
+    const secret = process.env.REALTIME_SECRET
+    if (!secret || (!tenantId && !userId)) throw new Error('Realtime secret and target are required')
+    const response = await fetch(`${WS_BRIDGE_URL}/broadcast`, {
       method: 'POST',
-      headers : { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, payload }),
-    }).catch(() => {
-      // Silent fail — WebSocket service may not be running
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ type, payload, tenantId, userId }),
     })
-  } catch {
-    // Silent fail
+    if (!response.ok) throw new Error(`Realtime bridge returned ${response.status}`)
+  } catch (error) {
+    console.error('[realtime] Broadcast failed', { type, tenantId, userId, error: error instanceof Error ? error.message : String(error) })
   }
 }
+
 
 

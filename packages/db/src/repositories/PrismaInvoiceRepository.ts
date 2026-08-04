@@ -12,15 +12,13 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     });
   }
 
-  async countInvoices(tenantId: string): Promise<number> {
-    return this.prisma.invoice.count({ where: { tenantId } });
-  }
-
   async createInvoice(tenantId: string, invoiceNo: string, data: any): Promise<any> {
     return this.prisma.invoice.create({
       data: {
         tenantId,
         invoiceNo,
+        subtotal: data.totalAmount,
+        issuedAt: data.status === 'issued' ? new Date() : null,
         ...data,
       },
     });

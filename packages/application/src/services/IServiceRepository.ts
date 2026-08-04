@@ -17,8 +17,8 @@ export interface Service {
 
 export interface IServiceRepository {
   findManyByTenant(tenantId: string): Promise<Service[]>;
-  findById(id: string): Promise<Service | null>;
+  findById(tenantId: string, id: string): Promise<Service | null>;
   create(tenantId: string, data: CreateServiceDTO): Promise<Service>;
-  update(id: string, data: UpdateServiceDTO): Promise<Service>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateServiceDTO): Promise<Service>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

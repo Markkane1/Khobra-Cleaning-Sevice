@@ -32,7 +32,7 @@ export * from './repositories/PrismaPayrollRepository';
 export * from './repositories/PrismaServiceRepository';
 export * from './repositories/PrismaSettingsRepository';
 export * from './repositories/PrismaStatsRepository';
+export * from './transaction-snapshot';
 export * from './repositories/PrismaTripRepository';
-export * from './repositories/PrismaUploadRepository';
 export * from './repositories/PrismaVendorItemRepository';
 export * from './repositories/PrismaVendorRepository';

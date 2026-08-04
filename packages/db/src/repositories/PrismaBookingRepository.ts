@@ -408,6 +408,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       include: { items: true, materials: true, assignments: { include: { employee: { include: { user: { select: { name: true } } } } } } },
     });
     if (!existing) throw new Error('Booking not found');
+    if (['on_the_way', 'in_progress', 'completed', 'cancelled', 'no_show'].includes(existing.status)) throw new Error(`Cleaners cannot be reassigned while booking is ${existing.status}`);
     if (requiredDriverId && existing.driverId !== requiredDriverId) throw new Error('Only the driver assigned to this booking may update its status');
     if (requiredEmployeeId && !existing.assignments.some((assignment: any) => assignment.employeeId === requiredEmployeeId)) throw new Error('Only a cleaner assigned to this booking may update its status');
 
@@ -438,7 +439,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           },
         });
         if (rest.status === 'in_progress' && requiredEmployeeId) {
-          await db.assignment.updateMany({ where: { bookingId: id, employeeId: requiredEmployeeId }, data: { startedAt: statusChangedAt } });
+          await db.assignment.updateMany({ where: { bookingId: id }, data: { startedAt: statusChangedAt } });
         }
         if (rest.status === 'completed') {
           const existingInvoice = await db.invoice.findFirst({ where: { bookingId: id } });

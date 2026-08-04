@@ -5,13 +5,13 @@ import { parseTimeToMinutes, UpdateSettingsDTO } from '@repo/core';
 export class PrismaSettingsRepository implements ISettingsRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  async getSettings(): Promise<SettingsResponse> {
-    const tenant = await this.db.tenant.findFirst();
+  async getSettings(tenantId: string): Promise<SettingsResponse> {
+    const tenant = await this.db.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) return { settings: {}, tenant: null };
 
-    const settingsList = await this.db.appSettings.findMany();
+    const settingsList = await this.db.appSettings.findMany({ where: { key: { startsWith: `${tenantId}:` } } });
     const settingsMap: Record<string, string> = {};
-    settingsList.forEach((s: any) => { settingsMap[s.key] = s.value });
+    settingsList.forEach((s: any) => { settingsMap[s.key.slice(tenantId.length + 1)] = s.value });
 
     return {
       tenant,
@@ -19,8 +19,8 @@ export class PrismaSettingsRepository implements ISettingsRepository {
     };
   }
 
-  async updateSettings(data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }> {
-    const tenant = await this.db.tenant.findFirst();
+  async updateSettings(tenantId: string, data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }> {
+    const tenant = await this.db.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) throw new Error('Tenant not found');
 
     const { name, slug, currency, locale, timezone, taxRate, firstBookingTime, lastWorkingTime, logoUrl, settings } = data;
@@ -48,9 +48,9 @@ export class PrismaSettingsRepository implements ISettingsRepository {
     if (settings && typeof settings === 'object') {
       for (const [key, value] of Object.entries(settings)) {
         await this.db.appSettings.upsert({
-          where: { key },
+          where: { key: `${tenantId}:${key}` },
           update: { value: String(value) },
-          create: { key, value: String(value) },
+          create: { key: `${tenantId}:${key}`, value: String(value) },
         });
       }
     }

@@ -38,32 +38,35 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
   }
 
   async create(tenantId: string, data: CreateEmployeeDTO): Promise<Employee> {
-    const count = await this.db.employee.count({ where: { tenantId } });
-    const code = `EMP-${String(count + 1).padStart(3, '0')}`;
-    
-    const user = await this.db.user.create({
-      data: {
-        tenantId,
-        email: data.email,
-        name: data.name,
-        phone: data.phone,
-        role: 'cleaner',
-        status: 'active',
-      },
-    });
-
     const { email, name, phone, ...empData } = data;
+    
+    return this.db.$transaction(async tx => {
+      const count = await tx.employee.count({ where: { tenantId } });
+      const code = `EMP-${String(count + 1).padStart(3, '0')}`;
+      
+      const user = await tx.user.create({
+        data: {
+          tenantId,
+          email,
+          name,
+          phone,
+          role: 'cleaner',
+          status: 'active',
+        },
+      });
 
-    return this.db.employee.create({
-      data: {
-        tenantId,
-        userId: user.id,
-        employeeCode: code,
-        ...empData,
-      },
-      include: { user: { select: { name: true, email: true, phone: true } } },
+      return tx.employee.create({
+        data: {
+          tenantId,
+          userId: user.id,
+          employeeCode: code,
+          ...empData,
+        },
+        include: { user: { select: { name: true, email: true, phone: true } } },
+      });
     }) as unknown as Employee;
   }
+
 
   async update(id: string, data: UpdateEmployeeDTO): Promise<Employee> {
     const employee = await this.db.employee.findUnique({ where: { id } });
@@ -95,14 +98,19 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     const employee = await this.db.employee.findUnique({ where: { id }, select: { userId: true } });
     if (!employee) return;
 
-    // Delete all child records first (no onDelete: Cascade in schema)
-    await this.db.payrollRecord.deleteMany({ where: { employeeId: id } });
-    await this.db.leaveRecord.deleteMany({ where: { employeeId: id } });
-    await this.db.attendance.deleteMany({ where: { employeeId: id } });
-    await this.db.assignment.deleteMany({ where: { employeeId: id } });
+    const now = new Date()
 
-    // Now safe to delete the employee and their user account
-    await this.db.employee.delete({ where: { id } });
-    await this.db.user.delete({ where: { id: employee.userId } });
+    // ponytail: Soft-delete employee & deactivate user account to preserve financial audit trail
+    await this.db.$transaction([
+      this.db.employee.update({
+        where: { id },
+        data: { status: 'inactive', deletedAt: now },
+      }),
+      this.db.user.update({
+        where: { id: employee.userId },
+        data: { status: 'inactive' },
+      }),
+    ])
   }
+
 }

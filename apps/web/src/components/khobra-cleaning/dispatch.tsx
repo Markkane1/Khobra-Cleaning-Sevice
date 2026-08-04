@@ -166,6 +166,12 @@ export function Dispatch() {
     planned: todayTrips.filter((t: any) => t.status === 'planned').length,
   }), [todayTrips])
 
+  const upcomingStops = useMemo(() => trips.flatMap((trip: any) => {
+    const tripDate = format(parseISO(trip.date), 'yyyy-MM-dd')
+    if (tripDate < todayStr || trip.status === 'completed') return []
+    return (trip.stops || []).filter((stop: any) => stop.status !== 'completed').map((stop: any) => ({ ...stop, tripDate, tripStatus: trip.status }))
+  }), [trips, todayStr])
+
   // Driver stats
   const driverStats = useMemo(() => {
     return drivers.map((d: any) => {
@@ -200,7 +206,7 @@ export function Dispatch() {
           <h1 className="text-2xl font-bold tracking-tight">Dispatch</h1>
           <p className="text-sm text-muted-foreground">Driver management and trip scheduling</p>
         </div>
-        <div className="flex gap-2">
+        <div className={currentRole === 'admin' ? 'flex gap-2' : 'hidden'}>
           <Dialog open={driverOpen} onOpenChange={(v) => { setDriverOpen(v); if (!v) { setDriverForm({ name: '', phone: '', email: '', licenseNo: '', vehicleNo: '' }); setDriverEditId(null) } }}>
             <DialogTrigger asChild>
               <Button variant="outline"><Plus className="h-4 w-4 mr-2" />Add Driver</Button>
@@ -255,14 +261,15 @@ export function Dispatch() {
       </motion.div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className={`grid w-full ${currentRole === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} max-w-md`}>
           <TabsTrigger value="today">Today&apos;s Board</TabsTrigger>
-          <TabsTrigger value="drivers">Drivers ({drivers.length})</TabsTrigger>
+          {currentRole === 'admin' && <TabsTrigger value="drivers">Drivers ({drivers.length})</TabsTrigger>}
           <TabsTrigger value="trips">Trips ({trips.length})</TabsTrigger>
         </TabsList>
 
         {/* TODAY'S ASSIGNMENTS - KANBAN BOARD */}
         <TabsContent value="today" className="mt-4">
+          {currentRole === 'driver' && <Card className="border-0 shadow-sm mb-4"><CardHeader><CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-violet-600" />Upcoming Pickups / Drop-offs</CardTitle></CardHeader><CardContent className="space-y-2">{upcomingStops.length === 0 ? <p className="text-sm text-muted-foreground">No upcoming transport stops assigned.</p> : upcomingStops.map((stop: any) => <div key={stop.id} className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><p className="text-sm font-semibold capitalize">{stop.type || 'Stop'}</p><p className="text-xs text-muted-foreground">{stop.address || 'Address not provided'}</p></div><div className="text-right"><p className="text-xs font-medium">{format(parseISO(stop.tripDate), 'dd MMM yyyy')}</p><Badge variant="outline" className="text-[10px] capitalize">{stop.tripStatus.replace('_', ' ')}</Badge></div></div>)}</CardContent></Card>}
           {/* Trip Stats for Today */}
           {/* Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
@@ -577,7 +584,7 @@ export function Dispatch() {
                             <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" onClick={() => updateTripMut.mutate({ id: t.id, status: 'completed' })}>Complete</Button>
                           )}
                           {t.status === 'completed' && <span className="text-xs text-muted-foreground">Done</span>}
-                          <AlertDialog>
+                          {currentRole === 'admin' && <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -593,7 +600,7 @@ export function Dispatch() {
                                 <AlertDialogAction onClick={() => deleteTripMut.mutate(t.id)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
-                          </AlertDialog>
+                          </AlertDialog>}
                         </div>
                       </TableCell>
                     </motion.tr>

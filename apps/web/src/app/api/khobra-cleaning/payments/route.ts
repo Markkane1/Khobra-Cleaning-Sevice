@@ -11,13 +11,10 @@ const paymentService = new PaymentService(paymentRepository)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'accountant', 'manager', 'customer'])
+    const auth = await requireAuth(req, ['admin', 'customer'])
     if ('response' in auth) return auth.response
 
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json([])
-    
-    let items = await paymentService.getPayments(tenant.id)
+    let items = await paymentService.getPayments(auth.session.tenantId)
     if (auth.session.role === 'customer') items = items.filter((item: any) => item.invoice?.customer?.userId === auth.session.userId)
     return NextResponse.json(items)
   } catch {
@@ -26,32 +23,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const auth = await requireAuth(req, ['admin', 'accountant', 'manager'])
-    if ('response' in auth) return auth.response
-
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
-    
-    const body = await req.json()
-    const validatedData = CreatePaymentSchema.parse(body)
-    
-    const { payment, invoiceUpdate } = await paymentService.processPayment(tenant.id, validatedData)
-    
-    if (invoiceUpdate) {
-      broadcast('payment:created', { 
-        amount: validatedData.amount, 
-        method: validatedData.method, 
-        invoiceNo: invoiceUpdate.invoiceNo, 
-        invoiceStatus: invoiceUpdate.newStatus 
-      })
-    }
-    
-    return NextResponse.json(payment, { status: 201 })
-  } catch (error) {
-    console.error('Create payment error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
-  }
+  const auth = await requireAuth(req, ['admin'])
+  if ('response' in auth) return auth.response
+  return NextResponse.json({ error: 'Confirmed payments can only be created by assigned-cleaner cash receipt or Admin bank-transfer approval.' }, { status: 405 })
 }
 
 

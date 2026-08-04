@@ -5,6 +5,7 @@ import { ServiceService } from '@repo/application'
 import { CreateServiceSchema, UpdateServiceSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
+// ponytail: direct repository & service instantiation for route
 const serviceRepository = new PrismaServiceRepository(db)
 const serviceService = new ServiceService(serviceRepository)
 
@@ -13,10 +14,7 @@ export async function GET(req: NextRequest) {
     const auth = await requireAuth(req)
     if ('response' in auth) return auth.response
 
-    const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
-    if (!tenant) return NextResponse.json([])
-    
-    const services = await serviceService.getServices(tenant.id)
+    const services = await serviceService.getServices(auth.session.tenantId)
     return NextResponse.json(services)
   } catch {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -25,17 +23,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
-
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
     
     const body = await req.json()
     const validatedData = CreateServiceSchema.parse(body)
     
-    const item = await serviceService.createService(tenant.id, validatedData)
-    broadcast('service:created', { name: item.name, category: item.category })
+    const item = await serviceService.createService(auth.session.tenantId, validatedData)
+    broadcast('service:created', { name: item.name, category: item.category }, auth.session.tenantId)
     
     return NextResponse.json(item, { status: 201 })
   } catch (error) {
@@ -46,11 +41,14 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
+
     const body = await req.json()
     const validatedData = UpdateServiceSchema.parse(body)
     
-    const item = await serviceService.updateService(validatedData)
-    broadcast('service:updated', { name: (item as any).name, status: item.status })
+    const item = await serviceService.updateService(auth.session.tenantId, validatedData)
+    broadcast('service:updated', { name: (item as any).name, status: item.status }, auth.session.tenantId)
     
     return NextResponse.json(item)
   } catch (error) {
@@ -61,14 +59,15 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     
-    const existing = await serviceService.getServices('fake').catch(() => null); // get info
-    // Broadcast needs name but clean architecture delete doesn't return the item by default, let's keep it simple
-    await serviceService.deleteService(id)
-    broadcast('service:updated', { status: 'deleted' })
+    await serviceService.deleteService(auth.session.tenantId, id)
+    broadcast('service:updated', { status: 'deleted' }, auth.session.tenantId)
     
     return NextResponse.json({ success: true })
   } catch {

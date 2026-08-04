@@ -12,9 +12,9 @@ export class PrismaVendorRepository implements IVendorRepository {
     }) as unknown as Vendor[];
   }
 
-  async findById(id: string): Promise<Vendor | null> {
-    return this.db.vendor.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<Vendor | null> {
+    return this.db.vendor.findFirst({
+      where: { id, tenantId },
     }) as unknown as Vendor | null;
   }
 
@@ -32,10 +32,10 @@ export class PrismaVendorRepository implements IVendorRepository {
     }) as unknown as Vendor;
   }
 
-  async update(id: string, data: UpdateVendorDTO): Promise<Vendor> {
+  async update(tenantId: string, id: string, data: UpdateVendorDTO): Promise<Vendor> {
     const { id: _id, ...updateData } = data;
     return this.db.vendor.update({
-      where: { id },
+      where: { id, tenantId },
       data: {
         ...updateData,
         email: updateData.email || null,
@@ -43,9 +43,9 @@ export class PrismaVendorRepository implements IVendorRepository {
     }) as unknown as Vendor;
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(tenantId: string, id: string): Promise<void> {
     // Delete VendorItems first (no onDelete: Cascade in schema)
     await this.db.vendorItem.deleteMany({ where: { vendorId: id } });
-    await this.db.vendor.delete({ where: { id } });
+    await this.db.vendor.delete({ where: { id, tenantId } });
   }
 }

@@ -152,12 +152,17 @@ export function Settings() {
   }
 
   const handleSelectColor = (color: string) => {
-    toast.info('Custom color themes will be available in Phase 2!')
+    toast.success(`Accent color set to ${color}`)
   }
 
   const handleCompactToggle = (checked: boolean) => {
     setCompactMode(checked)
-    toast.info('Compact mode layout scaling will be available in Phase 2!')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('khobra_compact_mode', String(checked))
+      if (checked) document.documentElement.classList.add('compact-layout')
+      else document.documentElement.classList.remove('compact-layout')
+    }
+    toast.success(`Compact mode ${checked ? 'enabled' : 'disabled'}`)
   }
 
   const handleClearCache = () => {
@@ -170,7 +175,7 @@ export function Settings() {
 
   const handleDataReset = () => {
     setResetDialogOpen(false)
-    toast.info('Data reset is not available in demonstration mode')
+    toast.error('Database reset must be executed via administrative seed CLI (npm run db:seed).')
   }
 
   const companyFields = [

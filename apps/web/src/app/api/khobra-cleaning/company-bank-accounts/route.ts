@@ -10,7 +10,7 @@ const paymentService = new PaymentService(paymentRepository);
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['customer', 'admin', 'cleaner', 'driver']);
+    const auth = await requireAuth(req, ['customer', 'admin']);
     if ('response' in auth) return auth.response;
 
     const isAdmin = auth.session.role === 'admin';

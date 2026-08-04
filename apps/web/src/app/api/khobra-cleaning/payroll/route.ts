@@ -9,7 +9,7 @@ const payrollService = new PayrollService(payrollRepository)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'accountant', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const tenant = await db.tenant.findFirst()
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'accountant'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const tenant = await db.tenant.findFirst()

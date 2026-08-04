@@ -13,8 +13,8 @@ export interface Vendor {
 
 export interface IVendorRepository {
   findManyByTenant(tenantId: string): Promise<Vendor[]>;
-  findById(id: string): Promise<Vendor | null>;
+  findById(tenantId: string, id: string): Promise<Vendor | null>;
   create(tenantId: string, data: CreateVendorDTO): Promise<Vendor>;
-  update(id: string, data: UpdateVendorDTO): Promise<Vendor>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateVendorDTO): Promise<Vendor>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, subDays, isAfter, isBefore, differenceInDays } from 'date-fns'
-import { Plus, Search, DollarSign, Receipt, CreditCard, TrendingUp, TrendingDown, Banknote, Building2, AlertTriangle, CheckCircle2, Download, FileText, Upload, X, Image as ImageIcon } from 'lucide-react'
+import { Plus, Search, DollarSign, Receipt, CreditCard, TrendingUp, TrendingDown, Banknote, Building2, AlertTriangle, CheckCircle2, Download, FileText, Upload, X, Image as ImageIcon, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,6 +37,7 @@ const invStatusColors : Record<string, string> = {
 
 const payStatusColors : Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  paid: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
   verified: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
   rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 }
@@ -90,6 +91,11 @@ export function Finance() {
   const [payForm, setPayForm] = useState(emptyPayment)
   const [invSearch, setInvSearch] = useState('')
   const [paySearch, setPaySearch] = useState('')
+  const [payMethodFilter, setPayMethodFilter] = useState('all')
+  const [payStatusFilter, setPayStatusFilter] = useState('all')
+  const [payDateFrom, setPayDateFrom] = useState('')
+  const [payDateTo, setPayDateTo] = useState('')
+  const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null)
   const [invStatusFilter, setInvStatusFilter] = useState<string>('all')
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [createInvOpen, setCreateInvOpen] = useState(false)
@@ -115,7 +121,7 @@ export function Finance() {
   })
 
   const createInvoiceMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => fetch('/api/khobra-cleaning/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Failed to create invoice'); return data }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Invoice created'); setCreateInvOpen(false); setInvForm({ customerId: '', totalAmount: 500, status: 'issued', notes: '' }) },
     onError: () => toast.error('Failed to create invoice'),
   })
@@ -134,16 +140,28 @@ export function Finance() {
         }
       }
       const payload = { ...d, ...(proofUrl ? { proofUrl } : {}) }
-      return fetch('/api/khobra-cleaning/payments', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json())
+      const response = await fetch('/api/khobra-cleaning/payments', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to record payment')
+      return result
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Payment recorded successfully'); setPayOpen(false); setPayForm(emptyPayment); setProofFile(null); setProofPreview(null) },
     onError: () => toast.error('Failed to record payment'),
   })
 
+  const reconcileCashMut = useMutation({
+    mutationFn: (paymentId: string) => fetch('/api/khobra-cleaning/bookings/payment-method', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentId, remarks: 'Cash reconciled in Finance' }) }).then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Cash reconciliation failed'); return data }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Cash reconciled') },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
   // Summary calculations
-  const totalRevenue = useMemo(() => invoices.filter((i: any) => i.status === 'paid').reduce((s: number, i: any) => s + i.totalAmount, 0), [invoices])
+  const collectedPayments = useMemo(() => payments.filter((p: any) => ['paid', 'verified'].includes(p.status)), [payments])
+  const totalRevenue = useMemo(() => collectedPayments.reduce((s: number, p: any) => s + p.amount, 0), [collectedPayments])
+  const cashInflow = useMemo(() => collectedPayments.filter((p: any) => p.method === 'cash').reduce((sum: number, payment: any) => sum + payment.amount, 0), [collectedPayments])
+  const bankInflow = useMemo(() => collectedPayments.filter((p: any) => p.method === 'bank_transfer').reduce((sum: number, payment: any) => sum + payment.amount, 0), [collectedPayments])
   const outstanding = useMemo(() => invoices.filter((i: any) => i.status !== 'paid' && i.status !== 'cancelled').reduce((s: number, i: any) => s + i.totalAmount - (i.paidAmount || 0), 0), [invoices])
-  const totalPaid = useMemo(() => payments.filter((p: any) => p.status === 'verified').reduce((s: number, p: any) => s + p.amount, 0), [payments])
+  const totalPaid = totalRevenue
   const totalInvoices = useMemo(() => invoices.length, [invoices])
   const paidInvoices = useMemo(() => invoices.filter((i: any) => i.status === 'paid').length, [invoices])
   const collectionRate = useMemo(() => totalInvoices > 0 ? Math.round((paidInvoices / totalInvoices) * 100) : 0, [totalInvoices, paidInvoices])
@@ -155,12 +173,12 @@ export function Finance() {
       const day = subDays(new Date(), i)
       const dayStr = format(day, 'yyyy-MM-dd')
       const dayLabel = format(day, 'EEE')
-      const dayPayments = payments.filter((p: any) => p.status === 'verified' && format(parseISO(p.createdAt), 'yyyy-MM-dd') === dayStr)
+      const dayPayments = collectedPayments.filter((p: any) => format(parseISO(p.receivedAt || p.verifiedAt || p.createdAt), 'yyyy-MM-dd') === dayStr)
       const dayRevenue = dayPayments.reduce((s: number, p: any) => s + p.amount, 0)
       days.push({ label: dayLabel, amount: dayRevenue })
     }
     return days
-  }, [payments])
+  }, [collectedPayments])
 
   const maxRevenue = useMemo(() => Math.max(...revenueByDay.map(d => d.amount), 1), [revenueByDay])
 
@@ -234,7 +252,9 @@ export function Finance() {
   const invoiceBalance = selectedInvoice ? (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)) : 0
 
   const filteredInv = useMemo(() => invoices.filter((i: any) => {
-    if (invStatusFilter !== 'all' && i.status !== invStatusFilter) return false
+    if (invStatusFilter === 'pending' && ['paid', 'cancelled'].includes(i.status)) return false
+    if (invStatusFilter === 'verified' && i.status !== 'paid') return false
+    if (!['all', 'pending', 'verified'].includes(invStatusFilter) && i.status !== invStatusFilter) return false
     if (!invSearch) return true
     const s = invSearch.toLowerCase()
     return i.invoiceNo?.toLowerCase().includes(s) || i.customer?.user?.name?.toLowerCase().includes(s)
@@ -243,10 +263,15 @@ export function Finance() {
   const { sorted: sortedInv, SortableHeader } = useSortable<any>(filteredInv, 'issuedAt')
 
   const filteredPay = useMemo(() => payments.filter((p: any) => {
+    if (payMethodFilter !== 'all' && p.method !== payMethodFilter) return false
+    if (payStatusFilter !== 'all' && p.status !== payStatusFilter) return false
+    const transactionDay = format(new Date(p.master.transactionDate), 'yyyy-MM-dd')
+    if (payDateFrom && transactionDay < payDateFrom) return false
+    if (payDateTo && transactionDay > payDateTo) return false
     if (!paySearch) return true
-    const s = paySearch.toLowerCase()
-    return p.invoice?.invoiceNo?.toLowerCase().includes(s) || p.invoice?.customer?.user?.name?.toLowerCase().includes(s)
-  }), [payments, paySearch])
+    const s = paySearch.trim().toLowerCase()
+    return p.master.transactionNumber.toLowerCase().includes(s) || p.master.bookingReference?.toLowerCase().includes(s)
+  }), [payments, paySearch, payMethodFilter, payStatusFilter, payDateFrom, payDateTo])
 
   const fadeIn = {
     initial: { opacity: 0, y: 12 },
@@ -290,7 +315,6 @@ export function Finance() {
                       <SelectContent>
                         <SelectItem value="issued">Issued</SelectItem>
                         <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="paid">Paid</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -342,7 +366,7 @@ export function Finance() {
                   </Select>
                 </div>
               </div>
-              <div className="grid gap-2"><Label>Reference No</Label><Input value={payForm.referenceNo} onChange={e => setPayForm({ ...payForm, referenceNo: e.target.value })} placeholder="Optional" /></div>
+              <div className="grid gap-2"><Label>Transaction / Receipt Reference</Label><Input value={payForm.referenceNo} onChange={e => setPayForm({ ...payForm, referenceNo: e.target.value })} placeholder="Required unique reference" /></div>
               <div className="grid gap-2"><Label>Notes</Label><Input value={payForm.notes} onChange={e => setPayForm({ ...payForm, notes: e.target.value })} /></div>
 
               {/* Payment Proof Upload */}
@@ -432,7 +456,7 @@ export function Finance() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => payMut.mutate({ ...payForm, status: 'verified', receivedBy: 'Admin' })} disabled={!payForm.invoiceId || payForm.amount <= 0}>Record Payment</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => payMut.mutate(payForm)} disabled={!payForm.invoiceId || payForm.amount <= 0 || !payForm.referenceNo.trim()}>Record Payment</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -441,7 +465,7 @@ export function Finance() {
 
       {/* Invoice Status Filter */}
       <div className="flex flex-wrap gap-2">
-        {['all', 'draft', 'issued', 'paid', 'partially_paid', 'overdue', 'cancelled'].map(s => (
+        {['all', 'pending', 'verified', 'draft', 'issued', 'partially_paid', 'overdue', 'cancelled'].map(s => (
           <motion.div key={s} layout>
             <Button
               variant={invStatusFilter === s ? 'default' : 'outline'}
@@ -449,7 +473,7 @@ export function Finance() {
               className={`text-xs h-7 ${invStatusFilter === s ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
               onClick={() => setInvStatusFilter(s)}
             >
-              {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              {s === 'all' ? 'All Invoices' : s === 'pending' ? 'Pending Invoices' : s === 'verified' ? 'Cleared / Verified Invoices' : s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
             </Button>
           </motion.div>
         ))}
@@ -506,7 +530,7 @@ export function Finance() {
                   <p className="text-xs text-muted-foreground font-medium">Payments Collected</p>
                   <p className="text-2xl font-bold"><AnimatedCounter value={totalPaid} prefix="AED " /></p>
                   <p className="text-xs text-teal-600 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" />{payments.filter((p: any) => p.status === 'verified').length} verified payments
+                    <CheckCircle2 className="h-3 w-3" />Cash AED {cashInflow.toLocaleString()} · Bank AED {bankInflow.toLocaleString()}
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 shadow-lg shadow-teal-200 dark:shadow-teal-900/30 transition-transform hover:scale-110">
@@ -621,7 +645,6 @@ export function Finance() {
               <div className="max-h-[440px] overflow-y-auto">
                 <Table><TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
                   <TableHead className="text-xs font-semibold">Invoice</TableHead>
-                  <TableHead className="text-xs font-semibold">Collected By</TableHead>
                   <TableHead className="text-xs font-semibold">Customer</TableHead>
                   <TableHead className="text-xs font-semibold hidden md:table-cell"><SortableHeader col={'issuedAt' as any}>Issued</SortableHeader></TableHead>
                   <TableHead className="text-xs font-semibold"><SortableHeader col={'totalAmount' as any}>Total</SortableHeader></TableHead>
@@ -631,7 +654,7 @@ export function Finance() {
                 </TableRow></TableHeader>
                 <TableBody>
                   {sortedInv.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">
                       <div className="flex flex-col items-center gap-2">
                         <Receipt className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
                         <p className="text-sm text-muted-foreground">No invoices found</p>
@@ -691,25 +714,33 @@ export function Finance() {
         </TabsContent>
 
         <TabsContent value="payments" className="mt-4">
-          <div className="relative max-w-sm mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search payments..." value={paySearch} onChange={e => setPaySearch(e.target.value)} className="pl-9" />
+          <div className="grid gap-2 mb-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Transaction or booking reference" value={paySearch} onChange={e => setPaySearch(e.target.value)} className="pl-9" /></div>
+            <Select value={payMethodFilter} onValueChange={setPayMethodFilter}><SelectTrigger><SelectValue placeholder="Payment method" /></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank_transfer">Bank transfer</SelectItem></SelectContent></Select>
+            <Select value={payStatusFilter} onValueChange={setPayStatusFilter}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="under_verification">Under verification</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+            <Button variant="outline" onClick={() => { setPaySearch(''); setPayMethodFilter('all'); setPayStatusFilter('all'); setPayDateFrom(''); setPayDateTo('') }}>Clear filters</Button>
+            <div><Label className="text-xs">From</Label><Input type="date" value={payDateFrom} onChange={e => setPayDateFrom(e.target.value)} /></div>
+            <div><Label className="text-xs">To</Label><Input type="date" value={payDateTo} onChange={e => setPayDateTo(e.target.value)} /></div>
           </div>
           <Card className="border-0 shadow-sm"><CardContent className="p-0">
             {payLoading ? <div className="p-6 space-y-4"><Skeleton className="h-10 w-full" /></div> : (
               <div className="max-h-[440px] overflow-y-auto">
                 <Table><TableHeader><TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableHead className="text-xs font-semibold">Transaction</TableHead>
                   <TableHead className="text-xs font-semibold">Amount</TableHead>
                   <TableHead className="text-xs font-semibold">Method</TableHead>
-                  <TableHead className="text-xs font-semibold">Invoice</TableHead>
+                  <TableHead className="text-xs font-semibold">Booking</TableHead>
+                  <TableHead className="text-xs font-semibold">Collected By</TableHead>
                   <TableHead className="text-xs font-semibold hidden md:table-cell">Reference</TableHead>
                   <TableHead className="text-xs font-semibold">Proof</TableHead>
                   <TableHead className="text-xs font-semibold hidden md:table-cell">Date</TableHead>
                   <TableHead className="text-xs font-semibold">Status</TableHead>
+                  <TableHead className="text-xs font-semibold">Reconciliation</TableHead>
+                  <TableHead className="text-xs font-semibold">Details</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {filteredPay.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                    <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-12">
                       <div className="flex flex-col items-center gap-2">
                         <CreditCard className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
                         <p className="text-sm text-muted-foreground">No payments found</p>
@@ -727,6 +758,7 @@ export function Finance() {
                         transition={{ delay: idx * 0.03 }}
                         className={`border-b border-border/40 ${idx % 2 === 1 ? 'bg-muted/20' : ''} hover:bg-muted/40 transition-colors `}
                       >
+                        <TableCell className="font-mono text-xs font-semibold">{p.master.transactionNumber}</TableCell>
                         <TableCell className="font-semibold">AED {p.amount.toLocaleString()}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -734,8 +766,8 @@ export function Finance() {
                             <span className="text-xs capitalize">{p.method.replace('_', ' ')}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{p.invoice?.invoiceNo}</TableCell>
-                        <TableCell className="text-xs">{p.method === 'cash' ? p.receivedByName || (p.status === 'cash_selected' ? 'Pending cleaner collection' : '-') : '-'}</TableCell>
+                        <TableCell className="font-mono text-xs">{p.master.bookingReference || '-'}</TableCell>
+                        <TableCell className="text-xs">{p.receivedByName || p.verifiedByName || (p.method === 'bank_transfer' ? 'Bank Transfer' : p.status === 'cash_selected' ? 'Pending cleaner collection' : '-')}</TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.referenceNo || '-'}</TableCell>
                         <TableCell>
                           {p.proofUrl ? (
@@ -752,8 +784,10 @@ export function Finance() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{format(parseISO(p.createdAt), 'MMM dd, yyyy')}</TableCell>
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{format(parseISO(p.receivedAt || p.verifiedAt || p.createdAt), 'MMM dd, yyyy')}</TableCell>
                         <TableCell><Badge className={`${payStatusColors [p.status] || ''} text-xs`}>{p.status}</Badge></TableCell>
+                        <TableCell>{p.method === 'cash' && p.reconciliationStatus === 'pending' ? <Button size="sm" variant="outline" disabled={reconcileCashMut.isPending} onClick={() => reconcileCashMut.mutate(p.id)}>Reconcile</Button> : p.method === 'cash' && p.reconciliationStatus === 'reconciled' ? <span className="text-xs text-emerald-600">Reconciled</span> : '-'}</TableCell>
+                        <TableCell><Button size="sm" variant="ghost" onClick={() => setSelectedTransaction(p)}><Eye className="h-4 w-4 mr-1" />View</Button></TableCell>
                       </motion.tr>
                     )
                   })}
@@ -765,6 +799,53 @@ export function Finance() {
           </CardContent></Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(selectedTransaction)} onOpenChange={open => { if (!open) setSelectedTransaction(null) }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Transaction {selectedTransaction?.master?.transactionNumber}</DialogTitle></DialogHeader>
+          {selectedTransaction?.master && <div className="space-y-5 text-sm">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">Confirmed transaction amounts are read-only.</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-muted/20 p-4">
+              {[
+                ['Booking', selectedTransaction.master.bookingReference || 'Manual invoice'],
+                ['Payment Reference', selectedTransaction.master.paymentReference || '-'],
+                ['Customer', selectedTransaction.master.customer],
+                ['Method', selectedTransaction.master.paymentMethod.replace('_', ' ')],
+                ['Date', format(new Date(selectedTransaction.master.transactionDate), 'PPp')],
+                ['Amount', `${selectedTransaction.master.currency} ${selectedTransaction.master.totalAmount.toLocaleString()}`],
+                ['Status', selectedTransaction.master.transactionStatus],
+                ['Reconciliation', selectedTransaction.master.reconciliationStatus],
+                ['Cleaner', selectedTransaction.master.cleanerCollectingCash || '-'],
+                ['Company Account', selectedTransaction.master.companyBankAccount ? `${selectedTransaction.master.companyBankAccount.bankName} · ${selectedTransaction.master.companyBankAccount.accountNumber}` : '-'],
+                ['Approved By', selectedTransaction.master.approvedBy || '-'],
+              ].map(([label, value]) => <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold capitalize">{value}</p></div>)}
+              <div className="col-span-2"><p className="text-xs text-muted-foreground">Remarks</p><p className="font-medium">{selectedTransaction.master.remarks || '-'}</p></div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Booking Information</h3>{selectedTransaction.bookingInformation ? <div className="space-y-1 text-xs"><p>{selectedTransaction.bookingInformation.reference} · {selectedTransaction.bookingInformation.status}</p><p>{format(new Date(selectedTransaction.bookingInformation.scheduledDate), 'PP')} · {selectedTransaction.bookingInformation.startTime}{selectedTransaction.bookingInformation.endTime ? `–${selectedTransaction.bookingInformation.endTime}` : ''}</p><p>{[selectedTransaction.bookingInformation.address, selectedTransaction.bookingInformation.area, selectedTransaction.bookingInformation.city].filter(Boolean).join(', ') || '-'}</p></div> : <p className="text-xs text-muted-foreground">Manual invoice transaction</p>}</div>
+              <div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Customer Information</h3><div className="space-y-1 text-xs"><p className="font-medium">{selectedTransaction.customerInformation.name}</p><p>{selectedTransaction.customerInformation.phone || '-'}</p><p>{[selectedTransaction.customerInformation.address, selectedTransaction.customerInformation.area, selectedTransaction.customerInformation.city].filter(Boolean).join(', ') || '-'}</p></div></div>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">Amount Breakdown</h3>
+              <div className="rounded-xl border divide-y">
+                {selectedTransaction.details.services.map((service: any) => <div key={`${service.name}-${service.hourlyRate}`} className="flex justify-between p-3 text-xs"><span>{service.name} · {service.employeeCount} cleaner(s) × {service.hours}h × {selectedTransaction.master.currency} {service.hourlyRate}</span><span className="font-semibold">{selectedTransaction.master.currency} {service.amount.toLocaleString()}</span></div>)}
+                {[
+                  ['Booking service amount', selectedTransaction.details.bookingServiceAmount],
+                  [`Additional charges · ${selectedTransaction.details.assignedEmployees} assigned · ${selectedTransaction.details.totalBillableHours} billable hours`, selectedTransaction.details.additionalCharges],
+                  ['Discount', -selectedTransaction.details.discount],
+                  ['Tax', selectedTransaction.details.tax],
+                  ['Previously paid', -selectedTransaction.details.priorAmountPaid],
+                  ['Remaining after transaction', -selectedTransaction.details.remainingAfterTransaction],
+                ].map(([label, value]) => <div key={String(label)} className="flex justify-between p-3"><span className="text-muted-foreground">{label}</span><span>{selectedTransaction.master.currency} {Number(value).toLocaleString()}</span></div>)}
+                <div className="flex justify-between p-3 font-bold bg-muted/30"><span>Final amount received</span><span>{selectedTransaction.master.currency} {selectedTransaction.details.detailTotal.toLocaleString()}</span></div>
+              </div>
+            </div>
+            {selectedTransaction.bankTransferDetails && <div className="rounded-xl border p-4 space-y-3"><h3 className="font-semibold">Bank Transfer Details</h3><div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-muted-foreground">Customer bank</p><p className="font-medium">{selectedTransaction.bankTransferDetails.customerBankName}</p></div><div><p className="text-muted-foreground">Account holder</p><p className="font-medium">{selectedTransaction.bankTransferDetails.accountHolderName}</p></div><div><p className="text-muted-foreground">Transfer reference</p><p className="font-mono">{selectedTransaction.bankTransferDetails.referenceNumber}</p></div><div><p className="text-muted-foreground">Transfer date</p><p>{selectedTransaction.bankTransferDetails.transferDate ? format(new Date(selectedTransaction.bankTransferDetails.transferDate), 'PP') : '-'}</p></div></div>{selectedTransaction.bankTransferDetails.proofUrl && <a href={selectedTransaction.bankTransferDetails.proofUrl} target="_blank" rel="noopener noreferrer" className="block">{selectedTransaction.bankTransferDetails.proofUrl.match(/\.pdf$/i) ? <Button variant="outline"><FileText className="h-4 w-4 mr-2" />View payment proof</Button> : <img src={selectedTransaction.bankTransferDetails.proofUrl} alt="Bank transfer payment proof" className="max-h-64 rounded-lg border object-contain" />}</a>}</div>}
+            <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Company Bank Account</h3>{selectedTransaction.master.companyBankAccount ? <div className="space-y-1 text-xs"><p className="font-medium">{selectedTransaction.master.companyBankAccount.accountTitle}</p><p>{selectedTransaction.master.companyBankAccount.bankName}</p><p className="font-mono">{selectedTransaction.master.companyBankAccount.accountNumber}</p><p className="font-mono">{selectedTransaction.master.companyBankAccount.iban || ''}</p></div> : <p className="text-xs text-muted-foreground">Not applicable</p>}</div><div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Approval</h3>{selectedTransaction.approvalInformation ? <div className="space-y-1 text-xs"><p className="font-medium">{selectedTransaction.approvalInformation.approvedBy}</p><p>{selectedTransaction.approvalInformation.approvedAt ? format(new Date(selectedTransaction.approvalInformation.approvedAt), 'PPp') : '-'}</p><p>{selectedTransaction.approvalInformation.remarks || '-'}</p></div> : <p className="text-xs text-muted-foreground">Not approved</p>}</div></div>
+            <div><h3 className="font-semibold mb-2">Transaction History</h3><div className="rounded-xl border divide-y">{selectedTransaction.history.map((entry: any) => <div key={`${entry.event}-${entry.date}`} className="flex items-start justify-between gap-3 p-3 text-xs"><div><p className="font-medium">{entry.event}</p><p className="text-muted-foreground">{entry.actor}</p></div><div className="text-right"><Badge className={`${payStatusColors[entry.status] || ''} text-[10px]`}>{entry.status}</Badge><p className="mt-1 text-muted-foreground">{format(new Date(entry.date), 'PPp')}</p></div></div>)}</div></div>
+          </div>}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

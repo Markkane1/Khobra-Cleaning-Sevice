@@ -13,8 +13,8 @@ export interface Branch {
 
 export interface IBranchRepository {
   findManyByTenant(tenantId: string): Promise<Branch[]>;
-  findById(id: string): Promise<Branch | null>;
+  findById(tenantId: string, id: string): Promise<Branch | null>;
   create(tenantId: string, data: CreateBranchDTO): Promise<Branch>;
-  update(id: string, data: UpdateBranchDTO): Promise<Branch>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateBranchDTO): Promise<Branch>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

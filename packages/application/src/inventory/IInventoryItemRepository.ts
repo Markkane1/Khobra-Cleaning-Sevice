@@ -17,8 +17,8 @@ export interface InventoryItem {
 
 export interface IInventoryItemRepository {
   findManyByTenant(tenantId: string): Promise<InventoryItem[]>;
-  findById(id: string): Promise<InventoryItem | null>;
+  findById(tenantId: string, id: string): Promise<InventoryItem | null>;
   create(tenantId: string, data: CreateInventoryItemDTO): Promise<InventoryItem>;
-  update(id: string, data: UpdateInventoryItemDTO): Promise<InventoryItem>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateInventoryItemDTO): Promise<InventoryItem>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

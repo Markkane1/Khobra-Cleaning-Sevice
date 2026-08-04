@@ -38,9 +38,8 @@ export * from './stats/IStatsRepository';
 export * from './stats/StatsService';
 export * from './trips/ITripRepository';
 export * from './trips/TripService';
-export * from './upload/IUploadRepository';
-export * from './upload/UploadService';
 export * from './vendor-items/IVendorItemRepository';
 export * from './vendor-items/VendorItemService';
 export * from './vendors/IVendorRepository';
 export * from './vendors/VendorService';
+

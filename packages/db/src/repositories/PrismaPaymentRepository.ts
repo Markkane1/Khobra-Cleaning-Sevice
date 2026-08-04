@@ -1,6 +1,7 @@
 import { IPaymentRepository } from '@repo/application';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { createTransactionSnapshot } from '../transaction-snapshot';
 
 export class PrismaPaymentRepository implements IPaymentRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -8,40 +9,134 @@ export class PrismaPaymentRepository implements IPaymentRepository {
   async getPayments(tenantId: string): Promise<any[]> {
     const payments = await this.prisma.payment.findMany({
       where: { tenantId },
-      include: { invoice: { include: { customer: { include: { user: { select: { id: true, name: true } } } }, booking: { select: { bookingNo: true } } } } },
+      include: {
+        transactionSnapshot: true,
+        events: { orderBy: { occurredAt: 'asc' } },
+        invoice: {
+          include: {
+            customer: { include: { user: { select: { id: true, name: true } } } },
+            booking: { include: { items: { include: { service: { select: { name: true } } } }, materials: true, assignments: { select: { id: true } } } },
+            payments: { select: { id: true, amount: true, status: true, receivedAt: true, verifiedAt: true, createdAt: true } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    const receivers = await this.prisma.user.findMany({ where: { id: { in: payments.map(payment => payment.receivedBy).filter(Boolean) as string[] } }, select: { id: true, name: true } });
-    const receiverNames = new Map(receivers.map(receiver => [receiver.id, receiver.name]));
-    return payments.map(payment => ({ ...payment, receivedByName: payment.receivedBy ? receiverNames.get(payment.receivedBy) || payment.receivedBy : null }));
-  }
-
-  async createPayment(tenantId: string, data: any): Promise<any> {
-    return this.prisma.payment.create({
-      data: {
-        tenantId,
-        ...data,
-      },
+    const actorIds = payments.flatMap(payment => [payment.selectedBy, payment.receivedBy, payment.verifiedBy, ...payment.events.map(event => event.actorId)]).filter(Boolean) as string[];
+    const [users, cleaners] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }),
+      this.prisma.employee.findMany({ where: { tenantId, userId: { in: actorIds } }, select: { userId: true } }),
+    ]);
+    const names = new Map(users.map(user => [user.id, user.name]));
+    return payments.map(payment => {
+      const { payments: invoicePayments, ...invoice } = payment.invoice;
+      const booking = invoice.booking;
+      const transactionDate = payment.receivedAt || payment.verifiedAt || payment.createdAt;
+      const serviceAmount = booking ? Math.round(((booking.items.length ? booking.items.reduce((sum, item) => sum + item.totalAmount, 0) : booking.hourlyRate * booking.employeeCount * booking.duration)) * 100) / 100 : invoice.subtotal;
+      const materialCharges = booking ? Math.round(((booking.materials.length ? booking.materials.reduce((sum, item) => sum + item.totalAmount, 0) : booking.materialsCost) || 0) * 100) / 100 : 0;
+      const discount = booking?.discount || invoice.discount || 0;
+      const tax = booking ? Math.max(0, Math.round((booking.totalAmount - serviceAmount - materialCharges) * 100) / 100) : invoice.taxAmount;
+      const additionalCharges = Math.round((materialCharges + invoice.totalAmount - (serviceAmount + materialCharges + tax - discount)) * 100) / 100;
+      const priorPaid = invoicePayments
+        .filter(item => item.id !== payment.id && ['paid', 'verified'].includes(item.status) && (item.receivedAt || item.verifiedAt || item.createdAt) < transactionDate)
+        .reduce((sum, item) => sum + item.amount, 0);
+      const remainingAfter = Math.max(0, Math.round((invoice.totalAmount - priorPaid - payment.amount) * 100) / 100);
+      let companyBankAccount: Record<string, any> | null = null;
+      try { companyBankAccount = payment.companyBankAccountSnapshot ? JSON.parse(payment.companyBankAccountSnapshot) : null; } catch { /* Preserve transaction even if a legacy snapshot is malformed. */ }
+      const detailTotal = Math.round((serviceAmount + additionalCharges + tax - discount - priorPaid - remainingAfter) * 100) / 100;
+      const actorName = (id: string | null) => id ? names.get(id) || id : 'System';
+      const inferredHistory = [
+        { event: 'Transaction record created', status: 'pending', date: payment.createdAt, actor: actorName(payment.selectedBy || payment.receivedBy || payment.verifiedBy) },
+        payment.method === 'bank_transfer' && payment.submittedAt ? { event: 'Bank transfer submitted', status: 'under_verification', date: payment.submittedAt, actor: actorName(payment.selectedBy) } : null,
+        payment.method === 'cash' && payment.receivedAt ? { event: 'Cash received', status: 'paid', date: payment.receivedAt, actor: actorName(payment.receivedBy) } : null,
+        payment.method === 'bank_transfer' && payment.verifiedAt && ['paid', 'verified'].includes(payment.status) ? { event: 'Bank transfer approved', status: 'paid', date: payment.verifiedAt, actor: actorName(payment.verifiedBy) } : null,
+        payment.method === 'cash' && payment.verifiedAt && payment.reconciliationStatus === 'reconciled' ? { event: 'Cash reconciled', status: 'verified', date: payment.verifiedAt, actor: actorName(payment.verifiedBy) } : null,
+        payment.rejectedAt ? { event: 'Payment rejected', status: 'rejected', date: payment.rejectedAt, actor: actorName(payment.verifiedBy) } : null,
+      ].filter(Boolean).sort((a, b) => a!.date.getTime() - b!.date.getTime());
+      const history = payment.events.length ? payment.events.map(event => ({ event: event.event, status: event.status, date: event.occurredAt, actor: actorName(event.actorId) })) : inferredHistory;
+      const snapshot = payment.transactionSnapshot?.snapshotData as Record<string, any> | undefined;
+      return {
+        ...payment,
+        invoice,
+        receivedByName: payment.receivedBy ? names.get(payment.receivedBy) || payment.receivedBy : null,
+        verifiedByName: payment.verifiedBy ? names.get(payment.verifiedBy) || payment.verifiedBy : null,
+        master: {
+          transactionNumber: payment.transactionNo || `LEGACY-${payment.id.slice(-8).toUpperCase()}`,
+          paymentReference: payment.referenceNo,
+          bookingReference: booking?.bookingNo || null,
+          customer: invoice.customer.user.name,
+          paymentMethod: payment.method,
+          transactionDate,
+          totalAmount: payment.amount,
+          currency: companyBankAccount?.currency || 'AED',
+          transactionStatus: payment.status,
+          reconciliationStatus: payment.reconciliationStatus,
+          cleanerCollectingCash: payment.method === 'cash' && payment.receivedBy && cleaners.some(cleaner => cleaner.userId === payment.receivedBy) ? names.get(payment.receivedBy) || payment.receivedBy : null,
+          companyBankAccount: payment.method === 'bank_transfer' ? companyBankAccount : null,
+          approvedBy: payment.method === 'bank_transfer' && payment.verifiedBy ? names.get(payment.verifiedBy) || payment.verifiedBy : null,
+          remarks: payment.decisionRemarks || payment.notes || null,
+        },
+        details: {
+          services: snapshot?.services || booking?.items.map(item => ({ name: item.service.name, hourlyRate: item.hourlyRate, employeeCount: item.employeeCount, hours: item.hours, amount: item.totalAmount })) || [],
+          bookingServiceAmount: snapshot?.serviceAmount ?? serviceAmount,
+          hourlyRate: booking?.hourlyRate || 0,
+          assignedEmployees: booking?.assignments.length || 0,
+          totalBillableHours: booking ? Math.round(((booking.items.length ? booking.items.reduce((sum, item) => sum + item.hours * item.employeeCount, 0) : booking.duration * booking.employeeCount)) * 100) / 100 : 0,
+          additionalCharges: snapshot?.materials ?? additionalCharges,
+          discount: snapshot?.discount ?? discount,
+          tax: snapshot?.taxAmount ?? tax,
+          priorAmountPaid: Math.round(priorPaid * 100) / 100,
+          remainingAfterTransaction: remainingAfter,
+          finalAmountReceived: payment.amount,
+          detailTotal: snapshot ? snapshot.amountReceived : detailTotal,
+        },
+        bookingInformation: booking ? { reference: booking.bookingNo, status: booking.status, scheduledDate: booking.scheduledDate, startTime: booking.startTime, endTime: booking.endTime, address: booking.address, city: booking.city, area: booking.area } : null,
+        customerInformation: { name: invoice.customer.user.name, phone: invoice.customer.phone, address: invoice.customer.address, city: invoice.customer.city, area: invoice.customer.area },
+        bankTransferDetails: payment.method === 'bank_transfer' ? { referenceNumber: payment.referenceNo, customerBankName: payment.customerBankName, accountHolderName: payment.accountHolderName, transferDate: payment.transferDate, submittedAt: payment.submittedAt, proofUrl: payment.proofUrl } : null,
+        approvalInformation: payment.verifiedBy ? { approvedBy: actorName(payment.verifiedBy), approvedAt: payment.verifiedAt, remarks: payment.decisionRemarks } : null,
+        history,
+      };
     });
   }
 
-  async updateInvoicePaymentStatus(invoiceId: string, amount: number): Promise<{ invoiceNo: string; newStatus: string } | null> {
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (!invoice) return null;
-    
-    const newPaid = (invoice.paidAmount || 0) + amount;
-    const newStatus = newPaid >= invoice.totalAmount ? 'paid' : 'partially_paid';
-    
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: { paidAmount: newPaid, status: newStatus },
+  async createPayment(tenantId: string, recordedBy: string, data: any): Promise<any> {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${data.invoiceId} FOR UPDATE`);
+      const invoice = await tx.invoice.findFirst({ where: { id: data.invoiceId, tenantId } });
+      if (!invoice) throw Object.assign(new Error('Invoice not found'), { status: 404 });
+      if (invoice.status === 'cancelled') throw new Error('Cancelled invoices cannot receive payments');
+      const remaining = Math.max(0, Math.round((invoice.totalAmount - invoice.paidAmount) * 100) / 100);
+      if (remaining <= 0) throw new Error('Invoice is already fully paid');
+      if (data.amount > remaining + 0.001) throw new Error(`Payment cannot exceed the remaining balance of ${remaining}`);
+      if (await tx.payment.findFirst({ where: { tenantId, referenceNo: data.referenceNo } })) throw new Error('This transaction reference has already been recorded');
+      const now = new Date();
+      const paidAmount = invoice.paidAmount + data.amount;
+      const payment = await tx.payment.create({
+        data: {
+          tenantId,
+          invoiceId: invoice.id,
+          amount: data.amount,
+          method: data.method,
+          referenceNo: data.referenceNo,
+          proofUrl: data.proofUrl,
+          status: 'verified',
+          reconciliationStatus: data.method === 'cash' ? 'reconciled' : 'not_required',
+          receivedBy: recordedBy,
+          receivedAt: now,
+          verifiedBy: recordedBy,
+          verifiedAt: now,
+          submittedAt: data.method === 'bank_transfer' ? now : null,
+          notes: data.notes || 'Payment recorded by Finance',
+        },
+        include: { invoice: { include: { booking: { select: { id: true, bookingNo: true } } } } },
+      });
+      await tx.invoice.update({ where: { id: invoice.id }, data: { paidAmount, status: paidAmount + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid' } });
+      return payment;
     });
-    
-    return { invoiceNo: invoice.invoiceNo, newStatus };
   }
 
   async selectPaymentMethod(tenantId: string, userId: string, data: any): Promise<any> {
-    const { bookingId, method, customerBankName, accountHolderName, referenceNo, transferDate, proofUrl, notes } = data;
+    const { bookingId, method } = data;
 
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
@@ -98,34 +193,17 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         data: { status: 'rejected', rejectedAt: new Date(), decisionRemarks: 'Superseded by a new customer payment-method selection' },
       });
 
-      const bankTransferSubmitted = method === 'bank_transfer' && referenceNo && customerBankName && accountHolderName && proofUrl;
-      const status = method === 'cash' ? 'cash_selected' : bankTransferSubmitted ? 'under_verification' : 'payment_pending';
-
-      const payment = await tx.payment.create({
-        data: {
-          tenantId,
-          invoiceId: invoice.id,
-          amount: remainingPayable,
-          method,
-          status,
-          selectedBy: userId,
-          customerBankName: method === 'bank_transfer' ? customerBankName : null,
-          accountHolderName: method === 'bank_transfer' ? accountHolderName : null,
-          transferDate: method === 'bank_transfer' ? transferDate : null,
-          submittedAt: method === 'bank_transfer' ? new Date() : null,
-          referenceNo: method === 'bank_transfer' ? referenceNo : (method === 'cash' ? `CASH-${Date.now()}` : null),
-          proofUrl: method === 'bank_transfer' ? proofUrl : null,
-          notes: notes || (method === 'bank_transfer' ? `Bank: ${customerBankName}, Holder: ${accountHolderName}` : 'Cash payment selected'),
-        },
-        include: { invoice: { include: { booking: { select: { bookingNo: true } } } } },
+      return tx.invoice.update({
+        where: { id: invoice.id },
+        data: { selectedPaymentMethod: method, paymentSelectedBy: userId, paymentSelectedAt: new Date() },
+        include: { booking: { select: { bookingNo: true } } },
       });
-
-      return payment;
     });
   }
 
   async reopenPayment(tenantId: string, adminUserId: string, bookingId: string, reason?: string): Promise<any> {
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, tenantId },
         include: { invoices: { include: { payments: true } } },
@@ -135,10 +213,12 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw new Error('Booking not found');
       }
 
-      const invoice = booking.invoices[0];
+      let invoice = booking.invoices[0];
       if (!invoice) {
         throw new Error('No invoice found for this booking');
       }
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${invoice.id} FOR UPDATE`);
+      invoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { payments: true } });
 
       const latestPayment = [...invoice.payments].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
       if (!latestPayment || latestPayment.status === 'rejected') throw new Error('There is no locked payment to reopen');
@@ -154,6 +234,9 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         data: {
           status: paidAmount > 0 ? 'partially_paid' : 'issued',
           paidAmount,
+          selectedPaymentMethod: null,
+          paymentSelectedBy: null,
+          paymentSelectedAt: null,
         },
       });
 
@@ -163,42 +246,33 @@ export class PrismaPaymentRepository implements IPaymentRepository {
 
   async verifyCashPayment(tenantId: string, adminUserId: string, paymentId: string, remarks?: string): Promise<any> {
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`);
       const payment = await tx.payment.findFirst({
         where: { id: paymentId, tenantId, method: 'cash' },
-        include: { invoice: true },
       });
 
       if (!payment) {
         throw new Error('Cash payment record not found');
       }
 
-      if (payment.status === 'verified' || payment.status === 'paid') {
+      if (payment.status === 'verified') {
         throw new Error('Payment is already verified');
       }
+      if (payment.status !== 'paid' || !payment.receivedBy || !payment.receivedAt) throw new Error('Cash must be received by an assigned cleaner before reconciliation');
 
       const now = new Date();
-      const updatedPayment = await tx.payment.update({
+      const updated = await tx.payment.update({
         where: { id: payment.id },
         data: {
           status: 'verified',
+          reconciliationStatus: 'reconciled',
           verifiedBy: adminUserId,
           verifiedAt: now,
-          notes: remarks || 'Cash payment verified by Admin',
+          decisionRemarks: remarks || 'Cash reconciled by Admin',
         },
       });
-
-      const newPaidAmount = (payment.invoice.paidAmount || 0) + payment.amount;
-      const newInvoiceStatus = newPaidAmount + 0.001 >= payment.invoice.totalAmount ? 'paid' : 'partially_paid';
-
-      await tx.invoice.update({
-        where: { id: payment.invoiceId },
-        data: {
-          paidAmount: newPaidAmount,
-          status: newInvoiceStatus,
-        },
-      });
-
-      return updatedPayment;
+      await tx.paymentEvent.create({ data: { tenantId, paymentId: payment.id, event: 'Cash reconciled', status: 'verified', actorId: adminUserId, remarks } });
+      return updated;
     });
   }
 
@@ -230,50 +304,60 @@ export class PrismaPaymentRepository implements IPaymentRepository {
         throw Object.assign(new Error('Only a cleaner assigned to this booking can mark cash as received'), { status: 403 });
       }
 
-      const invoice = booking.invoices[0];
+      let invoice = booking.invoices[0];
       if (!invoice) throw new Error('Customer must select Pay Cash before cash can be received');
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${invoice.id} FOR UPDATE`);
+      invoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id }, include: { payments: { orderBy: { createdAt: 'desc' } } } });
 
       const existingPaid = invoice.paidAmount || 0;
-      const remainingPayable = Math.max(0, Math.round((booking.netAmount - existingPaid) * 100) / 100);
+      const remainingPayable = Math.max(0, Math.round((invoice.totalAmount - existingPaid) * 100) / 100);
 
       if (remainingPayable <= 0) {
         throw new Error('Cash payment has already been completed for this booking');
       }
 
-      const cashSelection = invoice.payments?.find(p => p.method === 'cash' && p.status === 'cash_selected');
+      const legacyCashSelection = invoice.payments?.find(p => p.method === 'cash' && p.status === 'cash_selected');
       const existingPayment = invoice.payments?.find(p => p.method === 'cash' && (p.status === 'verified' || p.status === 'paid'));
       if (existingPayment) {
         throw new Error('Cash payment has already been recorded and confirmed');
       }
-      if (!cashSelection) throw new Error('Customer must select Pay Cash before cash can be received');
+      if (invoice.selectedPaymentMethod !== 'cash' && !legacyCashSelection) throw new Error('Customer must select Pay Cash before cash can be received');
 
       const now = new Date();
       const cleanerName = assignedAssignment.employee?.user?.name || 'Cleaner';
 
-      if (Math.abs(cashSelection.amount - remainingPayable) > 0.001) throw new Error('Collectible amount changed. Ask the customer or Admin to reselect the payment method');
-      const payment = await tx.payment.update({
-        where: { id: cashSelection.id },
-        data: {
-          status: 'verified', receivedBy: cleanerUserId, verifiedBy: cleanerUserId, verifiedAt: now,
-          notes: `${cashSelection.notes || 'Cash payment selected'}; ${remarks || `Cash received by cleaner ${cleanerName} (${assignedAssignment.employeeId}) on ${now.toISOString()}`}`,
-        },
+      if (legacyCashSelection && Math.abs(legacyCashSelection.amount - remainingPayable) > 0.001) throw new Error('Collectible amount changed. Ask the customer or Admin to reselect the payment method');
+      const paymentData = {
+        transactionNo: legacyCashSelection?.transactionNo || `TXN-${randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`,
+        status: 'paid', reconciliationStatus: 'pending', receivedBy: cleanerUserId, receivedAt: now, verifiedBy: null, verifiedAt: null,
+        notes: `${legacyCashSelection?.notes || 'Cash payment'}; ${remarks || `Cash received by cleaner ${cleanerName} (${assignedAssignment.employeeId}) on ${now.toISOString()}`}`,
+      };
+      const include = {
         include: {
           invoice: {
             include: {
-              booking: { select: { bookingNo: true } },
+              booking: { select: { id: true, bookingNo: true } },
               customer: { include: { user: { select: { name: true } } } },
             },
           },
         },
-      });
+      } as const;
+      const payment = legacyCashSelection
+        ? await tx.payment.update({ where: { id: legacyCashSelection.id }, data: paymentData, ...include })
+        : await tx.payment.create({ data: { tenantId, invoiceId: invoice.id, amount: remainingPayable, method: 'cash', referenceNo: `CASH-${randomUUID()}`, selectedBy: invoice.paymentSelectedBy, ...paymentData }, ...include });
 
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
           paidAmount: invoice.paidAmount + remainingPayable,
           status: invoice.paidAmount + remainingPayable + 0.001 >= invoice.totalAmount ? 'paid' : 'partially_paid',
+          selectedPaymentMethod: null,
+          paymentSelectedBy: null,
+          paymentSelectedAt: null,
         },
       });
+      await tx.paymentEvent.create({ data: { tenantId, paymentId: payment.id, event: 'Cash received', status: 'paid', actorId: cleanerUserId, remarks } });
+      await createTransactionSnapshot(tx, tenantId, payment.id);
 
       return {
         payment,
@@ -287,327 +371,71 @@ export class PrismaPaymentRepository implements IPaymentRepository {
     });
   }
 
-  async getCompanyBankAccount(tenantId: string): Promise<any> {
-    return (await this.getCompanyBankAccounts(tenantId))[0] || null;
-  }
-
-  async submitBankTransfer(tenantId: string, userId: string, data: any): Promise<any> {
-    return this.prisma.$transaction(async tx => {
-      const booking = await tx.booking.findFirst({
-        where: { id: data.bookingId, tenantId },
-        include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } } },
-      });
-
-      if (!booking) {
-        throw new Error('Booking not found');
-      }
-
-      if (booking.status !== 'completed') {
-        throw new Error('Bank transfer can only be submitted for completed bookings');
-      }
-
-      let invoice = booking.invoices[0];
-      if (!invoice) {
-        invoice = await tx.invoice.create({
-          data: {
-            tenantId,
-            bookingId: booking.id,
-            customerId: booking.customerId,
-            invoiceNo: `INV-${booking.bookingNo}`,
-            subtotal: booking.netAmount,
-            taxAmount: 0,
-            totalAmount: booking.netAmount,
-            paidAmount: 0,
-            status: 'issued',
-            dueDate: new Date(),
-          },
-          include: { payments: true },
-        });
-      }
-
-      const existingPaid = invoice.paidAmount || 0;
-      const remainingPayable = Math.max(0, Math.round((booking.netAmount - existingPaid) * 100) / 100);
-
-      if (remainingPayable <= 0) {
-        throw new Error('This booking is already fully paid');
-      }
-
-      const now = new Date();
-      const payment = await tx.payment.create({
-        data: {
-          tenantId,
-          invoiceId: invoice.id,
-          amount: data.transferAmount || remainingPayable,
-          method: 'bank_transfer',
-          companyBankAccountId: data.companyBankAccountId,
-          status: 'under_verification',
-          referenceNo: data.referenceNo,
-          proofUrl: data.proofUrl,
-          receivedBy: userId,
-          notes: `Bank: ${data.customerBankName}, Holder: ${data.accountHolderName}, Date: ${data.transferDate ? new Date(data.transferDate).toISOString() : now.toISOString()}${data.remarks ? `, Remarks: ${data.remarks}` : ''}`,
-        },
-        include: { invoice: { include: { booking: { select: { bookingNo: true } } } } },
-      });
-
-      return payment;
-    });
-  }
-
-  async decideBankTransfer(
-    tenantId: string,
-    adminUserId: string,
-    paymentId: string,
-    decision: 'approve' | 'reject',
-    remarks?: string
-  ): Promise<any> {
-    return this.prisma.$transaction(async tx => {
-      const payment = await tx.payment.findFirst({
-        where: { id: paymentId, tenantId, method: 'bank_transfer' },
-        include: { invoice: { include: { customer: true, booking: true } } },
-      });
-
-      if (!payment) {
-        throw new Error('Bank transfer record not found');
-      }
-
-      const now = new Date();
-
-      if (decision === 'reject') {
-        const updated = await tx.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: 'rejected',
-            verifiedBy: adminUserId,
-            verifiedAt: now,
-            notes: remarks ? `Rejected by Admin: ${remarks}` : 'Bank transfer rejected by Admin',
-          },
-        });
-
-        return {
-          payment: updated,
-          customerUserId: payment.invoice.customer.userId,
-          bookingNo: payment.invoice.booking?.bookingNo,
-          approved: false,
-          remarks,
-        };
-      }
-
-      const remaining = payment.invoice.totalAmount - payment.invoice.paidAmount;
-      const paidAmount = payment.invoice.paidAmount + payment.amount;
-      const newInvoiceStatus = paidAmount + 0.001 >= payment.invoice.totalAmount ? 'paid' : 'partially_paid';
-
-      await tx.invoice.update({
-        where: { id: payment.invoiceId },
-        data: {
-          paidAmount,
-          status: newInvoiceStatus,
-        },
-      });
-
-      const updated = await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'verified',
-          verifiedBy: adminUserId,
-          verifiedAt: now,
-          notes: remarks ? `Verified & Approved by Admin: ${remarks}` : 'Bank transfer verified & approved by Admin',
-        },
-      });
-
-      return {
-        payment: updated,
-        customerUserId: payment.invoice.customer.userId,
-        bookingNo: payment.invoice.booking?.bookingNo,
-        approved: true,
-        remarks,
-      };
-    });
-  }
-
   async getCompanyBankAccounts(tenantId: string, adminMode: boolean = false): Promise<any[]> {
-    const setting = await this.prisma.appSettings.findFirst({
-      where: { key: `company_bank_accounts_${tenantId}` },
+    const accounts = await this.prisma.companyBankAccount.findMany({
+      where: { tenantId, isDeleted: false, ...(adminMode ? {} : { isActive: true }) },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
     });
-
-    let accounts: any[] = [];
-    if (setting?.value) {
-      try {
-        accounts = JSON.parse(setting.value);
-      } catch {
-        accounts = [];
-      }
-    }
-
-    if (!adminMode) {
-      return accounts
-        .filter(a => a.isActive !== false && !a.isDeleted)
-        .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
-        .map(({ createdBy, updatedBy, activatedBy, deactivatedBy, deletedBy, createdAt, updatedAt, activatedAt, deactivatedAt, deletedAt, isDeleted, ...customerSafe }) => customerSafe);
-    }
-
-    return accounts
-      .filter(a => !a.isDeleted)
-      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+    if (adminMode) return accounts;
+    return accounts.map(({ createdBy, updatedBy, activatedBy, deactivatedBy, deletedBy, createdAt, updatedAt, activatedAt, deactivatedAt, deletedAt, isDeleted, ...safe }) => safe);
   }
 
   async saveCompanyBankAccount(tenantId: string, userId: string, data: any): Promise<any> {
-    const key = `company_bank_accounts_${tenantId}`;
-    const setting = await this.prisma.appSettings.findFirst({ where: { key } });
-
-    let accounts: any[] = [];
-    if (setting?.value) {
-      try {
-        accounts = JSON.parse(setting.value);
-      } catch {
-        accounts = [];
-      }
-    }
-
-    const now = new Date().toISOString();
+    const now = new Date();
     const isNew = !data.id;
-    const accountId = data.id || `acc_${randomUUID()}`;
-    const existing = accounts.find(a => a.id === accountId);
+    const existing = data.id ? await this.prisma.companyBankAccount.findFirst({ where: { id: data.id, tenantId, isDeleted: false } }) : null;
     if (!isNew && !existing) throw new Error('Company bank account not found');
-
     const normalizedCurrency = String(data.currency || 'AED').toUpperCase();
     const canonicalAccountNumber = String(data.accountNumber).replace(/[\s-]/g, '').toUpperCase();
-    const duplicate = accounts.find(a => a.id !== accountId && !a.isDeleted && a.currency === normalizedCurrency && (String(a.accountNumber).replace(/[\s-]/g, '').toUpperCase() === canonicalAccountNumber || (data.iban && a.iban === data.iban)));
+    const candidates = await this.prisma.companyBankAccount.findMany({ where: { tenantId, currency: normalizedCurrency, isDeleted: false, ...(data.id ? { id: { not: data.id } } : {}) } });
+    const duplicate = candidates.find(a => a.accountNumber.replace(/[\s-]/g, '').toUpperCase() === canonicalAccountNumber || (data.iban && a.iban === data.iban));
     if (duplicate) throw new Error('An account with this account number or IBAN already exists for the selected currency');
-
-    if (data.isDefault) {
-      accounts = accounts.map(a => (a.currency === normalizedCurrency ? { ...a, isDefault: false, updatedBy: userId, updatedAt: now } : a));
-    }
-
     const isActive = data.isActive !== undefined ? Boolean(data.isActive) : true;
-    const activationChanged = existing && existing.isActive !== isActive;
-
-    const newOrUpdatedAccount = {
-      id: accountId,
+    const activationChanged = Boolean(existing && existing.isActive !== isActive);
+    const values = {
       accountTitle: data.accountTitle,
       bankName: data.bankName,
       accountNumber: data.accountNumber,
-      iban: data.iban || '',
-      branchName: data.branchName || '',
-      branchCode: data.branchCode || '',
+      iban: data.iban || null,
+      branchName: data.branchName || null,
+      branchCode: data.branchCode || null,
       currency: normalizedCurrency,
-      instructions: data.instructions || '',
+      instructions: data.instructions || null,
       displayOrder: typeof data.displayOrder === 'number' ? data.displayOrder : parseInt(data.displayOrder || '0', 10),
       isActive,
       isDefault: isActive && Boolean(data.isDefault),
-      isDeleted: false,
-      createdBy: isNew ? userId : (existing?.createdBy || userId),
       updatedBy: userId,
-      activatedBy: isNew && isActive ? userId : activationChanged && isActive ? userId : existing?.activatedBy,
-      deactivatedBy: activationChanged && !isActive ? userId : existing?.deactivatedBy,
-      createdAt: isNew ? now : (existing?.createdAt || now),
-      updatedAt: now,
-      activatedAt: isNew && isActive ? now : activationChanged && isActive ? now : existing?.activatedAt,
-      deactivatedAt: activationChanged && !isActive ? now : existing?.deactivatedAt,
+      ...(isNew ? { createdBy: userId } : {}),
+      ...((isNew && isActive) || (activationChanged && isActive) ? { activatedBy: userId, activatedAt: now } : {}),
+      ...(activationChanged && !isActive ? { deactivatedBy: userId, deactivatedAt: now } : {}),
     };
-
-    if (isNew) {
-      accounts.push(newOrUpdatedAccount);
-    } else {
-      accounts = accounts.map(a => (a.id === accountId ? newOrUpdatedAccount : a));
-    }
-
-    await this.prisma.appSettings.upsert({
-      where: { key },
-      create: { key, value: JSON.stringify(accounts), description: 'Tenant Company Bank Accounts List' },
-      update: { value: JSON.stringify(accounts) },
+    return this.prisma.$transaction(async tx => {
+      if (values.isDefault) await tx.companyBankAccount.updateMany({ where: { tenantId, currency: normalizedCurrency, isDeleted: false }, data: { isDefault: false, updatedBy: userId } });
+      return isNew
+        ? tx.companyBankAccount.create({ data: { tenantId, isDeleted: false, ...values } })
+        : tx.companyBankAccount.update({ where: { id: existing!.id, tenantId }, data: values });
     });
-
-    return newOrUpdatedAccount;
   }
 
   async toggleCompanyBankAccountActive(tenantId: string, userId: string, accountId: string, isActive: boolean): Promise<any> {
-    const key = `company_bank_accounts_${tenantId}`;
-    const setting = await this.prisma.appSettings.findFirst({ where: { key } });
-
-    if (!setting?.value) {
-      throw new Error('Company bank account not found');
-    }
-
-    let accounts: any[] = JSON.parse(setting.value);
-    const target = accounts.find(a => a.id === accountId);
-    if (!target || target.isDeleted) {
-      throw new Error('Target company bank account not found');
-    }
-
-    const now = new Date().toISOString();
-    target.isActive = isActive;
-    if (!isActive) target.isDefault = false;
-    target.updatedBy = userId;
-    target.updatedAt = now;
-    if (isActive) {
-      target.activatedBy = userId;
-      target.activatedAt = now;
-    } else {
-      target.deactivatedBy = userId;
-      target.deactivatedAt = now;
-    }
-
-    await this.prisma.appSettings.update({
-      where: { key },
-      data: { value: JSON.stringify(accounts) },
+    const target = await this.prisma.companyBankAccount.findFirst({ where: { id: accountId, tenantId, isDeleted: false } });
+    if (!target) throw new Error('Company bank account not found');
+    return this.prisma.companyBankAccount.update({
+      where: { id: target.id, tenantId },
+      data: { isActive, isDefault: isActive ? target.isDefault : false, updatedBy: userId, ...(isActive ? { activatedBy: userId, activatedAt: new Date() } : { deactivatedBy: userId, deactivatedAt: new Date() }) },
     });
-
-    return target;
   }
 
   async deleteCompanyBankAccount(tenantId: string, userId: string, accountId: string): Promise<{ success: boolean; softDeleted: boolean; message: string }> {
-    const key = `company_bank_accounts_${tenantId}`;
-    const setting = await this.prisma.appSettings.findFirst({ where: { key } });
-
-    if (!setting?.value) {
-      throw new Error('Company bank account not found');
-    }
-
-    let accounts: any[] = JSON.parse(setting.value);
-    const targetIndex = accounts.findIndex(a => a.id === accountId);
-    if (targetIndex === -1) {
-      throw new Error('Company bank account not found');
-    }
-
-    const targetAccount = accounts[targetIndex];
-    const referencedPayments = await this.prisma.payment.findFirst({
-      where: { tenantId, method: 'bank_transfer', OR: [{ companyBankAccountId: accountId }, { companyBankAccountId: null, createdAt: { gte: new Date(targetAccount.createdAt || 0) } }] },
-    });
-
-    const now = new Date().toISOString();
-
+    const target = await this.prisma.companyBankAccount.findFirst({ where: { id: accountId, tenantId, isDeleted: false } });
+    if (!target) throw new Error('Company bank account not found');
+    const referencedPayments = await this.prisma.payment.findFirst({ where: { tenantId, companyBankAccountId: accountId } });
     if (referencedPayments) {
-      accounts[targetIndex].isActive = false;
-      accounts[targetIndex].isDeleted = true;
-      accounts[targetIndex].updatedBy = userId;
-      accounts[targetIndex].updatedAt = now;
-      accounts[targetIndex].deactivatedBy = userId;
-      accounts[targetIndex].deactivatedAt = now;
-      accounts[targetIndex].deletedBy = userId;
-      accounts[targetIndex].deletedAt = now;
-
-      await this.prisma.appSettings.update({
-        where: { key },
-        data: { value: JSON.stringify(accounts) },
-      });
-
-      return {
-        success: true,
-        softDeleted: true,
-        message: 'Account is linked to historical payment transactions. It has been safely deactivated & archived to preserve transaction history.',
-      };
+      const now = new Date();
+      await this.prisma.companyBankAccount.update({ where: { id: target.id, tenantId }, data: { isActive: false, isDefault: false, isDeleted: true, updatedBy: userId, deactivatedBy: userId, deactivatedAt: now, deletedBy: userId, deletedAt: now } });
+      return { success: true, softDeleted: true, message: 'Account is linked to historical payments and was archived.' };
     }
-
-    accounts.splice(targetIndex, 1);
-    await this.prisma.appSettings.update({
-      where: { key },
-      data: { value: JSON.stringify(accounts) },
-    });
-
-    return {
-      success: true,
-      softDeleted: false,
-      message: 'Company bank account deleted successfully.',
-    };
+    await this.prisma.companyBankAccount.delete({ where: { id: target.id, tenantId } });
+    return { success: true, softDeleted: false, message: 'Company bank account deleted successfully.' };
   }
 }

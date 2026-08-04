@@ -14,15 +14,15 @@ export class ServiceService {
     return this.serviceRepository.create(tenantId, data);
   }
 
-  async updateService(data: UpdateServiceDTO): Promise<Service> {
-    const existing = await this.serviceRepository.findById(data.id);
+  async updateService(tenantId: string, data: UpdateServiceDTO): Promise<Service> {
+    const existing = await this.serviceRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Service not found');
-    return this.serviceRepository.update(data.id, data);
+    return this.serviceRepository.update(tenantId, data.id, data);
   }
 
-  async deleteService(id: string): Promise<void> {
-    const existing = await this.serviceRepository.findById(id);
+  async deleteService(tenantId: string, id: string): Promise<void> {
+    const existing = await this.serviceRepository.findById(tenantId, id);
     if (!existing) throw new Error('Service not found');
-    return this.serviceRepository.delete(id);
+    return this.serviceRepository.delete(tenantId, id);
   }
 }

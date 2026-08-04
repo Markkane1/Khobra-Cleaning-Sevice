@@ -6,17 +6,20 @@ export const PAYMENT_STATUS_KEYS = [
   'bank_transfer_submitted',
   'under_verification',
   'paid',
+  'verified',
   'rejected',
 ] as const;
 
 export type PaymentStatusKey = typeof PAYMENT_STATUS_KEYS[number];
 
 export const CreatePaymentSchema = z.object({
-  invoiceId: z.string(),
-  amount: z.number(),
-  method: z.string(),
-  status: z.string().optional(),
-}).catchall(z.any());
+  invoiceId: z.string().min(1, 'Invoice is required'),
+  amount: z.number().finite().positive('Amount must be greater than zero'),
+  method: z.enum(['cash', 'bank_transfer']),
+  referenceNo: z.string().trim().min(1, 'Transaction reference is required').max(100),
+  proofUrl: z.string().url().optional(),
+  notes: z.string().trim().max(500).optional(),
+}).strict();
 
 export type CreatePaymentDTO = z.infer<typeof CreatePaymentSchema>;
 
@@ -148,6 +151,9 @@ export function calculateBookingFinancials(booking: {
   netAmount: number;
   invoices?: Array<{
     paidAmount: number;
+    selectedPaymentMethod?: string | null;
+    paymentSelectedBy?: string | null;
+    paymentSelectedAt?: Date | string | null;
     payments?: Array<{
       status: string;
       method: string;
@@ -172,12 +178,16 @@ export function calculateBookingFinancials(booking: {
 
   if (paidAmount >= booking.netAmount && booking.netAmount > 0) {
     paymentStatus = 'paid';
+  } else if (latestPayment && (latestPayment.status === 'under_verification' || latestPayment.status === 'bank_transfer_submitted')) {
+    selectedPaymentMethod = latestPayment.method;
+    paymentStatus = latestPayment.method === 'bank_transfer' ? 'bank_transfer_submitted' : 'under_verification';
+  } else if (invoice?.selectedPaymentMethod) {
+    selectedPaymentMethod = invoice.selectedPaymentMethod;
+    paymentStatus = selectedPaymentMethod === 'cash' ? 'cash_selected' : 'payment_pending';
   } else if (latestPayment) {
     selectedPaymentMethod = latestPayment.method;
     if (latestPayment.status === 'cash_selected') {
       paymentStatus = 'cash_selected';
-    } else if (latestPayment.status === 'under_verification' || latestPayment.status === 'bank_transfer_submitted') {
-      paymentStatus = latestPayment.method === 'bank_transfer' ? 'bank_transfer_submitted' : 'under_verification';
     } else if (latestPayment.status === 'rejected') {
       paymentStatus = 'rejected';
     } else if (latestPayment.status === 'verified' || latestPayment.status === 'paid') {
@@ -225,6 +235,9 @@ export function canCleanerReceiveCash(
     assignments?: Array<{ employeeId?: string; employee?: { userId?: string } }>;
     invoices?: Array<{
       paidAmount: number;
+      selectedPaymentMethod?: string | null;
+      paymentSelectedBy?: string | null;
+      paymentSelectedAt?: Date | string | null;
       payments?: Array<{
         status: string;
         method: string;

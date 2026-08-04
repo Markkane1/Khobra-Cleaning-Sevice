@@ -1,6 +1,6 @@
-import type { AuthGateway, BookingGateway, DashboardGateway, OperationsGateway } from '../../application/ports'
+import type { AuthGateway, BookingGateway, DashboardGateway, DriverExpenseGateway, OperationsGateway } from '../../application/ports'
 import type { Session } from '../../domain/auth/types'
-import type { Booking, CompletionTimingResponse, CreateBookingInput, PickupAlert } from '../../domain/bookings/types'
+import type { Booking, CompletionTimingResponse, CreateBookingInput, DriverTrip, PickupAlert } from '../../domain/bookings/types'
 import type { OperationModule, OperationRecord } from '../../domain/operations/types'
 import type { DashboardStats } from '../../domain/dashboard/types'
 import { request } from './api-client'
@@ -42,6 +42,7 @@ export const khobraBookingGateway: BookingGateway = {
     body: JSON.stringify({ bookingId, withinScheduledTime }),
   }, token),
   getPickupAlerts: (token) => request<PickupAlert[]>('/api/khobra-cleaning/bookings/pickup-alerts', {}, token),
+  getTrips: (token) => request<DriverTrip[]>('/api/khobra-cleaning/trips', {}, token),
   markPickupAlertViewed: (id, token) => request<PickupAlert>('/api/khobra-cleaning/bookings/pickup-alerts', {
     method: 'PUT', body: JSON.stringify({ id }),
   }, token),
@@ -50,6 +51,9 @@ export const khobraBookingGateway: BookingGateway = {
   }, token),
   receiveCash: (bookingId, token) => request('/api/khobra-cleaning/bookings/cleaner-cash', {
     method: 'POST', body: JSON.stringify({ bookingId }),
+  }, token),
+  reportCustomerIssue: (bookingId, description, token) => request('/api/khobra-cleaning/complaints', {
+    method: 'POST', body: JSON.stringify({ bookingId, description, category: 'Customer Issue', priority: 'medium' }),
   }, token),
   submitRating: (bookingId, overallRating, overallComment, ratings, token) => request<Booking>('/api/khobra-cleaning/bookings/rate', {
     method: 'POST', body: JSON.stringify({ bookingId, overallRating, overallComment, ratings }),
@@ -69,4 +73,9 @@ const operationPaths: Record<OperationModule, string> = {
 
 export const khobraOperationsGateway: OperationsGateway = {
   getRecords: (module, token) => request<OperationRecord[]>(operationPaths[module], {}, token),
+}
+
+export const khobraDriverExpenseGateway: DriverExpenseGateway = {
+  getExpenses: token => request('/api/khobra-cleaning/driver-expenses', {}, token),
+  createExpense: (input, token) => request('/api/khobra-cleaning/driver-expenses', { method: 'POST', body: JSON.stringify(input) }, token),
 }

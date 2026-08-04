@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const { name, description, color } = await req.json()
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const { id, name, description, color } = await req.json()
@@ -96,7 +96,7 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const { searchParams } = new URL(req.url)

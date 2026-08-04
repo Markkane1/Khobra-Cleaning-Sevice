@@ -4,6 +4,9 @@ import { db, PrismaBookingRepository } from '@repo/db'
 import { BookingService } from '@repo/application'
 import { CreateBookingSchema, parseTimeToMinutes } from '@repo/core'
 import { broadcast } from '@/lib/broadcast'
+import { getAuthSession } from '@/lib/auth'
+import { checkRateLimit } from '@/lib/rate-limit'
+
 
 const bookingService = new BookingService(new PrismaBookingRepository(db))
 const PublicBookingSchema = z.object({
@@ -19,10 +22,13 @@ const PublicBookingSchema = z.object({
   city: z.string().trim().min(2).max(80),
   area: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(500).optional(),
+  preferredPaymentMethod: z.enum(['cash', 'bank_transfer']),
 })
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'anonymous'
+    if (!checkRateLimit(`public-booking:${ip}`, 10, 60_000).allowed) return NextResponse.json({ error: 'Too many booking attempts. Please wait and try again.' }, { status: 429 })
     const input = PublicBookingSchema.parse(await req.json())
     const tenant = await db.tenant.findFirst({ orderBy: { createdAt: 'asc' } })
     if (!tenant) return NextResponse.json({ error: 'Booking is temporarily unavailable' }, { status: 503 })
@@ -42,19 +48,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Bookings require at least two hours notice' }, { status: 400 })
     }
 
-    const existingUser = await db.user.findUnique({ where: { email: input.email }, include: { customer: true } })
-    if (existingUser && (existingUser.role !== 'customer' || existingUser.tenantId !== tenant.id)) {
-      return NextResponse.json({ error: 'Please sign in to use this email address' }, { status: 409 })
-    }
+    const authSession = await getAuthSession(req).catch(() => null)
+    if (!authSession || authSession.role !== 'customer' || authSession.tenantId !== tenant.id) return NextResponse.json({ error: 'Please sign in or create an account before booking.' }, { status: 401 })
+    const customer = await db.customer.findFirst({ where: { tenantId: tenant.id, userId: authSession.userId, deletedAt: null } })
+    if (!customer) return NextResponse.json({ error: 'Customer profile not found.' }, { status: 403 })
 
-    const customer = existingUser?.customer || await db.$transaction(async tx => {
-      const user = existingUser || await tx.user.create({
-        data: { tenantId: tenant.id, email: input.email, name: input.name, role: 'customer', status: 'active' },
-      })
-      return tx.customer.create({
-        data: { tenantId: tenant.id, userId: user.id, phone: input.phone, address: input.address, city: input.city, area: input.area, status: 'active' },
-      })
-    })
 
     const bookingData = CreateBookingSchema.parse({
       customerId: customer.id,
@@ -72,9 +70,10 @@ export async function POST(req: NextRequest) {
       area: input.area,
       notes: input.notes,
       createdBy: 'public',
+      preferredPaymentMethod: input.preferredPaymentMethod,
     })
     const booking = await bookingService.createBooking(tenant.id, bookingData)
-    broadcast('booking:created', { bookingNo: booking.bookingNo, status: booking.status, service: service.name })
+    broadcast('booking:created', { bookingNo: booking.bookingNo, status: booking.status, service: service.name }, tenant.id)
     return NextResponse.json({ bookingNo: booking.bookingNo, total: booking.netAmount, service: service.name }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Check your booking details' }, { status: 400 })

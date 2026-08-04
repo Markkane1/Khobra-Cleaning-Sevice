@@ -141,6 +141,7 @@ export function AuthPage() {
       >
         <div className="text-center mb-6 space-y-2">
           <Logo size={44} showText={true} className="justify-center mb-2" />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Sign In to Khobra Cleaning</h1>
           <p className="text-sm text-muted-foreground">
             Khobra Operations & Customer Portal
           </p>
@@ -165,10 +166,12 @@ export function AuthPage() {
               <TabsContent value="login">
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold">Email Address</Label>
+                    <Label htmlFor="login-email" className="text-xs font-semibold">Email Address</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="login-email"
+                        name="email"
                         type="email"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
@@ -180,10 +183,12 @@ export function AuthPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold">Password</Label>
+                    <Label htmlFor="login-password" className="text-xs font-semibold">Password</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="login-password"
+                        name="password"
                         type="password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
@@ -213,10 +218,12 @@ export function AuthPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Full Name *</Label>
+                    <Label htmlFor="signup-name" className="text-xs font-semibold">Full Name *</Label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="signup-name"
+                        name="name"
                         value={signupForm.name}
                         onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
                         placeholder="John Doe"
@@ -228,10 +235,12 @@ export function AuthPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">Email *</Label>
+                      <Label htmlFor="signup-email" className="text-xs font-semibold">Email *</Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
+                          id="signup-email"
+                          name="email"
                           type="email"
                           value={signupForm.email}
                           onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
@@ -243,11 +252,14 @@ export function AuthPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold">Phone *</Label>
+                      <Label htmlFor="signup-phone" className="text-xs font-semibold">Phone *</Label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
+                          id="signup-phone"
+                          name="phone"
                           value={signupForm.phone}
+
                           onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
                           placeholder="+971 50..."
                           className="pl-9 h-9 text-xs"

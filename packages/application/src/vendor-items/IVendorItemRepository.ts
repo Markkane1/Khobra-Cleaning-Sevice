@@ -11,9 +11,9 @@ export interface VendorItem {
 }
 
 export interface IVendorItemRepository {
-  findMany(vendorId?: string | null): Promise<VendorItem[]>;
-  findById(id: string): Promise<VendorItem | null>;
-  create(data: CreateVendorItemDTO): Promise<VendorItem>;
-  update(id: string, data: UpdateVendorItemDTO): Promise<VendorItem>;
-  delete(id: string): Promise<void>;
+  findMany(tenantId: string, vendorId?: string | null): Promise<VendorItem[]>;
+  findById(tenantId: string, id: string): Promise<VendorItem | null>;
+  create(tenantId: string, data: CreateVendorItemDTO): Promise<VendorItem>;
+  update(tenantId: string, id: string, data: UpdateVendorItemDTO): Promise<VendorItem>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

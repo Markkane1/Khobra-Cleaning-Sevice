@@ -214,7 +214,7 @@ export function Customers() {
   })
 
   const customerRevenue = useMemo(() => allBookings.reduce((totals: Record<string, number>, booking: any) => {
-    totals[booking.customerId] = (totals[booking.customerId] || 0) + (booking.netAmount || 0)
+    totals[booking.customerId] = (totals[booking.customerId] || 0) + (booking.invoices || []).reduce((sum: number, invoice: any) => sum + (invoice.paidAmount || 0), 0)
     return totals
   }, {}), [allBookings])
 
@@ -234,7 +234,7 @@ export function Customers() {
     })
     const topCity = Object.entries(cityMap).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A'
     const totalBookings = allBookings.length
-    const totalRevenue = allBookings.reduce((sum: number, booking: any) => sum + (booking.netAmount || 0), 0)
+    const totalRevenue = allBookings.reduce((sum: number, booking: any) => sum + (booking.invoices || []).reduce((invoiceSum: number, invoice: any) => invoiceSum + (invoice.paidAmount || 0), 0), 0)
     const avgBookings =
       items.length > 0 ? (totalBookings / items.length).toFixed(1) : '0'
     return { total: items.length, active, topCity, avgBookings, totalBookings, totalRevenue }

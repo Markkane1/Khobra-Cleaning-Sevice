@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
 import { createSessionToken, hashPassword, SESSION_TTL_SECONDS } from '@/lib/auth'
 import { verifyTurnstile } from '@/lib/turnstile'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'anonymous'
+    if (!checkRateLimit(`signup:${ip}`, 5, 60_000).allowed) return NextResponse.json({ error: 'Too many signup attempts. Please wait and try again.' }, { status: 429 })
     const { name, email, phone, city, area, address, password, turnstileToken } = await req.json()
 
     if (!name || !email || !phone || typeof password !== 'string' || password.length < 8) {
@@ -25,28 +28,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'An account with this email already exists' }, { status: 400 })
     }
 
-    const user = await db.user.create({
-      data: {
-        tenantId: tenant.id,
-        email: normalizedEmail,
-        passwordHash: hashPassword(password),
-        name,
-        phone,
-        role: 'customer',
-        status: 'active',
-      },
-    })
-
-    const customer = await db.customer.create({
-      data: {
-        tenantId: tenant.id,
-        userId: user.id,
-        phone,
-        city,
-        area,
-        address,
-        status: 'active',
-      },
+    const { user, customer } = await db.$transaction(async tx => {
+      const user = await tx.user.create({ data: { tenantId: tenant.id, email: normalizedEmail, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
+      const customer = await tx.customer.create({ data: { tenantId: tenant.id, userId: user.id, phone, city, area, address, status: 'active' } })
+      return { user, customer }
     })
 
     const sessionPayload = {
@@ -55,6 +40,7 @@ export async function POST(req: NextRequest) {
       email: user.email,
       role: 'customer' as const,
       name: user.name,
+      sessionVersion: user.sessionVersion,
     }
 
     const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS

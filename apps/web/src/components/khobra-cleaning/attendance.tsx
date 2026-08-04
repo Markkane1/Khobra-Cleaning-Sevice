@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, subDays, startOfDay } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -36,6 +36,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV, csvDate } from '@/lib/csv-export'
+import { useAppStore } from '@/store/app-store'
 
 const attStatusColors : Record<string, string> = {
   present: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -66,6 +67,7 @@ const stagger = {
 }
 
 export function Attendance() {
+  const currentRole = useAppStore(state => state.currentRole)
   const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [clockEmployeeId, setClockEmployeeId] = useState('')
   const [search, setSearch] = useState('')
@@ -82,6 +84,13 @@ export function Attendance() {
     queryKey: ['employees'],
     queryFn: () => fetch('/api/khobra-cleaning/employees').then(r => r.json()),
   })
+
+  useEffect(() => {
+    if (currentRole === 'cleaner' && employees.length === 1) {
+      setClockEmployeeId(employees[0].id)
+      setLeaveForm(form => ({ ...form, employeeId: employees[0].id }))
+    }
+  }, [currentRole, employees])
 
   const { data: leaveRecords = [] } = useQuery({
     queryKey: ['leaveRecords'],
@@ -442,6 +451,7 @@ export function Attendance() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
+                            {currentRole === 'admin' && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
@@ -459,6 +469,7 @@ export function Attendance() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            )}
                           </TableCell>
                         </motion.tr>
                       )

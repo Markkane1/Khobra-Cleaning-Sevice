@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
       validatedData
     )
 
-    broadcast('payment:updated', { bookingId: validatedData.bookingId, status: 'reopened' })
-    broadcast('booking:updated', { bookingId: validatedData.bookingId })
+    broadcast('payment:updated', { bookingId: validatedData.bookingId, status: 'reopened' }, auth.session.tenantId)
+    broadcast('booking:updated', { bookingId: validatedData.bookingId }, auth.session.tenantId)
 
     return NextResponse.json(result)
   } catch (error: any) {

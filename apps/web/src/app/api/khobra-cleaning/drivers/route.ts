@@ -3,18 +3,18 @@ import { db } from '@/lib/db'
 import { PrismaDriverRepository } from '@repo/db/src/repositories/PrismaDriverRepository'
 import { DriverService } from '@repo/application/src/drivers/DriverService'
 import { CreateDriverSchema, UpdateDriverSchema } from '@repo/core/src/drivers/schema'
+import { requireAuth } from '@/lib/auth'
 
 // Dependency Injection
 const driverRepository = new PrismaDriverRepository(db as any)
 const driverService = new DriverService(driverRepository)
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json([])
-    
-    const drivers = await driverService.getDrivers(tenant.id)
-    return NextResponse.json(drivers)
+    const auth = await requireAuth(req, ['admin', 'driver'])
+    if ('response' in auth) return auth.response
+    const drivers = await driverService.getDrivers(auth.session.tenantId)
+    return NextResponse.json(auth.session.role === 'driver' ? drivers.filter(driver => driver.userId === auth.session.userId) : drivers)
   } catch {
     return NextResponse.json({ error: 'Failed to fetch drivers' }, { status: 500 })
   }
@@ -22,13 +22,13 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const tenant = await db.tenant.findFirst()
-    if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
     
     const body = await req.json()
     const validatedData = CreateDriverSchema.parse(body)
     
-    const driver = await driverService.createDriver(tenant.id, validatedData)
+    const driver = await driverService.createDriver(auth.session.tenantId, validatedData)
     
     return NextResponse.json(driver, { status: 201 })
   } catch (error: any) {
@@ -38,8 +38,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
     const body = await req.json()
     const validatedData = UpdateDriverSchema.parse(body)
+    if (!await db.driver.findFirst({ where: { id: validatedData.id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
     
     const updated = await driverService.updateDriver(validatedData)
     
@@ -51,9 +54,12 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Driver ID required' }, { status: 400 })
+    if (!await db.driver.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
     
     await driverService.deleteDriver(id)
     

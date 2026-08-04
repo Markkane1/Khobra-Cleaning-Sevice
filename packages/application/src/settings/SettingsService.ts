@@ -4,11 +4,11 @@ import { ISettingsRepository, SettingsResponse } from './ISettingsRepository';
 export class SettingsService {
   constructor(private readonly settingsRepository: ISettingsRepository) {}
 
-  async getSettings(): Promise<SettingsResponse> {
-    return this.settingsRepository.getSettings();
+  async getSettings(tenantId: string): Promise<SettingsResponse> {
+    return this.settingsRepository.getSettings(tenantId);
   }
 
-  async updateSettings(data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }> {
-    return this.settingsRepository.updateSettings(data);
+  async updateSettings(tenantId: string, data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }> {
+    return this.settingsRepository.updateSettings(tenantId, data);
   }
 }

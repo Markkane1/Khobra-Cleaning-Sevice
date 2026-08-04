@@ -3,15 +3,17 @@
   "version": "1.0.0",
   "module": "index.ts",
   "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "^1.1.0"
+  "scripts": {
+    "start": "npx tsx index.ts",
+    "dev": "npx tsx index.ts"
   },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.2"
   },
   "dependencies": {
     "socket.io": "^4.8.3"
   }
 }
+
 

@@ -45,7 +45,83 @@ model Tenant {
   completionTimingResponses BookingCompletionTimingResponse[]
   bookingRatings            BookingRating[]
   notifications             Notification[]
+  driverExpenses            DriverExpense[]
+  businessExpenses          BusinessExpense[]
+  companyBankAccounts       CompanyBankAccount[]
+  transactionSnapshots      TransactionSnapshot[]
+  uploadAssets              UploadAsset[]
+  paymentEvents             PaymentEvent[]
 }
+
+model UploadAsset {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  url       String   @unique
+  publicId  String   @unique
+  purpose   String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, userId, purpose])
+}
+
+model CompanyBankAccount {
+  id            String   @id @default(cuid())
+  tenantId      String
+  bankName      String
+  accountTitle  String
+  accountNumber String
+  iban          String?
+  branchName    String?
+  branchCode    String?
+  currency      String   @default("AED")
+  instructions String?
+  displayOrder Int      @default(0)
+  isDefault     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  isDeleted     Boolean  @default(false)
+  createdBy     String
+  updatedBy     String
+  activatedBy   String?
+  deactivatedBy String?
+  deletedBy     String?
+  activatedAt   DateTime?
+  deactivatedAt DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  payments Payment[]
+
+  @@index([tenantId, isActive])
+}
+
+model TransactionSnapshot {
+  id            String   @id @default(cuid())
+  tenantId      String
+  paymentId     String   @unique
+  bookingNo     String
+  customerName  String
+  serviceName   String
+  hourlyRate    Float
+  duration      Float
+  employeeCount Int
+  subtotal      Float
+  taxAmount     Float
+  discount      Float
+  totalAmount   Float
+  snapshotData  Json
+  createdAt     DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
 
 model Branch {
   id        String   @id @default(cuid())
@@ -72,6 +148,7 @@ model User {
   avatarUrl    String?
   role         String    @default("customer")
   status       String    @default("active")
+  sessionVersion Int     @default(0)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -119,12 +196,13 @@ model Customer {
   area        String?
   notes       String?
   preferences String?
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status      String    @default("active")
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id])
-  user       User        @relation(fields: [userId], references: [id])
+  tenant     Tenant          @relation(fields: [tenantId], references: [id])
+  user       User            @relation(fields: [userId], references: [id])
   bookings   Booking[]
   invoices   Invoice[]
   complaints Complaint[]
@@ -134,19 +212,20 @@ model Customer {
 // ============ WORKFORCE - EMPLOYEES ============
 
 model Employee {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
-  userId       String   @unique
-  employeeCode String   @unique
+  userId       String    @unique
+  employeeCode String    @unique
   phone        String?
   address      String?
   city         String?
   area         String?
   skills       String?
-  baseSalary   Float    @default(0)
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  baseSalary   Float     @default(0)
+  status       String    @default("active")
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tenant                           Tenant                            @relation(fields: [tenantId], references: [id])
   user                             User                              @relation(fields: [userId], references: [id])
@@ -170,6 +249,8 @@ model Attendance {
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, date])
 }
 
 model LeaveRecord {
@@ -193,22 +274,25 @@ model LeaveRecord {
 // ============ DRIVErs ============
 
 model Driver {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   tenantId    String
-  userId      String   @unique
-  driverCode  String   @unique
+  userId      String    @unique
+  driverCode  String    @unique
   phone       String?
   vehicleInfo String?
   licenseNo   String?
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status      String    @default("active")
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
 
   tenant       Tenant               @relation(fields: [tenantId], references: [id])
   user         User                 @relation(fields: [userId], references: [id])
   trips        Trip[]
   bookings     Booking[]
   pickupAlerts BookingPickupAlert[]
+  expenses     DriverExpense[]
 }
 
 // ============ BOOKINGS ============
@@ -242,9 +326,11 @@ model Booking {
   cancelledBy        String?
   noShowReason       String?
   noShowParty        String?
-  createdBy          String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdBy              String?
+  preferredPaymentMethod String?
+  completedAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   tenant                    Tenant                            @relation(fields: [tenantId], references: [id])
   customer                  Customer                          @relation(fields: [customerId], references: [id])
@@ -381,6 +467,8 @@ model Assignment {
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   booking  Booking  @relation(fields: [bookingId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([bookingId, employeeId])
 }
 
 // ============ DISPATCH / TRIPS ============
@@ -398,9 +486,10 @@ model Trip {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant     @relation(fields: [tenantId], references: [id])
-  driver Driver     @relation(fields: [driverId], references: [id])
-  stops  TripStop[]
+  tenant   Tenant          @relation(fields: [tenantId], references: [id])
+  driver   Driver          @relation(fields: [driverId], references: [id])
+  stops    TripStop[]
+  expenses DriverExpense[]
 }
 
 model TripStop {
@@ -416,25 +505,75 @@ model TripStop {
   trip Trip @relation(fields: [tripId], references: [id])
 }
 
+model DriverExpense {
+  id              String    @id @default(cuid())
+  tenantId        String
+  driverId        String
+  tripId          String?
+  category        String
+  typeDetail      String?
+  amount          Float
+  currency        String    @default("AED")
+  expenseDate     DateTime
+  notes           String?
+  receiptUrl      String?
+  status          String    @default("pending")
+  submittedBy     String
+  approvedBy      String?
+  approvedAt      DateTime?
+  decisionRemarks String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  driver Driver @relation(fields: [driverId], references: [id])
+  trip   Trip?  @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, expenseDate])
+  @@index([driverId, status])
+}
+
+model BusinessExpense {
+  id          String   @id @default(cuid())
+  tenantId    String
+  category    String
+  description String
+  amount      Float
+  currency    String   @default("AED")
+  expenseDate DateTime
+  notes       String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, expenseDate])
+  @@index([tenantId, category])
+}
+
 // ============ FINANCE ============
 
 model Invoice {
-  id          String    @id @default(cuid())
-  tenantId    String
-  invoiceNo   String    @unique
-  bookingId   String?
-  customerId  String
-  status      String    @default("draft")
-  issuedAt    DateTime?
-  dueDate     DateTime?
-  subtotal    Float
-  taxAmount   Float     @default(0)
-  discount    Float     @default(0)
-  totalAmount Float
-  paidAmount  Float     @default(0)
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  tenantId              String
+  invoiceNo             String    @unique
+  bookingId             String?   @unique
+  customerId            String
+  status                String    @default("draft")
+  issuedAt              DateTime?
+  dueDate               DateTime?
+  subtotal              Float
+  taxAmount             Float     @default(0)
+  discount              Float     @default(0)
+  totalAmount           Float
+  paidAmount            Float     @default(0)
+  selectedPaymentMethod String?
+  paymentSelectedBy     String?
+  paymentSelectedAt     DateTime?
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   booking  Booking?  @relation(fields: [bookingId], references: [id])
@@ -443,35 +582,60 @@ model Invoice {
 }
 
 model Payment {
-  id                String    @id @default(cuid())
-  tenantId          String
-  invoiceId         String
-  amount            Float
-  method            String
-  referenceNo       String?
-  proofUrl          String?
-  status            String    @default("pending")
-  receivedBy        String?
-  selectedBy        String?
-  customerBankName  String?
-    accountHolderName String?
-    companyBankAccountId String?
-    companyBankAccountSnapshot String?
-  transferDate      DateTime?
-  submittedAt       DateTime?
-  verifiedBy        String?
-  verifiedAt        DateTime?
-  rejectedAt        DateTime?
-  decisionRemarks   String?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                         String    @id @default(cuid())
+  tenantId                   String
+  invoiceId                  String
+  amount                     Float
+  transactionNo              String?   @unique
+  method                     String
+  referenceNo                String?
+  proofUrl                   String?
+  status                     String    @default("pending")
+  reconciliationStatus       String    @default("not_required")
+  receivedBy                 String?
+  receivedAt                 DateTime?
+  selectedBy                 String?
+  customerBankName           String?
+  accountHolderName          String?
+  companyBankAccountId       String?
+  companyBankAccountSnapshot String?
+  transferDate               DateTime?
+  submittedAt                DateTime?
+  verifiedBy                 String?
+  verifiedAt                 DateTime?
+  rejectedAt                 DateTime?
+  decisionRemarks            String?
+  notes                      String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  invoice             Invoice              @relation(fields: [invoiceId], references: [id])
+  companyBankAccount  CompanyBankAccount?  @relation(fields: [companyBankAccountId], references: [id])
+  transactionSnapshot TransactionSnapshot?
+  events              PaymentEvent[]
+
+  @@unique([tenantId, referenceNo])
+  @@index([companyBankAccountId])
+}
+
+model PaymentEvent {
+  id         String   @id @default(cuid())
+  tenantId   String
+  paymentId  String
+  event      String
+  status     String
+  actorId    String?
+  remarks    String?
+  metadata   Json?
+  occurredAt DateTime @default(now())
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
-    invoice Invoice @relation(fields: [invoiceId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
-    @@index([companyBankAccountId])
-  }
+  @@index([tenantId, paymentId, occurredAt])
+}
+
 
 // ============ INVENTORY ============
 
@@ -593,6 +757,8 @@ model PayrollRecord {
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, month, year])
 }
 
 model Notification {

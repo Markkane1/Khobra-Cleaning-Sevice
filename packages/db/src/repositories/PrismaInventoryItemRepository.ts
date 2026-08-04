@@ -13,9 +13,9 @@ export class PrismaInventoryItemRepository implements IInventoryItemRepository {
     }) as unknown as InventoryItem[];
   }
 
-  async findById(id: string): Promise<InventoryItem | null> {
-    return this.db.inventoryItem.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<InventoryItem | null> {
+    return this.db.inventoryItem.findFirst({
+      where: { id, tenantId },
     }) as unknown as InventoryItem | null;
   }
 
@@ -51,8 +51,8 @@ export class PrismaInventoryItemRepository implements IInventoryItemRepository {
     return item as unknown as InventoryItem;
   }
 
-  async update(id: string, data: UpdateInventoryItemDTO): Promise<InventoryItem> {
-    const existing = await this.db.inventoryItem.findUnique({ where: { id } });
+  async update(tenantId: string, id: string, data: UpdateInventoryItemDTO): Promise<InventoryItem> {
+    const existing = await this.db.inventoryItem.findFirst({ where: { id, tenantId } });
     if (!existing) throw new Error('Item not found');
 
     let newStock = existing.currentStock;
@@ -78,7 +78,7 @@ export class PrismaInventoryItemRepository implements IInventoryItemRepository {
     const { id: _id, adjustQuantity, adjustType, notes, ...updateData } = data;
 
     return this.db.inventoryItem.update({
-      where: { id },
+      where: { id, tenantId },
       data: {
         ...updateData,
         currentStock: newStock,
@@ -87,11 +87,13 @@ export class PrismaInventoryItemRepository implements IInventoryItemRepository {
     }) as unknown as InventoryItem;
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(tenantId: string, id: string): Promise<void> {
+    const item = await this.db.inventoryItem.findFirst({ where: { id, tenantId }, select: { id: true } });
+    if (!item) throw new Error('Item not found');
     await this.db.$transaction([
       this.db.vendorItem.deleteMany({ where: { itemId: id } }),
       this.db.stockMovement.deleteMany({ where: { itemId: id } }),
-      this.db.inventoryItem.delete({ where: { id } }),
+      this.db.inventoryItem.delete({ where: { id, tenantId } }),
     ]);
   }
 }

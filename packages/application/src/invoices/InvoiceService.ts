@@ -1,5 +1,6 @@
 import { IInvoiceRepository } from './IInvoiceRepository';
 import { CreateInvoiceDTO, UpdateInvoiceDTO } from '@repo/core';
+import { randomUUID } from 'crypto';
 
 export class InvoiceService {
   constructor(private readonly invoiceRepository: IInvoiceRepository) {}
@@ -9,8 +10,7 @@ export class InvoiceService {
   }
 
   async createInvoice(tenantId: string, data: CreateInvoiceDTO) {
-    const count = await this.invoiceRepository.countInvoices(tenantId);
-    const invoiceNo = `INV-${String(2000 + count).padStart(5, '0')}`;
+    const invoiceNo = `INV-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
     return this.invoiceRepository.createInvoice(tenantId, invoiceNo, data);
   }
 

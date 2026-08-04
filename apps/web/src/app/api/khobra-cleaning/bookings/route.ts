@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     
     const booking = await bookingService.createBooking(tenant.id, { ...validatedData, createdBy: auth.session.role })
     
-    broadcast('booking:created', { bookingNo: booking.bookingNo, status: 'pending', service: booking.service?.name })
+    broadcast('booking:created', { bookingNo: booking.bookingNo, status: 'pending', service: booking.service?.name }, auth.session.tenantId)
     return NextResponse.json(booking, { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
@@ -128,7 +128,7 @@ export async function PUT(req: NextRequest) {
         : { id: validatedData.id, status: validatedData.status }
     const updated = await bookingService.updateBooking(updateData, `${role}: ${auth.session.name} (${auth.session.userId})`, authorizedDriverId, authorizedEmployeeId)
     
-    broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status })
+    broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error: any) {
     if (error instanceof z.ZodError) {
@@ -144,7 +144,7 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const auth = await requireAuth(req, ['admin', 'manager'])
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
@@ -154,7 +154,7 @@ export async function DELETE(req: NextRequest) {
     if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     await bookingService.deleteBooking(id)
     
-    broadcast('booking:deleted', { bookingNo: booking?.bookingNo })
+    broadcast('booking:deleted', { bookingNo: booking?.bookingNo }, auth.session.tenantId)
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: 'Failed' }, { status: 500 })

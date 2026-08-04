@@ -6,6 +6,6 @@ export interface SettingsResponse {
 }
 
 export interface ISettingsRepository {
-  getSettings(): Promise<SettingsResponse>;
-  updateSettings(data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }>;
+  getSettings(tenantId: string): Promise<SettingsResponse>;
+  updateSettings(tenantId: string, data: UpdateSettingsDTO): Promise<{ success: boolean; tenant: any }>;
 }

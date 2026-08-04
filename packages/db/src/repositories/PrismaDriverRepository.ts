@@ -22,33 +22,36 @@ export class PrismaDriverRepository implements IDriverRepository {
 
   async create(tenantId: string, data: CreateDriverDTO): Promise<Driver> {
     const driverEmail = data.email || `driver_${Date.now()}@khobra.ae`;
-    
-    const user = await this.db.user.create({
-      data: {
-        tenantId,
-        name: data.name,
-        email: driverEmail,
-        phone: data.phone || null,
-        role: 'DRIVER',
-      },
-    });
-
     const licenseNo = data.licenseNo || `LIC-${Math.floor(10000 + Math.random() * 90000)}`;
     const vehicleNo = data.vehicleNo || `UAE-${Math.floor(1000 + Math.random() * 9000)}`;
-    const status = data.status || 'AVAILABLE';
+    const status = data.status || 'active';
 
-    return this.db.driver.create({
-      data: {
-        tenantId,
-        userId: user.id,
-        driverCode: `DRV-${Math.floor(1000 + Math.random() * 9000)}`,
-        licenseNo,
-        vehicleInfo: vehicleNo,
-        status,
-      },
-      include: { user: { select: { name: true, email: true, phone: true } } }
+    return this.db.$transaction(async tx => {
+      const user = await tx.user.create({
+        data: {
+          tenantId,
+          name: data.name,
+          email: driverEmail,
+          phone: data.phone || null,
+          role: 'driver',
+          status: 'active',
+        },
+      });
+
+      return tx.driver.create({
+        data: {
+          tenantId,
+          userId: user.id,
+          driverCode: `DRV-${Math.floor(1000 + Math.random() * 9000)}`,
+          licenseNo,
+          vehicleInfo: vehicleNo,
+          status,
+        },
+        include: { user: { select: { name: true, email: true, phone: true } } },
+      });
     }) as unknown as Driver;
   }
+
 
   async update(id: string, data: UpdateDriverDTO): Promise<Driver> {
     const driver = await this.db.driver.findUnique({ where: { id } });
@@ -76,14 +79,19 @@ export class PrismaDriverRepository implements IDriverRepository {
     const driver = await this.db.driver.findUnique({ where: { id }, select: { userId: true } });
     if (!driver) return;
 
-    // Delete child records first (no onDelete: Cascade in schema)
-    const trips = await this.db.trip.findMany({ where: { driverId: id }, select: { id: true } });
-    const tripIds = trips.map(t => t.id);
-    if (tripIds.length > 0) {
-      await this.db.tripStop.deleteMany({ where: { tripId: { in: tripIds } } });
-      await this.db.trip.deleteMany({ where: { driverId: id } });
-    }
-    await this.db.driver.delete({ where: { id } });
-    await this.db.user.delete({ where: { id: driver.userId } });
+    const now = new Date()
+
+    // ponytail: Soft-delete driver & deactivate user account to preserve dispatch/trip history
+    await this.db.$transaction([
+      this.db.driver.update({
+        where: { id },
+        data: { status: 'inactive', deletedAt: now },
+      }),
+      this.db.user.update({
+        where: { id: driver.userId },
+        data: { status: 'inactive' },
+      }),
+    ])
   }
+
 }

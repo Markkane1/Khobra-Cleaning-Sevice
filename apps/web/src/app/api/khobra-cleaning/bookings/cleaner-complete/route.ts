@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db, notifyBookingStatusChange } from '@repo/db'
-import { CleanerCompleteBookingSchema, canCleanerCompleteBooking } from '@repo/core'
+import { CleanerCompleteBookingSchema, calculateMultiServicePricing, canCleanerCompleteBooking } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 
@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
         where: { id: validated.bookingId, tenantId: auth.session.tenantId },
         include: {
           customer: { select: { userId: true, user: { select: { name: true } } } },
-          assignments: { select: { employeeId: true, employee: { select: { userId: true, user: { select: { name: true } } } } } },
+          assignments: { select: { id: true, employeeId: true, startedAt: true, employee: { select: { userId: true, user: { select: { name: true } } } } } },
+          service: { select: { id: true, name: true, baseRate: true } },
+          items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         },
       })
 
@@ -51,23 +53,34 @@ export async function POST(req: NextRequest) {
       const completionTime = new Date()
       const previousStatus = booking.status
 
-      // 1. Update Booking Status
+      // 1. Update Booking Status & completedAt
       const updatedBooking = await tx.booking.update({
         where: { id: booking.id },
         data: {
           status: 'completed',
+          completedAt: completionTime,
           updatedAt: completionTime,
         },
       })
 
-      // 2. Update Assignments with completedAt
-      await tx.assignment.updateMany({
-        where: { bookingId: booking.id },
-        data: {
-          status: 'completed',
-          completedAt: completionTime,
-        },
-      })
+      // 2. Update Assignments with completedAt & actualHours
+      const updatedAssignments = await Promise.all(booking.assignments.map(assignment => {
+        const hours = assignment.startedAt ? Math.max(0.5, Math.round(((completionTime.getTime() - assignment.startedAt.getTime()) / 3_600_000) * 10) / 10) : booking.duration
+        return tx.assignment.update({
+          where: { id: assignment.id },
+          data: {
+            status: 'completed',
+            completedAt: completionTime,
+            actualHours: hours,
+          },
+        })
+      }))
+
+      // Calculate actual total hours worked
+      const avgActualHours = updatedAssignments.reduce((acc, curr) => acc + (curr.actualHours || booking.duration), 0) / (updatedAssignments.length || 1)
+      const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: auth.session.tenantId }, select: { taxRate: true } })
+      const services = booking.items.length ? booking.items.map(item => item.service) : [booking.service]
+      const pricing = calculateMultiServicePricing(services, updatedAssignments.length, avgActualHours, booking.materialsCost, booking.discount, tenant.taxRate)
 
       // 3. Record BookingStatusHistory
       const statusHistory = await tx.bookingStatusHistory.create({
@@ -81,7 +94,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // 4. Issue Invoice if not already existing (paidAmount: 0, payment remains pending)
+      // 4. Issue Invoice with actual worked hours repricing
       const existingInvoice = await tx.invoice.findFirst({ where: { bookingId: booking.id } })
       if (!existingInvoice) {
         const invoiceNo = `INV-${booking.bookingNo}`
@@ -93,13 +106,15 @@ export async function POST(req: NextRequest) {
             customerId: booking.customerId,
             status: 'issued',
             issuedAt: completionTime,
-            subtotal: booking.netAmount,
-            totalAmount: booking.netAmount,
+            subtotal: pricing.subtotal,
+            taxAmount: pricing.taxAmount,
+            totalAmount: pricing.netAmount,
             paidAmount: 0,
             discount: booking.discount || 0,
           },
         })
       }
+
 
       return {
         booking: updatedBooking,
@@ -113,7 +128,7 @@ export async function POST(req: NextRequest) {
 
     await notifyBookingStatusChange(db, result.booking.id, result.statusHistory)
 
-    broadcast('booking:updated', { bookingId: result.booking.id, bookingNo: result.booking.bookingNo, status: 'completed' })
+    broadcast('booking:updated', { bookingId: result.booking.id, bookingNo: result.booking.bookingNo, status: 'completed' }, auth.session.tenantId)
 
     return NextResponse.json(result, { status: 200 })
   } catch (error: any) {

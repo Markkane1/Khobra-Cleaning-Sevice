@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy } from 'lucide-react'
+import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning } from 'lucide-react'
 import { calculateBookingFinancials } from '@repo/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
@@ -120,7 +120,7 @@ const pipelineSteps = [
   { key: 'completed', label: 'Completed', icon: CheckCircle2 },
 ]
 
-const emptyForm = { customerId: '', serviceIds: [] as string[], preferredEmployeeId: '', preferredEmployeeIds: [] as string[], hasPreferredEmployee: false, scheduledDate: '', selectedDates: [] as string[], bookingType: 'one_time', startDate: '', endDate: '', selectedWeekdays: [1, 2, 3, 4, 5], startTime: '09:00', endTime: '11:00', employeeCount: 1, address: '', city: '', area: '', notes: '' }
+const emptyForm = { customerId: '', serviceIds: [] as string[], preferredEmployeeId: '', preferredEmployeeIds: [] as string[], hasPreferredEmployee: false, scheduledDate: '', selectedDates: [] as string[], bookingType: 'one_time', startDate: '', endDate: '', selectedWeekdays: [1, 2, 3, 4, 5], startTime: '09:00', endTime: '11:00', employeeCount: 1, preferredPaymentMethod: 'cash', address: '', city: '', area: '', notes: '' }
 
 const customerAddresses = (customer: any) => {
   const saved = Array.isArray(customer?.addresses) ? customer.addresses.filter((address: any) => address?.address) : []
@@ -163,6 +163,8 @@ export function Bookings() {
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [selectedCustomerAddressIndex, setSelectedCustomerAddressIndex] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [cleanerDateScope, setCleanerDateScope] = useState<'today' | 'all'>('today')
+  const [driverScope, setDriverScope] = useState<'today' | 'completed' | 'pending' | 'upcoming'>('today')
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('table')
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -189,6 +191,7 @@ export function Bookings() {
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery({
     queryKey: ['customers'],
     queryFn: () => fetch('/api/khobra-cleaning/customers').then(r => r.json()),
+    enabled: currentRole === 'admin' || currentRole === 'customer',
   })
 
   const { data: services = [], isLoading: isLoadingServices } = useQuery({
@@ -199,6 +202,7 @@ export function Bookings() {
   const { data: employees = [] } = useQuery({
     queryKey: ['employees'],
     queryFn: () => fetch('/api/khobra-cleaning/employees').then(r => r.json()),
+    enabled: currentRole === 'admin',
   })
 
   const filteredCustomers = useMemo(() => {
@@ -212,6 +216,7 @@ export function Bookings() {
   const { data: tenantSettings } = useQuery({
     queryKey: ['tenant-settings'],
     queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()),
+    enabled: currentRole === 'admin' || currentRole === 'customer',
   })
   const firstBookingTime = tenantSettings?.tenant?.firstBookingTime || '08:00'
   const lastWorkingTime = tenantSettings?.tenant?.lastWorkingTime || '20:00'
@@ -306,6 +311,28 @@ export function Bookings() {
 
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('')
   const [cleanerCompleteBookingConfirm, setCleanerCompleteBookingConfirm] = useState<any | null>(null)
+  const [issueBooking, setIssueBooking] = useState<any | null>(null)
+  const [issueDescription, setIssueDescription] = useState('')
+  const [issuePriority, setIssuePriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
+
+  const reportCustomerIssueMut = useMutation({
+    mutationFn: (d: { bookingId: string; description: string; priority: string }) => fetch('/api/khobra-cleaning/complaints', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...d, category: 'Customer Issue' }),
+    }).then(async response => {
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'Failed to report customer issue')
+      return body
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['complaints'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      toast.success('Customer issue reported')
+      setIssueBooking(null)
+      setIssueDescription('')
+      setIssuePriority('medium')
+    },
+    onError: (error: any) => toast.error(error.message || 'Failed to report customer issue'),
+  })
 
   const cleanerCompleteMut = useMutation({
     mutationFn: (d: { bookingId: string; notes?: string }) =>
@@ -560,11 +587,20 @@ export function Bookings() {
   }, [statusCounts])
 
   const filtered = useMemo(() => items.filter((b: any) => {
+    const bookingDate = format(parseISO(b.scheduledDate), 'yyyy-MM-dd')
+    const today = format(new Date(), 'yyyy-MM-dd')
+    if (currentRole === 'cleaner' && cleanerDateScope === 'today' && bookingDate !== today) return false
+    if (currentRole === 'driver') {
+      if (driverScope === 'today' && bookingDate !== today) return false
+      if (driverScope === 'completed' && (bookingDate !== today || canonicalStatus(b.status) !== 'completed')) return false
+      if (driverScope === 'pending' && (bookingDate !== today || !['pending_assignment', 'assigned', 'scheduled'].includes(canonicalStatus(b.status)))) return false
+      if (driverScope === 'upcoming' && (bookingDate < today || ['completed', 'cancelled', 'no_show'].includes(canonicalStatus(b.status)))) return false
+    }
     if (statusFilter !== 'all' && canonicalStatus(b.status) !== statusFilter) return false
     if (!search) return true
     const s = search.toLowerCase()
     return b.bookingNo?.toLowerCase().includes(s) || b.customer?.user?.name?.toLowerCase().includes(s) || b.service?.name?.toLowerCase().includes(s)
-  }), [items, statusFilter, search])
+  }), [items, currentRole, cleanerDateScope, driverScope, statusFilter, search])
 
   const { sorted: sortedBookings, SortableHeader } = useSortable<any>(filtered, 'bookingNo')
 
@@ -666,7 +702,7 @@ export function Bookings() {
             <Tooltip>
               <TooltipTrigger asChild>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-2" />New Booking</Button>
+              <Button disabled={currentRole === 'cleaner' || currentRole === 'driver'} className={`bg-emerald-600 hover:bg-emerald-700 ${currentRole === 'cleaner' || currentRole === 'driver' ? 'hidden' : ''}`}><Plus className="h-4 w-4 mr-2" />New Booking</Button>
             </DialogTrigger>
               </TooltipTrigger>
               <TooltipContent>Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">N</kbd></TooltipContent>
@@ -1050,6 +1086,7 @@ export function Bookings() {
                 <div className="grid gap-2"><Label>Area</Label><Input value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} /></div>
               </div>
               <div className="grid gap-2"><Label>Address</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Preferred payment method</Label><Select value={form.preferredPaymentMethod} onValueChange={preferredPaymentMethod => setForm({ ...form, preferredPaymentMethod })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Pay Cash</SelectItem><SelectItem value="bank_transfer">Bank Transfer</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">Payment remains pending until cash is received or the bank transfer is verified.</p></div>
               <div className="grid gap-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div></>}
               </>}
             </div>
@@ -1143,6 +1180,13 @@ export function Bookings() {
 
       {/* Tabs: Table + Calendar */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
+        {currentRole === 'cleaner' && <div className="flex gap-2 mb-3">
+          <Button size="sm" variant={cleanerDateScope === 'today' ? 'default' : 'outline'} className={cleanerDateScope === 'today' ? 'bg-emerald-600 hover:bg-emerald-700' : ''} onClick={() => setCleanerDateScope('today')}>Today&apos;s Bookings</Button>
+          <Button size="sm" variant={cleanerDateScope === 'all' ? 'default' : 'outline'} className={cleanerDateScope === 'all' ? 'bg-emerald-600 hover:bg-emerald-700' : ''} onClick={() => setCleanerDateScope('all')}>All Assigned</Button>
+        </div>}
+        {currentRole === 'driver' && <div className="flex flex-wrap gap-2 mb-3">
+          {([['today', "Today's Bookings"], ['completed', "Today's Completed"], ['pending', "Today's Pending"], ['upcoming', 'Upcoming Pickups / Drop-offs']] as const).map(([scope, label]) => <Button key={scope} size="sm" variant={driverScope === scope ? 'default' : 'outline'} className={driverScope === scope ? 'bg-violet-600 hover:bg-violet-700' : ''} onClick={() => setDriverScope(scope)}>{label}</Button>)}
+        </div>}
         {/* Status Filter Badges */}
         <motion.div layout className="flex flex-wrap gap-1.5 mb-3">
           {(['all', 'pending_assignment', 'assigned', 'scheduled', 'on_the_way', 'in_progress', 'completed', 'cancelled', 'no_show'] as const).map(s => {
@@ -1315,6 +1359,7 @@ export function Bookings() {
                                           Complete Booking
                                         </Button>
                                       )}
+                                      {currentRole === 'cleaner' && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => setIssueBooking(b)}><MessageSquareWarning className="h-3.5 w-3.5 mr-1" />Report Issue</Button>}
                                       {b.status === 'completed' && (
                                         <>
                                           {currentRole === 'customer' && fin.canSelectPaymentMethod && (
@@ -1332,7 +1377,7 @@ export function Bookings() {
                                           {(currentRole === 'cleaner' || currentRole === 'admin') && b.invoices?.[0]?.payments?.some((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)) && (
                                             <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 border-emerald-300 font-bold text-xs">
                                               <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600 inline" />
-                                              Cash Received {(() => { const cash = b.invoices?.[0]?.payments?.find((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)); return cash?.verifiedAt ? `(${format(parseISO(cash.verifiedAt), 'MMM dd, HH:mm')})` : '' })()}
+                                              Cash Received {(() => { const cash = b.invoices?.[0]?.payments?.find((p: any) => p.method === 'cash' && ['verified', 'paid'].includes(p.status)); const receivedAt = cash?.receivedAt || cash?.verifiedAt; return receivedAt ? `(${format(parseISO(receivedAt), 'MMM dd, HH:mm')})` : '' })()}
                                             </Badge>
                                           )}
                                           {currentRole === 'admin' && (fin.paymentStatus === 'bank_transfer_submitted' || fin.paymentStatus === 'under_verification') && (
@@ -1838,6 +1883,7 @@ export function Bookings() {
               {selectedBooking.status === 'completed' && (currentRole === 'customer' || (currentRole === 'admin' && selectedBooking.rating)) && (
                 <DialogFooter className="pt-2"><Button variant="outline" onClick={() => { setRatingBooking(selectedBooking); setDetailOpen(false) }}><Star className="h-4 w-4 mr-2" />{selectedBooking.rating ? 'View Rating' : 'Rate Team'}</Button></DialogFooter>
               )}
+              {currentRole === 'cleaner' && <DialogFooter className="pt-2"><Button variant="outline" className="border-rose-200 text-rose-700 hover:bg-rose-50" onClick={() => { setIssueBooking(selectedBooking); setDetailOpen(false) }}><MessageSquareWarning className="h-4 w-4 mr-2" />Report Customer Issue</Button></DialogFooter>}
             </>
           )}
         </DialogContent>
@@ -2709,6 +2755,20 @@ export function Bookings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={Boolean(issueBooking)} onOpenChange={open => { if (!open) { setIssueBooking(null); setIssueDescription(''); setIssuePriority('medium') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Report Customer Issue</DialogTitle>
+            <AlertDialogDescription>Booking {issueBooking?.bookingNo} · {issueBooking?.customer?.user?.name || 'Customer'}</AlertDialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-2"><Label>Priority</Label><Select value={issuePriority} onValueChange={(value: any) => setIssuePriority(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['low', 'medium', 'high', 'critical'].map(priority => <SelectItem key={priority} value={priority}>{priority.replace(/^./, letter => letter.toUpperCase())}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid gap-2"><Label>Issue details</Label><Textarea value={issueDescription} onChange={event => setIssueDescription(event.target.value)} maxLength={2000} rows={5} placeholder="Describe what happened with the customer..." /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setIssueBooking(null)}>Cancel</Button><Button className="bg-rose-600 hover:bg-rose-700" disabled={issueDescription.trim().length < 5 || reportCustomerIssueMut.isPending} onClick={() => issueBooking && reportCustomerIssueMut.mutate({ bookingId: issueBooking.id, description: issueDescription.trim(), priority: issuePriority })}>{reportCustomerIssueMut.isPending ? 'Submitting...' : 'Submit Issue'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

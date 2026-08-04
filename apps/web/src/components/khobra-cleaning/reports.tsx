@@ -19,6 +19,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, AreaChart, Area,
 } from 'recharts'
+import { OperationalReports } from './operational-reports'
 
 /* ------------------------------------------------------------------ */
 /*  Color Palette (emerald/teal only)                                  */
@@ -258,12 +259,12 @@ export function Reports() {
 
   /* ── Top customersby revenue ── */
   const customerRevenueMap: Record<string, { name: string; revenue: number; count: number }> = {}
-  bookings.forEach((b: any) => {
-    const cid = b.customerId
-    const cname = b.customer?.user?.name || 'Unknown'
+  invoices.forEach((invoice: any) => {
+    const cid = invoice.customerId
+    const cname = invoice.customer?.user?.name || 'Unknown'
     if (!customerRevenueMap[cid]) customerRevenueMap[cid] = { name: cname, revenue: 0, count: 0 }
-    customerRevenueMap[cid].revenue += b.netAmount || 0
-    customerRevenueMap[cid].count++
+    customerRevenueMap[cid].revenue += invoice.paidAmount || 0
+    if (invoice.paidAmount > 0) customerRevenueMap[cid].count++
   })
   const topCustomers= Object.values(customerRevenueMap)
     .sort((a, b) => b.revenue - a.revenue)
@@ -305,7 +306,8 @@ export function Reports() {
 
   /* ── Computed metrics ── */
   const totalRevenue = stats.totalRevenue || 0
-  const avgBookingValue = bookings.length > 0 ? Math.round(bookings.reduce((s: number, b: any) => s + (b.netAmount || 0), 0) / bookings.length) : 0
+  const paidInvoiceCount = invoices.filter((invoice: any) => invoice.paidAmount > 0).length
+  const avgBookingValue = paidInvoiceCount > 0 ? Math.round((stats.totalRevenue || 0) / paidInvoiceCount) : 0
   const completionRate = stats.totalBookings > 0 ? Math.round((stats.completedBookings / stats.totalBookings) * 100) : 0
 
   // Customer retention: customerswith more than 1 booking
@@ -323,7 +325,7 @@ export function Reports() {
 
   /* ── KPIs ── */
   const kpis = [
-    { icon: DollarSign, label: 'Total Revenue', value: `AED ${totalRevenue.toLocaleString()}`, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500', sub: `${stats.paidInvoices}/${stats.totalInvoices} paid` },
+    { icon: DollarSign, label: 'Total Revenue', value: `AED ${totalRevenue.toLocaleString()}`, color: 'bg-emerald-600', gradient: 'from-emerald-400 to-teal-500', sub: `Cash ${stats.cashInflow || 0} · Bank ${stats.bankInflow || 0}` },
     { icon: Briefcase, label: 'Total Bookings', value: stats.totalBookings, color: 'bg-teal-600', gradient: 'from-teal-400 to-cyan-500', sub: `${completionRate}% completion rate` },
     { icon: Users, label: 'Customers', value: stats.totalCustomers, color: 'bg-emerald-700', gradient: 'from-emerald-500 to-green-500', sub: `${retentionRate}% returning` },
     { icon: TrendingUp, label: 'Avg Booking Value', value: `AED ${avgBookingValue.toLocaleString()}`, color: 'bg-teal-700', gradient: 'from-teal-500 to-cyan-600' },
@@ -340,6 +342,8 @@ export function Reports() {
         <h1 className="text-2xl font-bold tracking-tight">Reports &amp; Analytics</h1>
         <p className="text-sm text-muted-foreground">Operational insights and performance metrics</p>
       </motion.div>
+
+      <OperationalReports bookings={bookings} />
 
       {/* ── Summary KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

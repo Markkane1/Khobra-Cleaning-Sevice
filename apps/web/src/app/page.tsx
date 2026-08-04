@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes'
 import { useAppStore, type ViewId, type RoleId } from '@/store/app-store'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  LayoutDashboard, Sparkles, Users, UserCheck, CalendarDays, Wallet, Truck, Package, BarChart3, MessageSquareWarning, Clock, Settings, Menu, Sun, Moon, ChevronDown, X, Shield, Bell, CalendarCheck, DollarSign, UsersRound, Banknote, Search, Command, Zap, UserPlus, FileText, Plus, Building2, LogIn, ShieldCheck, User,
+  LayoutDashboard, Sparkles, Users, UserCheck, CalendarDays, Wallet, Truck, Package, BarChart3, MessageSquareWarning, Clock, Settings, Menu, Sun, Moon, ChevronDown, X, Shield, Bell, CalendarCheck, DollarSign, UsersRound, Banknote, Search, Command, Zap, UserPlus, FileText, Plus, Building2, LogIn, ShieldCheck, User, ReceiptText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -45,6 +45,7 @@ const CustomerProfile = dynamic(() => import('@/components/khobra-cleaning/profi
 const NotificationManagement = dynamic(() => import('@/components/khobra-cleaning/notifications-management').then(m => ({ default: m.NotificationManagement })), { loading: () => <PageSkeleton />, ssr: false })
 const SettingsPage = dynamic(() => import('@/components/khobra-cleaning/settings').then(m => ({ default: m.Settings })), { loading: () => <PageSkeleton />, ssr: false })
 const CompanyBankAccountsPage = dynamic(() => import('@/components/khobra-cleaning/company-bank-accounts').then(m => ({ default: m.CompanyBankAccounts })), { loading: () => <PageSkeleton />, ssr: false })
+const DriverExpenses = dynamic(() => import('@/components/khobra-cleaning/driver-expenses').then(m => ({ default: m.DriverExpenses })), { loading: () => <PageSkeleton />, ssr: false })
 
 function PageSkeleton() {
   return (
@@ -71,13 +72,14 @@ const navItems: { id: ViewId; label: string; icon: React.ElementType; roles: Rol
   { id: 'services', label: 'Services', icon: Sparkles, roles: ['admin'], description: 'Service catalog management' },
   { id: 'customers', label: 'Customers', icon: Users, roles: ['admin'], description: 'Customer directory' },
   { id: 'employees', label: 'Cleaners', icon: UserCheck, roles: ['admin'], description: 'Cleaner management' },
-  { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['admin', 'customer'], description: 'Booking management and scheduling' },
+  { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['admin', 'customer', 'cleaner', 'driver'], description: 'Booking management and scheduling' },
   { id: 'finance', label: 'Finance', icon: Wallet, roles: ['admin'], description: 'Invoices and payments' },
   { id: 'company_bank_accounts', label: 'Company Bank Accounts', icon: Building2, roles: ['admin'], description: 'Manage company bank accounts for customer transfers' },
-  { id: 'dispatch', label: 'Dispatch', icon: Truck, roles: ['admin'], description: 'Driver and trip management' },
+  { id: 'dispatch', label: 'Dispatch', icon: Truck, roles: ['admin', 'driver'], description: 'Driver and trip management' },
+  { id: 'driver_expenses', label: 'Expenses', icon: ReceiptText, roles: ['admin', 'driver'], description: 'Business and driver expenses' },
   { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin'], description: 'Stock and vendor management' },
   { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin'], description: 'Analytics and insights' },
-  { id: 'complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'customer'], description: 'Issue tracking' },
+  { id: 'complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'customer', 'cleaner'], description: 'Issue tracking' },
   { id: 'attendance', label: 'Attendance', icon: Clock, roles: ['admin', 'cleaner'], description: 'Time tracking' },
   { id: 'payroll', label: 'Payroll', icon: Banknote, roles: ['admin'], description: 'Salary processing' },
   { id: 'branches', label: 'Branches', icon: Building2, roles: ['admin'], description: 'Location and branch management' },
@@ -93,6 +95,7 @@ const viewPathMap: Record<ViewId, string> = {
   employees: '/employees',
   bookings: '/bookings',
   finance: '/finance',
+  driver_expenses: '/driver-expenses',
   company_bank_accounts: '/company-bank-accounts',
   dispatch: '/dispatch',
   inventory: '/inventory',
@@ -130,6 +133,7 @@ const viewTitles: Record<ViewId, string> = {
   employees: 'Cleaners',
   bookings: 'Bookings',
   finance: 'Finance',
+  driver_expenses: 'Expenses',
   company_bank_accounts: 'Company Bank Accounts',
   dispatch: 'Dispatch',
   inventory: 'Inventory',
@@ -428,6 +432,7 @@ function ViewRenderer({ view, currentRole, allowedPages }: { view: ViewId; curre
       case 'employees': return Employees
       case 'bookings': return Bookings
       case 'finance': return Finance
+      case 'driver_expenses': return DriverExpenses
       case 'dispatch': return Dispatch
       case 'inventory': return Inventory
       case 'reports': return Reports

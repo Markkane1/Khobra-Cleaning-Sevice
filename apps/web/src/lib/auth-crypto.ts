@@ -11,6 +11,7 @@ export interface UserSession {
   email: string
   role: RoleId
   name: string
+  sessionVersion?: number
 }
 
 export interface VerifiedSession extends UserSession {
@@ -42,7 +43,8 @@ export function verifySessionToken(token: string): VerifiedSession | null {
     if (payload.role === 'employee') payload.role = 'cleaner'
     if (!Number.isFinite(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null
     if (![payload.userId, payload.tenantId, payload.email, payload.role, payload.name].every((value) => typeof value === 'string' && value)) return null
-    return { userId: payload.userId, tenantId: payload.tenantId, email: payload.email, role: payload.role, name: payload.name, expiresAt: payload.exp * 1000 }
+    if (payload.sessionVersion !== undefined && (!Number.isInteger(payload.sessionVersion) || payload.sessionVersion < 0)) return null
+    return { userId: payload.userId, tenantId: payload.tenantId, email: payload.email, role: payload.role, name: payload.name, sessionVersion: payload.sessionVersion ?? 0, expiresAt: payload.exp * 1000 }
   } catch {
     return null
   }

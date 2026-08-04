@@ -17,16 +17,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const validatedData = SelectPaymentMethodSchema.parse(body)
 
-    const payment = await paymentService.selectPaymentMethod(
+    const selection = await paymentService.selectPaymentMethod(
       auth.session.tenantId,
       auth.session.userId,
       validatedData
     )
 
-    broadcast('payment:updated', { paymentId: payment.id, status: payment.status, bookingId: validatedData.bookingId })
-    broadcast('booking:updated', { bookingId: validatedData.bookingId })
+    const status = validatedData.method === 'cash' ? 'cash_selected' : 'payment_pending'
+    broadcast('payment:updated', { status, bookingId: validatedData.bookingId }, auth.session.tenantId)
+    broadcast('booking:updated', { bookingId: validatedData.bookingId }, auth.session.tenantId)
 
-    return NextResponse.json(payment, { status: 201 })
+    return NextResponse.json({ ...selection, method: validatedData.method, status }, { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message || 'Invalid payment selection data' }, { status: 400 })
@@ -50,8 +51,8 @@ export async function PUT(req: NextRequest) {
       remarks
     )
 
-    broadcast('payment:updated', { paymentId: updatedPayment.id, status: updatedPayment.status })
-    broadcast('booking:updated', { invoiceId: updatedPayment.invoiceId })
+    broadcast('payment:updated', { paymentId: updatedPayment.id, status: updatedPayment.status }, auth.session.tenantId)
+    broadcast('booking:updated', { invoiceId: updatedPayment.invoiceId }, auth.session.tenantId)
 
     return NextResponse.json(updatedPayment)
   } catch (error: any) {

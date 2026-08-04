@@ -16,7 +16,7 @@ export interface Booking {
   completionTimingResponses?: CompletionTimingResponse[]
   assignments?: Array<{ id: string; employeeId: string; customerRating?: number | null; employee?: { user?: { name?: string } } }>
   rating?: { overallRating: number; comment?: string | null; submittedAt: string } | null
-  invoices?: Array<{ id: string; totalAmount: number; paidAmount: number; payments?: Array<{ id: string; method: 'cash' | 'bank_transfer'; status: string; selectedBy?: string; receivedBy?: string; verifiedAt?: string; createdAt: string }> }>
+  invoices?: Array<{ id: string; totalAmount: number; paidAmount: number; selectedPaymentMethod?: 'cash' | 'bank_transfer' | null; paymentSelectedBy?: string | null; paymentSelectedAt?: string | null; payments?: Array<{ id: string; method: 'cash' | 'bank_transfer'; status: string; reconciliationStatus?: string; selectedBy?: string; receivedBy?: string; receivedAt?: string; verifiedAt?: string; createdAt: string }> }>
 }
 
 export interface CleanerRatingInput {
@@ -42,6 +42,13 @@ export interface PickupAlert {
   generatedAt: string
   viewedAt?: string | null
   booking: { bookingNo: string }
+}
+
+export interface DriverTrip {
+  id: string
+  date: string
+  status: string
+  stops?: Array<{ id: string; type?: string; address?: string; status: string }>
 }
 
 export interface CreateBookingInput {

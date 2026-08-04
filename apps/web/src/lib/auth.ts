@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySessionToken, type RoleId, type VerifiedSession } from './auth-crypto'
+import { db } from '@repo/db'
 
 export * from './auth-crypto'
 
 export async function getAuthSession(req: NextRequest): Promise<VerifiedSession | null> {
+  let session: VerifiedSession | null = null
   // 1. Check Authorization header
   const authHeader = req.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.substring(7)
-    const session = verifySessionToken(token)
-    if (session) return session
+    session = verifySessionToken(token)
   }
 
   // 2. Check Cookie
-  const cookie = req.cookies.get('khobra_session')?.value
-  if (cookie) {
-    const session = verifySessionToken(cookie)
-    if (session) return session
+  if (!session) {
+    const cookie = req.cookies.get('khobra_session')?.value
+    if (cookie) session = verifySessionToken(cookie)
   }
-
-  return null
+  if (!session) return null
+  const user = await db.user.findFirst({
+    where: { id: session.userId, tenantId: session.tenantId, status: 'active' },
+    select: { email: true, name: true, role: true, sessionVersion: true },
+  })
+  if (!user || user.email !== session.email || user.role !== session.role || user.sessionVersion !== (session.sessionVersion ?? 0)) return null
+  return { ...session, name: user.name }
 }
 
 export async function requireAuth(
