@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db, PrismaPaymentRepository } from '@repo/db'
-import { PaymentService } from '@repo/application'
 import { ReopenPaymentSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 
 const paymentRepository = new PrismaPaymentRepository(db)
-const paymentService = new PaymentService(paymentRepository)
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,10 +15,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const validatedData = ReopenPaymentSchema.parse(body)
 
-    const result = await paymentService.reopenPayment(
+    const result = await paymentRepository.reopenPayment(
       auth.session.tenantId,
       auth.session.userId,
-      validatedData
+      validatedData.bookingId,
+      validatedData.reason
     )
 
     broadcast('payment:updated', { bookingId: validatedData.bookingId, status: 'reopened' }, auth.session.tenantId)

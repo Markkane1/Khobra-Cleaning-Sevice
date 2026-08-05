@@ -60,7 +60,7 @@ export async function PUT(req: NextRequest) {
       }
     }
     
-    const updated = await tripService.updateTrip(validatedData)
+    const updated = await tripService.updateTrip(auth.session.tenantId, validatedData)
     
     broadcast('dispatch:updated', { tripId: updated.id, status: validatedData.status }, auth.session.tenantId)
     return NextResponse.json(updated)
@@ -79,7 +79,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     if (!await db.trip.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
 
-    await tripService.deleteTrip(id)
+    await tripService.deleteTrip(auth.session.tenantId, id)
     broadcast('dispatch:updated', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
   } catch {

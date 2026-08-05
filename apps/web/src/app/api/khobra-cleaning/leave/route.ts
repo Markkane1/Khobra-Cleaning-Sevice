@@ -42,7 +42,7 @@ export async function PUT(req: NextRequest) {
     if ('response' in auth) return auth.response
     const validated = UpdateLeaveSchema.parse(await req.json())
     if (!await db.leaveRecord.findFirst({ where: { id: validated.id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Leave record not found' }, { status: 404 })
-    return NextResponse.json(await leaveService.updateLeaveRecord(validated))
+    return NextResponse.json(await leaveService.updateLeaveRecord(auth.session.tenantId, validated))
   } catch (error) {
     return fail(error)
   }
@@ -55,7 +55,7 @@ export async function DELETE(req: NextRequest) {
     const id = new URL(req.url).searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Leave record ID required' }, { status: 400 })
     if (!await db.leaveRecord.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Leave record not found' }, { status: 404 })
-    await leaveService.deleteLeaveRecord(id)
+    await leaveService.deleteLeaveRecord(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
   } catch (error) {
     return fail(error)

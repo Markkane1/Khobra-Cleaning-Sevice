@@ -49,7 +49,7 @@ export async function PUT(req: NextRequest) {
     if (!existing) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
     if (auth.session.role === 'customer' && existing.userId !== auth.session.userId) return NextResponse.json({ error: 'You may only update your own profile' }, { status: 403 })
     
-    const updated = await customerService.updateCustomer(validatedData)
+    const updated = await customerService.updateCustomer(auth.session.tenantId, validatedData)
     
     broadcast('customer:updated', { name: updated.user.name, city: updated.city }, auth.session.tenantId)
     return NextResponse.json(updated)
@@ -68,7 +68,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     
     if (!await db.customer.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
-    await customerService.deleteCustomer(id)
+    await customerService.deleteCustomer(auth.session.tenantId, id)
     
     broadcast('customer:updated', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })

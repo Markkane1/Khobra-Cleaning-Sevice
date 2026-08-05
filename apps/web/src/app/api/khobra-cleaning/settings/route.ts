@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaSettingsRepository } from '@repo/db'
-import { SettingsService } from '@repo/application'
 import { UpdateSettingsSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
-// ponytail: single settings service instance
 const settingsRepository = new PrismaSettingsRepository(db)
-const settingsService = new SettingsService(settingsRepository)
 
 export async function GET(req: NextRequest) {
   try {
     const auth = await requireAuth(req)
     if ('response' in auth) return auth.response
 
-    const settings = await settingsService.getSettings(auth.session.tenantId)
+    const settings = await settingsRepository.getSettings(auth.session.tenantId)
     
     // SEC-004: Cleaners, drivers, and customers get public-safe settings only
     if (auth.session.role !== 'admin') {
@@ -37,7 +34,7 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const validatedData = UpdateSettingsSchema.parse(body)
     
-    const response = await settingsService.updateSettings(auth.session.tenantId, validatedData)
+    const response = await settingsRepository.updateSettings(auth.session.tenantId, validatedData)
     
     return NextResponse.json(response)
   } catch (error: any) {

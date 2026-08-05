@@ -19,8 +19,8 @@ export interface Attendance {
 
 export interface IAttendanceRepository {
   findManyByTenant(tenantId: string): Promise<Attendance[]>;
-  findById(id: string): Promise<Attendance | null>;
+  findById(tenantId: string, id: string): Promise<Attendance | null>;
   create(tenantId: string, data: CreateAttendanceDTO): Promise<Attendance>;
-  update(id: string, data: UpdateAttendanceDTO): Promise<Attendance>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateAttendanceDTO): Promise<Attendance>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

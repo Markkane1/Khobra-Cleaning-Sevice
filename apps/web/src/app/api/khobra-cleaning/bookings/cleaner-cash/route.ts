@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db, PrismaPaymentRepository } from '@repo/db'
-import { PaymentService } from '@repo/application'
 import { CleanerReceiveCashSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 
 const paymentRepository = new PrismaPaymentRepository(db)
-const paymentService = new PaymentService(paymentRepository)
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +15,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = CleanerReceiveCashSchema.parse(body)
 
-    const result = await paymentService.cleanerReceiveCash(
+    const result = await paymentRepository.cleanerReceiveCash(
       auth.session.tenantId,
       auth.session.userId,
       data.bookingId,

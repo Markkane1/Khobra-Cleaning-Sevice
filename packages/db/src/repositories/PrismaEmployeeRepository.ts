@@ -32,9 +32,9 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     }) as unknown as Employee[];
   }
 
-  async findById(id: string): Promise<Employee | null> {
-    return this.db.employee.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<Employee | null> {
+    return this.db.employee.findFirst({
+      where: { id, tenantId },
       include: { user: { select: { name: true, email: true, phone: true } } },
     }) as unknown as Employee | null;
   }
@@ -70,8 +70,8 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
   }
 
 
-  async update(id: string, data: UpdateEmployeeDTO): Promise<Employee> {
-    const employee = await this.db.employee.findUnique({ where: { id } });
+  async update(tenantId: string, id: string, data: UpdateEmployeeDTO): Promise<Employee> {
+    const employee = await this.db.employee.findFirst({ where: { id, tenantId } });
     
     if (employee) {
       const userUpdate: any = {};
@@ -90,14 +90,14 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     const { id: _id, email, name, phone, ...empData } = data;
 
     return this.db.employee.update({
-      where: { id },
+      where: { id, tenantId },
       data: empData,
       include: { user: { select: { name: true, email: true, phone: true } } },
     }) as unknown as Employee;
   }
 
-  async delete(id: string): Promise<void> {
-    const employee = await this.db.employee.findUnique({ where: { id }, select: { userId: true } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    const employee = await this.db.employee.findFirst({ where: { id, tenantId }, select: { userId: true } });
     if (!employee) return;
 
     const now = new Date()
@@ -105,7 +105,7 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
     // ponytail: Soft-delete employee & deactivate user account to preserve financial audit trail
     await this.db.$transaction([
       this.db.employee.update({
-        where: { id },
+        where: { id, tenantId },
         data: { status: 'inactive', deletedAt: now },
       }),
       this.db.user.update({

@@ -14,11 +14,11 @@ export class TripService {
     return this.tripRepository.create(tenantId, data);
   }
 
-  async updateTrip(data: UpdateTripDTO): Promise<Trip> {
-    return this.tripRepository.update(data.id, data);
+  async updateTrip(tenantId: string, data: UpdateTripDTO): Promise<Trip> {
+    return this.tripRepository.update(tenantId, data.id, data);
   }
 
-  async deleteTrip(id: string): Promise<void> {
-    return this.tripRepository.delete(id);
+  async deleteTrip(tenantId: string, id: string): Promise<void> {
+    return this.tripRepository.delete(tenantId, id);
   }
 }

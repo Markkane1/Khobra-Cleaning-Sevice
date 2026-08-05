@@ -16,8 +16,8 @@ export interface Driver {
 
 export interface IDriverRepository {
   findManyByTenant(tenantId: string): Promise<Driver[]>;
-  findById(id: string): Promise<Driver | null>;
+  findById(tenantId: string, id: string): Promise<Driver | null>;
   create(tenantId: string, data: CreateDriverDTO): Promise<Driver>;
-  update(id: string, data: UpdateDriverDTO): Promise<Driver>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateDriverDTO): Promise<Driver>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

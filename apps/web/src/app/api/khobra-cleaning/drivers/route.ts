@@ -44,7 +44,7 @@ export async function PUT(req: NextRequest) {
     const validatedData = UpdateDriverSchema.parse(body)
     if (!await db.driver.findFirst({ where: { id: validatedData.id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
     
-    const updated = await driverService.updateDriver(validatedData)
+    const updated = await driverService.updateDriver(auth.session.tenantId, validatedData)
     
     return NextResponse.json(updated)
   } catch (error: any) {
@@ -61,7 +61,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Driver ID required' }, { status: 400 })
     if (!await db.driver.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
     
-    await driverService.deleteDriver(id)
+    await driverService.deleteDriver(auth.session.tenantId, id)
     
     return NextResponse.json({ success: true })
   } catch (error: any) {

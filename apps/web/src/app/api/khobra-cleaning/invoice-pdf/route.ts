@@ -1,11 +1,8 @@
 import { db, PrismaInvoicePdfRepository } from '@repo/db'
-import { InvoicePdfService } from '@repo/application'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
 
-// Dependency Injection
 const invoicePdfRepository = new PrismaInvoicePdfRepository(db)
-const invoicePdfService = new InvoicePdfService(invoicePdfRepository)
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,7 +15,7 @@ export async function GET(req: NextRequest) {
     const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
     if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 400 })
 
-    const invoice = await invoicePdfService.getInvoiceForPdf(tenant.id, id)
+    const invoice = await invoicePdfRepository.getInvoiceForPdf(tenant.id, id)
     if (!invoice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (auth.session.role === 'customer' && invoice.customer.userId !== auth.session.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

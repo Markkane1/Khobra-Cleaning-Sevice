@@ -95,7 +95,7 @@ export async function PUT(req: NextRequest) {
     const validated = UpdateComplaintSchema.parse(await req.json())
     const existing = await db.complaint.findFirst({ where: { id: validated.id, tenantId: auth.session.tenantId } })
     if (!existing) return NextResponse.json({ error: 'Complaint not found' }, { status: 404 })
-    const updated = await complaintService.updateComplaint(validated)
+    const updated = await complaintService.updateComplaint(auth.session.tenantId, validated)
     broadcast('complaint:updated', { complaintNo: updated.complaintNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error) {
@@ -111,7 +111,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     const existing = await db.complaint.findFirst({ where: { id, tenantId: auth.session.tenantId } })
     if (!existing) return NextResponse.json({ error: 'Complaint not found' }, { status: 404 })
-    await complaintService.deleteComplaint(id)
+    await complaintService.deleteComplaint(auth.session.tenantId, id)
     broadcast('complaint:updated', { complaintNo: existing.complaintNo, status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
   } catch (error) {

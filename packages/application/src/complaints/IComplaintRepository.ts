@@ -28,8 +28,8 @@ export interface Complaint {
 
 export interface IComplaintRepository {
   findManyByTenant(tenantId: string): Promise<Complaint[]>;
-  findById(id: string): Promise<Complaint | null>;
+  findById(tenantId: string, id: string): Promise<Complaint | null>;
   create(tenantId: string, data: CreateComplaintDTO): Promise<Complaint>;
-  update(id: string, data: UpdateComplaintDTO): Promise<Complaint>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateComplaintDTO): Promise<Complaint>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

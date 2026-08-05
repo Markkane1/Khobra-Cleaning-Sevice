@@ -55,7 +55,7 @@ export async function PUT(req: NextRequest) {
     const validatedData = UpdateEmployeeSchema.parse(body)
     if (!await db.employee.findFirst({ where: { id: validatedData.id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Cleaner not found' }, { status: 404 })
     
-    const updated = await employeeService.updateEmployee(validatedData)
+    const updated = await employeeService.updateEmployee(auth.session.tenantId, validatedData)
     
     broadcast('employee:updated', { employeeCode: updated.employeeCode, name: updated.user.name }, auth.session.tenantId)
     return NextResponse.json(updated)
@@ -75,7 +75,7 @@ export async function DELETE(req: NextRequest) {
     
     const employee = await db.employee.findFirst({ where: { id, tenantId: auth.session.tenantId } })
     if (!employee) return NextResponse.json({ error: 'Cleaner not found' }, { status: 404 })
-    await employeeService.deleteEmployee(id)
+    await employeeService.deleteEmployee(auth.session.tenantId, id)
     
     broadcast('employee:updated', { employeeCode: employee?.employeeCode, status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })

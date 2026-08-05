@@ -14,15 +14,15 @@ export class EmployeeService {
     return this.employeeRepository.create(tenantId, data);
   }
 
-  async updateEmployee(data: UpdateEmployeeDTO): Promise<Employee> {
-    const existing = await this.employeeRepository.findById(data.id);
+  async updateEmployee(tenantId: string, data: UpdateEmployeeDTO): Promise<Employee> {
+    const existing = await this.employeeRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Employee not found');
-    return this.employeeRepository.update(data.id, data);
+    return this.employeeRepository.update(tenantId, data.id, data);
   }
 
-  async deleteEmployee(id: string): Promise<void> {
-    const existing = await this.employeeRepository.findById(id);
+  async deleteEmployee(tenantId: string, id: string): Promise<void> {
+    const existing = await this.employeeRepository.findById(tenantId, id);
     if (!existing) throw new Error('Employee not found');
-    return this.employeeRepository.delete(id);
+    return this.employeeRepository.delete(tenantId, id);
   }
 }

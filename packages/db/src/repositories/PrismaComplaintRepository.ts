@@ -17,9 +17,9 @@ export class PrismaComplaintRepository implements IComplaintRepository {
     }) as unknown as Complaint[];
   }
 
-  async findById(id: string): Promise<Complaint | null> {
+  async findById(tenantId: string, id: string): Promise<Complaint | null> {
     return this.db.complaint.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
       include: { 
         customer: { include: { user: { select: { name: true } } } }, 
         booking: { select: { bookingNo: true } } 
@@ -40,10 +40,10 @@ export class PrismaComplaintRepository implements IComplaintRepository {
     }) as unknown as Complaint;
   }
 
-  async update(id: string, data: UpdateComplaintDTO): Promise<Complaint> {
+  async update(tenantId: string, id: string, data: UpdateComplaintDTO): Promise<Complaint> {
     const { id: _id, ...updateData } = data;
     return this.db.complaint.update({
-      where: { id },
+      where: { id, tenantId },
       data: updateData,
       include: { 
         customer: { include: { user: { select: { name: true } } } }, 
@@ -52,7 +52,7 @@ export class PrismaComplaintRepository implements IComplaintRepository {
     }) as unknown as Complaint;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.complaint.update({ where: { id }, data: { status: 'closed', deletedAt: new Date() } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    await this.db.complaint.update({ where: { id, tenantId }, data: { status: 'closed', deletedAt: new Date() } });
   }
 }

@@ -14,8 +14,8 @@ export class ComplaintService {
     return this.complaintRepository.create(tenantId, data);
   }
 
-  async updateComplaint(data: UpdateComplaintDTO): Promise<Complaint> {
-    const existing = await this.complaintRepository.findById(data.id);
+  async updateComplaint(tenantId: string, data: UpdateComplaintDTO): Promise<Complaint> {
+    const existing = await this.complaintRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Complaint not found');
     
     // Set resolvedAt if status is resolved
@@ -23,12 +23,12 @@ export class ComplaintService {
       data.resolvedAt = new Date();
     }
     
-    return this.complaintRepository.update(data.id, data);
+    return this.complaintRepository.update(tenantId, data.id, data);
   }
 
-  async deleteComplaint(id: string): Promise<void> {
-    const existing = await this.complaintRepository.findById(id);
+  async deleteComplaint(tenantId: string, id: string): Promise<void> {
+    const existing = await this.complaintRepository.findById(tenantId, id);
     if (!existing) throw new Error('Complaint not found');
-    return this.complaintRepository.delete(id);
+    return this.complaintRepository.delete(tenantId, id);
   }
 }

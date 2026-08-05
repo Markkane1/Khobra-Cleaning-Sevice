@@ -14,9 +14,9 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
     }) as unknown as Attendance[];
   }
 
-  async findById(id: string): Promise<Attendance | null> {
-    return this.db.attendance.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<Attendance | null> {
+    return this.db.attendance.findFirst({
+      where: { id, tenantId },
       include: { employee: { include: { user: { select: { name: true } } } } },
     }) as unknown as Attendance | null;
   }
@@ -31,16 +31,16 @@ export class PrismaAttendanceRepository implements IAttendanceRepository {
     }) as unknown as Attendance;
   }
 
-  async update(id: string, data: UpdateAttendanceDTO): Promise<Attendance> {
+  async update(tenantId: string, id: string, data: UpdateAttendanceDTO): Promise<Attendance> {
     const { id: _id, ...updateData } = data;
     return this.db.attendance.update({
-      where: { id },
+      where: { id, tenantId },
       data: updateData,
       include: { employee: { include: { user: { select: { name: true } } } } },
     }) as unknown as Attendance;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.attendance.delete({ where: { id } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    await this.db.attendance.delete({ where: { id, tenantId } });
   }
 }

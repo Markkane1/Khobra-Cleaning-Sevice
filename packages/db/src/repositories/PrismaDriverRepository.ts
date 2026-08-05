@@ -15,9 +15,9 @@ export class PrismaDriverRepository implements IDriverRepository {
     }) as unknown as Driver[];
   }
 
-  async findById(id: string): Promise<Driver | null> {
-    return this.db.driver.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<Driver | null> {
+    return this.db.driver.findFirst({
+      where: { id, tenantId },
       include: { user: { select: { name: true, email: true, phone: true } } },
     }) as unknown as Driver | null;
   }
@@ -57,8 +57,8 @@ export class PrismaDriverRepository implements IDriverRepository {
   }
 
 
-  async update(id: string, data: UpdateDriverDTO): Promise<Driver> {
-    const driver = await this.db.driver.findUnique({ where: { id } });
+  async update(tenantId: string, id: string, data: UpdateDriverDTO): Promise<Driver> {
+    const driver = await this.db.driver.findFirst({ where: { id, tenantId } });
     
     if (driver && (data.name !== undefined || data.phone !== undefined)) {
       await this.db.user.update({
@@ -73,14 +73,14 @@ export class PrismaDriverRepository implements IDriverRepository {
     const { id: _id, name, email, phone, vehicleNo, ...driverData } = data;
 
     return this.db.driver.update({
-      where: { id },
+      where: { id, tenantId },
       data: { ...driverData, ...(vehicleNo !== undefined && { vehicleInfo: vehicleNo }) },
       include: { user: { select: { name: true, email: true, phone: true } } }
     }) as unknown as Driver;
   }
 
-  async delete(id: string): Promise<void> {
-    const driver = await this.db.driver.findUnique({ where: { id }, select: { userId: true } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    const driver = await this.db.driver.findFirst({ where: { id, tenantId }, select: { userId: true } });
     if (!driver) return;
 
     const now = new Date()
@@ -88,7 +88,7 @@ export class PrismaDriverRepository implements IDriverRepository {
     // ponytail: Soft-delete driver & deactivate user account to preserve dispatch/trip history
     await this.db.$transaction([
       this.db.driver.update({
-        where: { id },
+        where: { id, tenantId },
         data: { status: 'inactive', deletedAt: now },
       }),
       this.db.user.update({

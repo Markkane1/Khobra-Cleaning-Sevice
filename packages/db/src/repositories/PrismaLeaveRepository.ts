@@ -19,9 +19,9 @@ export class PrismaLeaveRepository implements ILeaveRepository {
     }) as unknown as LeaveRecord[];
   }
 
-  async findById(id: string): Promise<LeaveRecord | null> {
-    return this.db.leaveRecord.findUnique({
-      where: { id },
+  async findById(tenantId: string, id: string): Promise<LeaveRecord | null> {
+    return this.db.leaveRecord.findFirst({
+      where: { id, tenantId },
       include: {
         employee: {
           include: {
@@ -54,13 +54,13 @@ export class PrismaLeaveRepository implements ILeaveRepository {
     }) as unknown as LeaveRecord;
   }
 
-  async update(id: string, data: UpdateLeaveDTO): Promise<LeaveRecord> {
+  async update(tenantId: string, id: string, data: UpdateLeaveDTO): Promise<LeaveRecord> {
     const updateData: any = {};
     if (data.status) updateData.status = data.status;
     if (data.approvedBy) updateData.approvedBy = data.approvedBy;
 
     return this.db.leaveRecord.update({
-      where: { id },
+      where: { id, tenantId },
       data: updateData,
       include: {
         employee: {
@@ -72,7 +72,7 @@ export class PrismaLeaveRepository implements ILeaveRepository {
     }) as unknown as LeaveRecord;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.leaveRecord.delete({ where: { id } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    await this.db.leaveRecord.delete({ where: { id, tenantId } });
   }
 }

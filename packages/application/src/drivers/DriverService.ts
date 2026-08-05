@@ -14,15 +14,15 @@ export class DriverService {
     return this.driverRepository.create(tenantId, data);
   }
 
-  async updateDriver(data: UpdateDriverDTO): Promise<Driver> {
-    const existing = await this.driverRepository.findById(data.id);
+  async updateDriver(tenantId: string, data: UpdateDriverDTO): Promise<Driver> {
+    const existing = await this.driverRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Driver not found');
-    return this.driverRepository.update(data.id, data);
+    return this.driverRepository.update(tenantId, data.id, data);
   }
 
-  async deleteDriver(id: string): Promise<void> {
-    const existing = await this.driverRepository.findById(id);
+  async deleteDriver(tenantId: string, id: string): Promise<void> {
+    const existing = await this.driverRepository.findById(tenantId, id);
     if (!existing) throw new Error('Driver not found');
-    return this.driverRepository.delete(id);
+    return this.driverRepository.delete(tenantId, id);
   }
 }

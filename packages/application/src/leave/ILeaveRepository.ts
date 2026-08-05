@@ -16,8 +16,8 @@ export interface LeaveRecord {
 
 export interface ILeaveRepository {
   findManyByTenant(tenantId: string): Promise<LeaveRecord[]>;
-  findById(id: string): Promise<LeaveRecord | null>;
+  findById(tenantId: string, id: string): Promise<LeaveRecord | null>;
   create(tenantId: string, data: CreateLeaveDTO): Promise<LeaveRecord>;
-  update(id: string, data: UpdateLeaveDTO): Promise<LeaveRecord>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateLeaveDTO): Promise<LeaveRecord>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

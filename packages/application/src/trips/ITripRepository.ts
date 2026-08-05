@@ -24,8 +24,8 @@ export interface Trip {
 
 export interface ITripRepository {
   findManyByTenant(tenantId: string): Promise<Trip[]>;
-  findById(id: string): Promise<Trip | null>;
+  findById(tenantId: string, id: string): Promise<Trip | null>;
   create(tenantId: string, data: CreateTripDTO): Promise<Trip>;
-  update(id: string, data: UpdateTripDTO): Promise<Trip>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateTripDTO): Promise<Trip>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

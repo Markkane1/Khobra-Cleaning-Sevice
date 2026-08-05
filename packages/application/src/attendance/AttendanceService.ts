@@ -14,15 +14,15 @@ export class AttendanceService {
     return this.attendanceRepository.create(tenantId, data);
   }
 
-  async updateAttendance(data: UpdateAttendanceDTO): Promise<Attendance> {
-    const existing = await this.attendanceRepository.findById(data.id);
+  async updateAttendance(tenantId: string, data: UpdateAttendanceDTO): Promise<Attendance> {
+    const existing = await this.attendanceRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Attendance not found');
-    return this.attendanceRepository.update(data.id, data);
+    return this.attendanceRepository.update(tenantId, data.id, data);
   }
 
-  async deleteAttendance(id: string): Promise<void> {
-    const existing = await this.attendanceRepository.findById(id);
+  async deleteAttendance(tenantId: string, id: string): Promise<void> {
+    const existing = await this.attendanceRepository.findById(tenantId, id);
     if (!existing) throw new Error('Attendance not found');
-    return this.attendanceRepository.delete(id);
+    return this.attendanceRepository.delete(tenantId, id);
   }
 }

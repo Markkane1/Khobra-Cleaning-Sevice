@@ -13,9 +13,9 @@ export class PrismaTripRepository implements ITripRepository {
     }) as unknown as Trip[];
   }
 
-  async findById(id: string): Promise<Trip | null> {
+  async findById(tenantId: string, id: string): Promise<Trip | null> {
     return this.db.trip.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
       include: { driver: { include: { user: { select: { name: true } } } }, stops: true },
     }) as unknown as Trip | null;
   }
@@ -44,14 +44,14 @@ export class PrismaTripRepository implements ITripRepository {
     }) as unknown as Trip;
   }
 
-  async update(id: string, data: UpdateTripDTO): Promise<Trip> {
+  async update(tenantId: string, id: string, data: UpdateTripDTO): Promise<Trip> {
     const { id: _id, stops, ...tripData } = data;
 
     if (stops && Array.isArray(stops)) {
       for (const stop of stops) {
         if (stop.id) {
-          await this.db.tripStop.update({
-            where: { id: stop.id },
+          await this.db.tripStop.updateMany({
+            where: { id: stop.id, tripId: id, trip: { tenantId } },
             data: {
               ...(stop.status && { status: stop.status }),
               ...(stop.completedAt && { completedAt: new Date(stop.completedAt) }),
@@ -62,13 +62,13 @@ export class PrismaTripRepository implements ITripRepository {
     }
 
     return this.db.trip.update({
-      where: { id },
+      where: { id, tenantId },
       data: tripData,
       include: { stops: true, driver: { include: { user: { select: { name: true } } } } },
     }) as unknown as Trip;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.db.trip.update({ where: { id }, data: { status: 'cancelled', deletedAt: new Date() } });
+  async delete(tenantId: string, id: string): Promise<void> {
+    await this.db.trip.update({ where: { id, tenantId }, data: { status: 'cancelled', deletedAt: new Date() } });
   }
 }

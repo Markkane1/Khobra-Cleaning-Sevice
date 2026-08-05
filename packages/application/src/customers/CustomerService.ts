@@ -15,15 +15,15 @@ export class CustomerService {
     return this.customerRepository.create(tenantId, data);
   }
 
-  async updateCustomer(data: UpdateCustomerDTO): Promise<Customer> {
-    const existing = await this.customerRepository.findById(data.id);
+  async updateCustomer(tenantId: string, data: UpdateCustomerDTO): Promise<Customer> {
+    const existing = await this.customerRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Customer not found');
-    return this.customerRepository.update(data.id, data);
+    return this.customerRepository.update(tenantId, data.id, data);
   }
 
-  async deleteCustomer(id: string): Promise<void> {
-    const existing = await this.customerRepository.findById(id);
+  async deleteCustomer(tenantId: string, id: string): Promise<void> {
+    const existing = await this.customerRepository.findById(tenantId, id);
     if (!existing) throw new Error('Customer not found');
-    return this.customerRepository.delete(id);
+    return this.customerRepository.delete(tenantId, id);
   }
 }

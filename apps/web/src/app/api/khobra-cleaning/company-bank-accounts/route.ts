@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db, PrismaPaymentRepository } from '@repo/db';
-import { PaymentService } from '@repo/application';
 import { CompanyBankAccountSchema } from '@repo/core';
 import { requireAuth } from '@/lib/auth';
 
 const paymentRepository = new PrismaPaymentRepository(db);
-const paymentService = new PaymentService(paymentRepository);
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +12,7 @@ export async function GET(req: NextRequest) {
     if ('response' in auth) return auth.response;
 
     const isAdmin = auth.session.role === 'admin';
-    const accounts = await paymentService.getCompanyBankAccounts(auth.session.tenantId, isAdmin);
+    const accounts = await paymentRepository.getCompanyBankAccounts(auth.session.tenantId, isAdmin);
 
     return NextResponse.json({ accounts }, { status: 200 });
   } catch (error: any) {
@@ -30,7 +28,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const data = CompanyBankAccountSchema.parse(body);
 
-    const account = await paymentService.saveCompanyBankAccount(
+    const account = await paymentRepository.saveCompanyBankAccount(
       auth.session.tenantId,
       auth.session.userId,
       data
@@ -56,7 +54,7 @@ export async function PUT(req: NextRequest) {
       if (!body.id) {
         return NextResponse.json({ error: 'Bank account ID is required' }, { status: 400 });
       }
-      const account = await paymentService.toggleCompanyBankAccountActive(
+      const account = await paymentRepository.toggleCompanyBankAccountActive(
         auth.session.tenantId,
         auth.session.userId,
         body.id,
@@ -66,7 +64,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const data = CompanyBankAccountSchema.parse(body);
-    const account = await paymentService.saveCompanyBankAccount(
+    const account = await paymentRepository.saveCompanyBankAccount(
       auth.session.tenantId,
       auth.session.userId,
       data
@@ -93,7 +91,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Bank account ID is required' }, { status: 400 });
     }
 
-    const result = await paymentService.deleteCompanyBankAccount(
+    const result = await paymentRepository.deleteCompanyBankAccount(
       auth.session.tenantId,
       auth.session.userId,
       id

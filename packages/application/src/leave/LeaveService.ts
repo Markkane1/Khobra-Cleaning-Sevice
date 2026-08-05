@@ -14,15 +14,15 @@ export class LeaveService {
     return this.leaveRepository.create(tenantId, data);
   }
 
-  async updateLeaveRecord(data: UpdateLeaveDTO): Promise<LeaveRecord> {
-    const existing = await this.leaveRepository.findById(data.id);
+  async updateLeaveRecord(tenantId: string, data: UpdateLeaveDTO): Promise<LeaveRecord> {
+    const existing = await this.leaveRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Leave record not found');
-    return this.leaveRepository.update(data.id, data);
+    return this.leaveRepository.update(tenantId, data.id, data);
   }
 
-  async deleteLeaveRecord(id: string): Promise<void> {
-    const existing = await this.leaveRepository.findById(id);
+  async deleteLeaveRecord(tenantId: string, id: string): Promise<void> {
+    const existing = await this.leaveRepository.findById(tenantId, id);
     if (!existing) throw new Error('Leave record not found');
-    return this.leaveRepository.delete(id);
+    return this.leaveRepository.delete(tenantId, id);
   }
 }

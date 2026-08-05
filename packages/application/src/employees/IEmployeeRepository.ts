@@ -23,8 +23,8 @@ export interface Employee {
 
 export interface IEmployeeRepository {
   findManyByTenant(tenantId: string): Promise<Employee[]>;
-  findById(id: string): Promise<Employee | null>;
+  findById(tenantId: string, id: string): Promise<Employee | null>;
   create(tenantId: string, data: CreateEmployeeDTO): Promise<Employee>;
-  update(id: string, data: UpdateEmployeeDTO): Promise<Employee>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateEmployeeDTO): Promise<Employee>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

@@ -18,8 +18,8 @@ export interface Customer {
 
 export interface ICustomerRepository {
   findManyByTenant(tenantId: string): Promise<Customer[]>;
-  findById(id: string): Promise<Customer | null>;
+  findById(tenantId: string, id: string): Promise<Customer | null>;
   create(tenantId: string, data: CreateCustomerDTO): Promise<Customer>;
-  update(id: string, data: UpdateCustomerDTO): Promise<Customer>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateCustomerDTO): Promise<Customer>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db, PrismaPaymentRepository } from '@repo/db'
-import { PaymentService } from '@repo/application'
 import { SelectPaymentMethodSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 
 const paymentRepository = new PrismaPaymentRepository(db)
-const paymentService = new PaymentService(paymentRepository)
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +15,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const validatedData = SelectPaymentMethodSchema.parse(body)
 
-    const selection = await paymentService.selectPaymentMethod(
+    const selection = await paymentRepository.selectPaymentMethod(
       auth.session.tenantId,
       auth.session.userId,
       validatedData
@@ -44,7 +42,7 @@ export async function PUT(req: NextRequest) {
     const { paymentId, remarks } = await req.json()
     if (!paymentId) return NextResponse.json({ error: 'Payment ID is required' }, { status: 400 })
 
-    const updatedPayment = await paymentService.verifyCashPayment(
+    const updatedPayment = await paymentRepository.verifyCashPayment(
       auth.session.tenantId,
       auth.session.userId,
       paymentId,

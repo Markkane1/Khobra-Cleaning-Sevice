@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest) {
     const existing = await db.attendance.findFirst({ where: { id: validated.id, tenantId: auth.session.tenantId }, include: { employee: { select: { userId: true } } } })
     if (!existing) return NextResponse.json({ error: 'Attendance record not found' }, { status: 404 })
     if (auth.session.role === 'cleaner' && existing.employee.userId !== auth.session.userId) return NextResponse.json({ error: 'You may only update your own attendance' }, { status: 403 })
-    const updated = await attendanceService.updateAttendance(validated)
+    const updated = await attendanceService.updateAttendance(auth.session.tenantId, validated)
     broadcast('attendance:updated', { employeeId: updated.employeeId, status: updated.status, date: updated.date }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error) {
@@ -63,7 +63,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     const existing = await db.attendance.findFirst({ where: { id, tenantId: auth.session.tenantId } })
     if (!existing) return NextResponse.json({ error: 'Attendance record not found' }, { status: 404 })
-    await attendanceService.deleteAttendance(id)
+    await attendanceService.deleteAttendance(auth.session.tenantId, id)
     broadcast('attendance:deleted', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
   } catch (error) {
