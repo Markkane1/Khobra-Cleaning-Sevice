@@ -1,4 +1,4 @@
-package com.khobracleaning.app;
+package com.khobracleaning.web;
 
 import com.getcapacitor.BridgeActivity;
 

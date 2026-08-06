@@ -6,7 +6,7 @@ Capacitor shells for the deployed Khobra dashboard. Both platforms use the same 
 
 - `CAPACITOR_SERVER_URL`: the deployed dashboard HTTPS origin, with no path.
 - Android: `android/app/google-services.json`, plus `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, a monotonically increasing integer `ANDROID_VERSION_CODE`, and display `ANDROID_VERSION_NAME`.
-- iOS: an Apple provisioning profile for `com.khobracleaning.app` with Push Notifications enabled.
+- iOS: an Apple provisioning profile for `com.khobracleaning.web` with Push Notifications enabled.
 - Backend: VAPID variables for web push, Firebase service-account variables for Android, and APNs key variables for iOS (see `apps/web/.env.example`).
 
 Build a signed Android App Bundle with `npm run build:android --workspace @khobra/mobilewrapper`. On macOS, increment Xcode's `CURRENT_PROJECT_VERSION` and `MARKETING_VERSION`, run `npm run sync:production --workspace @khobra/mobilewrapper`, then archive the iOS project in Xcode.

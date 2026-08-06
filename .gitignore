@@ -37,6 +37,7 @@ dist/
 *.p8
 
 # Local test & dev artifacts
+.android-avd/
 .playwright-cli/
 playwright-report/
 test-results/

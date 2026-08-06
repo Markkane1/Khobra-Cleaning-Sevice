@@ -1,7 +1,9 @@
 const { getDefaultConfig } = require('expo/metro-config')
+const path = require('node:path')
 
 const config = getDefaultConfig(__dirname)
-// ponytail: SDK 54 resolves Gradle's relative entry from the workspace server root; remove when Expo preserves the app-relative entry.
-config.server.unstable_serverRoot = __dirname
+config.server.unstable_serverRoot = process.argv.includes('export:embed')
+  ? __dirname
+  : path.resolve(__dirname, '../..')
 
 module.exports = config

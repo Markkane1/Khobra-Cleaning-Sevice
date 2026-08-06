@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Khobra Cleaning</string>
-    <string name="title_activity_main">Khobra Cleaning</string>
-    <string name="package_name">com.khobracleaning.app</string>
-    <string name="custom_url_scheme">com.khobracleaning.app</string>
+    <string name="app_name">Khobra Cleaning Web</string>
+    <string name="title_activity_main">Khobra Cleaning Web</string>
+    <string name="package_name">com.khobracleaning.web</string>
+    <string name="custom_url_scheme">com.khobracleaning.web</string>
 </resources>

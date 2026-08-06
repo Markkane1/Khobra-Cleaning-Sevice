@@ -3,10 +3,10 @@ apply plugin: 'com.android.application'
 def releaseSigningConfigured = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'].every { System.getenv(it) }
 
 android {
-    namespace = "com.khobracleaning.app"
+    namespace = "com.khobracleaning.web"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.khobracleaning.app"
+        applicationId "com.khobracleaning.web"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')

@@ -24,3 +24,9 @@ apps/mobile/
 The API already accepts the bearer token returned at login, so the mobile app stores it in the operating system's secure storage rather than browser storage. Native Android/iOS device tokens are registered with the shared notifications API after sign-in; production still requires the Firebase and APNs server credentials listed in `apps/web/.env.example`.
 
 `npm run build:android --workspace @khobra/mobile` compiles an Android App Bundle and refuses to build unless `EXPO_PUBLIC_API_URL` is an HTTPS origin. Store signing credentials outside the repository and sign the bundle in the deployment pipeline.
+
+On Windows, keep the Android SDK path free of spaces (or point `ANDROID_HOME` and `ANDROID_SDK_ROOT` at a space-free junction); CMake can otherwise invoke `clang++` through an 8.3 alias and omit the C++ runtime during release linking.
+
+## Cloud release builds
+
+Run `eas init` once from this directory to link the Expo project. In the EAS `production` environment, set `EXPO_PUBLIC_API_URL` to the public HTTPS origin and upload `GOOGLE_SERVICES_JSON` as a secret file variable. Configure Android and Apple signing through EAS Credentials, then add an `EXPO_TOKEN` secret to the GitHub `production` environment. The manual **Mobile release build** workflow builds Android, iOS, or both without exposing credentials to the repository or GitHub logs.

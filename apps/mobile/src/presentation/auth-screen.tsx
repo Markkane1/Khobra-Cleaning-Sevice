@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   card: { overflow: 'hidden', backgroundColor: '#ffffffee', borderRadius: 26, borderWidth: 1, borderColor: '#e1eee8', padding: 20, shadowColor: '#064e3b', shadowOpacity: 0.12, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 7 },
   accent: { position: 'absolute', top: 0, left: 0, right: 0, height: 5, backgroundColor: '#10b981' },
   tabs: { flexDirection: 'row', backgroundColor: '#edf5f1', borderRadius: 13, padding: 4, marginBottom: 22 },
-  tab: { flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 10 },
+  tab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   activeTab: { backgroundColor: '#fff', shadowColor: '#064e3b', shadowOpacity: 0.1, shadowRadius: 5, elevation: 2 },
   tabText: { color: '#64766f', fontWeight: '600', fontSize: 13 },
   activeTabText: { color: '#047857' },
