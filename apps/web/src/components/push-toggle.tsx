@@ -95,7 +95,14 @@ export function PushToggle() {
       window.addEventListener(STATE_EVENT, refresh)
       return () => window.removeEventListener(STATE_EVENT, refresh)
     }
-    if (webSupported) void navigator.serviceWorker.getRegistration('/push-sw.js').then(registration => registration?.pushManager.getSubscription()).then(subscription => setEnabled(Boolean(subscription)))
+    if (webSupported) void navigator.serviceWorker.getRegistration('/push-sw.js')
+      .then(registration => registration?.pushManager.getSubscription())
+      .then(async subscription => {
+        if (!subscription) return setEnabled(false)
+        const response = await fetch('/api/khobra-cleaning/notifications/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subscription) })
+        setEnabled(response.ok)
+      })
+      .catch(() => setEnabled(false))
   }, [native, webSupported])
 
   if (!native && !webSupported) return null

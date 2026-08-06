@@ -20,6 +20,7 @@ type DeliveryResult = { ok: boolean; permanent?: boolean; error?: string }
 const privateKey = (value = '') => value.replace(/\\n/g, '\n')
 const encoded = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
 const content = (notice: PushNotice) => ({ title: notice.title.slice(0, 120), body: notice.message.slice(0, 700) })
+const destination = (notice: PushNotice) => ['booking_status', 'pickup_alert_high'].includes(notice.type) ? '/bookings' : '/notifications'
 
 export const isPermanentFcmFailure = (status: number, body: string) => status === 404 || /UNREGISTERED/.test(body)
 export const isPermanentApnsFailure = (status: number, body: string) => status === 410 || /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/.test(body)
@@ -60,7 +61,7 @@ async function sendFcm(token: string, notice: PushNotice, accessToken: string): 
     body: JSON.stringify({ message: {
       token,
       notification,
-      data: { url: '/bookings', type: notice.type },
+      data: { url: destination(notice), type: notice.type },
       android: { priority: 'high', notification: { channel_id: 'khobra_updates', sound: 'default' } },
     } }),
     signal: AbortSignal.timeout(10_000),
@@ -109,7 +110,7 @@ async function sendApns(token: string, notice: PushNotice): Promise<DeliveryResu
       ? { ok: true }
       : { ok: false, permanent: isPermanentApnsFailure(status, body), error: body || `APNs delivery failed (${status})` }))
     request.once('error', error => finish({ ok: false, error: error.message }))
-    request.end(JSON.stringify({ aps: { alert: notification, sound: 'default' }, url: '/bookings', type: notice.type }))
+    request.end(JSON.stringify({ aps: { alert: notification, sound: 'default' }, url: destination(notice), type: notice.type }))
   })
 }
 
@@ -135,7 +136,7 @@ async function deliverWebPush(db: PrismaClient, notices: PushNotice[]) {
       await db.notification.updateMany({ where: noticeWhere(notice, 'web_push'), data: { deliveryStatus: 'skipped', deliveryAttemptedAt: new Date(), deliveryError: 'No active web push subscription' } })
       continue
     }
-    const results = await Promise.allSettled(targets.map(subscription => webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ title: notice.title, body: notice.message, url: '/bookings' }))))
+    const results = await Promise.allSettled(targets.map(subscription => webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({ ...content(notice), url: destination(notice) }))))
     const failures = results.flatMap((result, index) => result.status === 'rejected' ? [{ result, target: targets[index]! }] : [])
     await db.notification.updateMany({ where: noticeWhere(notice, 'web_push'), data: { deliveryStatus: failures.length === results.length ? 'failed' : 'sent', deliveryAttemptedAt: new Date(), deliveryError: failures.length ? failures.map(({ result }) => String(result.reason?.message || result.reason)).join('; ').slice(0, 1000) : null } })
     await Promise.all(failures.map(({ result, target }) => [404, 410].includes(result.reason?.statusCode) ? db.pushSubscription.update({ where: { id: target.id }, data: { active: false } }) : Promise.resolve()))
