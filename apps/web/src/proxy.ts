@@ -10,6 +10,7 @@ const publicPaths = new Set([
   '/api/khobra-cleaning/auth/login',
   '/api/khobra-cleaning/auth/signup',
   '/api/khobra-cleaning/auth/logout',
+  '/api/khobra-cleaning/auth/me',
   '/api/khobra-cleaning/public/services',
   '/api/khobra-cleaning/public/bookings',
 ])
