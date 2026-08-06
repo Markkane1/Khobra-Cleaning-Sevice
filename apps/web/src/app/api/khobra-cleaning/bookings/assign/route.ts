@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { BookingService } from '@repo/application'
 import { AssignEmployeesSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
 const bookingRepository = new PrismaBookingRepository(db)
-const bookingService = new BookingService(bookingRepository)
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,7 +22,8 @@ export async function POST(req: NextRequest) {
     }
 
 
-    const updatedBooking = await bookingService.assignEmployees(
+    const updatedBooking = await bookingRepository.assignEmployees(
+      auth.session.tenantId,
       validated.bookingId,
       validated.employeeIds || [],
       validated.autoAssign,

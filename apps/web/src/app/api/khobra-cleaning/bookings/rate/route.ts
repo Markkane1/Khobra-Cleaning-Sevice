@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'You may only rate cleaners from your own booking' }, { status: 403 });
     }
 
-    const updated = await bookingRepo.rateBookingEmployees(parsed.bookingId, booking.customerId, parsed.ratings, parsed.overallRating, parsed.overallComment);
+    const updated = await bookingRepo.rateBookingEmployees(auth.session.tenantId, parsed.bookingId, booking.customerId, parsed.ratings, parsed.overallRating, parsed.overallComment);
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json(

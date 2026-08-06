@@ -150,16 +150,26 @@ async function main() {
 
   // 7. Standard Services
   const services = [
-    { name: 'Standard Home Cleaning', baseRate: 35.0, category: 'Residential', description: 'Comprehensive general home dusting, vacuuming, and surface sanitization.' },
-    { name: 'Deep Cleaning', baseRate: 60.0, category: 'Residential', description: 'Intensive deep sanitation of kitchen, bathrooms, fixtures, and hidden grime.' },
-    { name: 'Office Cleaning', baseRate: 45.0, category: 'Commercial', description: 'Professional corporate workstation, pantry, and meeting area cleaning.' },
-    { name: 'Carpet & Upholstery', baseRate: 50.0, category: 'Specialized', description: 'Steam and hot-water extraction for carpets, rugs, and fabric furniture.' },
-    { name: 'Window Cleaning', baseRate: 40.0, category: 'Specialized', description: 'Interior and exterior glass pane crystal clear cleaning.' },
+    { name: 'Standard Home Cleaning', image: 'standard-home-cleaning', baseRate: 35.0, category: 'Residential', description: 'Comprehensive general home dusting, vacuuming, and surface sanitization.' },
+    { name: 'Deep Cleaning', image: 'deep-cleaning', baseRate: 60.0, category: 'Residential', description: 'Intensive deep sanitation of kitchen, bathrooms, fixtures, and hidden grime.' },
+    { name: 'Office Cleaning', image: 'office-cleaning', baseRate: 45.0, category: 'Commercial', description: 'Professional corporate workstation, pantry, and meeting area cleaning.' },
+    { name: 'Carpet & Upholstery', image: 'carpet-upholstery', baseRate: 50.0, category: 'Specialized', description: 'Steam and hot-water extraction for carpets, rugs, and fabric furniture.' },
+    { name: 'Window Cleaning', image: 'window-cleaning', baseRate: 40.0, category: 'Specialized', description: 'Interior and exterior glass pane crystal clear cleaning.' },
   ]
 
   for (const s of services) {
     const existing = await prisma.service.findFirst({ where: { tenantId: tenant.id, name: s.name } })
-    if (!existing) {
+    const heroImages = [`/service-images/${s.image}-hero.webp`]
+    const galleryImages = [`/service-images/${s.image}.webp`]
+    if (existing) {
+      await prisma.service.update({
+        where: { id: existing.id },
+        data: {
+          heroImages: Array.isArray(existing.heroImages) && existing.heroImages.length ? existing.heroImages : heroImages,
+          galleryImages: Array.isArray(existing.galleryImages) && existing.galleryImages.length ? existing.galleryImages : galleryImages,
+        },
+      })
+    } else {
       await prisma.service.create({
         data: {
           tenantId: tenant.id,
@@ -167,6 +177,8 @@ async function main() {
           baseRate: s.baseRate,
           category: s.category,
           description: s.description,
+          heroImages,
+          galleryImages,
           status: 'active',
         },
       })

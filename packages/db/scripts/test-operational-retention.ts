@@ -28,16 +28,21 @@ async function main() {
     await tx.bookingStatusHistory.create({ data: { bookingId: booking.id, previousStatus: 'pending', newStatus: 'scheduled' } });
     const complaint = await tx.complaint.create({ data: { tenantId: tenant.id, complaintNo: `RET-C-${suffix}`, bookingId: booking.id, description: 'Retention test' } });
     const trip = await tx.trip.create({ data: { tenantId: tenant.id, driverId: tenant.drivers[0].id, date: new Date(), stops: { create: { type: 'pickup' } } } });
+    const foreignTenant = await tx.tenant.create({ data: { name: `Foreign ${suffix}`, slug: `foreign-${suffix}` } });
     const client = tx as unknown as PrismaClient;
 
-    await new PrismaComplaintRepository(client).delete(complaint.id);
-    await new PrismaTripRepository(client).delete(trip.id);
-    await new PrismaBookingRepository(client).delete(booking.id);
+    assert.equal(await new PrismaBookingRepository(client).findById(foreignTenant.id, booking.id), null);
+    await assert.rejects(new PrismaBookingRepository(client).delete(foreignTenant.id, booking.id));
+    assert.equal((await tx.booking.findUniqueOrThrow({ where: { id: booking.id } })).deletedAt, null);
+
+    await new PrismaComplaintRepository(client).delete(tenant.id, complaint.id);
+    await new PrismaTripRepository(client).delete(tenant.id, trip.id);
+    await new PrismaBookingRepository(client).delete(tenant.id, booking.id);
     await new PrismaServiceRepository(client).delete(tenant.id, service.id);
 
-    assert.equal(await new PrismaComplaintRepository(client).findById(complaint.id), null);
-    assert.equal(await new PrismaTripRepository(client).findById(trip.id), null);
-    assert.equal(await new PrismaBookingRepository(client).findById(booking.id), null);
+    assert.equal(await new PrismaComplaintRepository(client).findById(tenant.id, complaint.id), null);
+    assert.equal(await new PrismaTripRepository(client).findById(tenant.id, trip.id), null);
+    assert.equal(await new PrismaBookingRepository(client).findById(tenant.id, booking.id), null);
     assert.equal(await new PrismaServiceRepository(client).findById(tenant.id, service.id), null);
     assert((await tx.complaint.findUnique({ where: { id: complaint.id } }))?.deletedAt);
     assert((await tx.trip.findUnique({ where: { id: trip.id }, include: { stops: true } }))?.stops.length === 1);
@@ -53,5 +58,5 @@ async function main() {
 }
 
 main()
-  .then(() => console.log('Operational records are hidden after deletion while relational history is retained.'))
+  .then(() => console.log('Operational records are tenant-isolated and hidden after deletion while relational history is retained.'))
   .catch(error => { console.error(error); process.exitCode = 1; });

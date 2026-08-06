@@ -36,10 +36,10 @@ export type BookingActor = { userId: string; role: 'admin' | 'driver' | 'custome
 
 export interface IBookingRepository {
   findManyByTenant(tenantId: string): Promise<Booking[]>;
-  findById(id: string): Promise<Booking | null>;
+  findById(tenantId: string, id: string): Promise<Booking | null>;
   create(tenantId: string, data: CreateBookingDTO): Promise<Booking>;
-  update(id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
-  assignEmployees(bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor): Promise<Booking>;
-  rateBookingEmployees(bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking>;
-  delete(id: string): Promise<void>;
+  update(tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
+  assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor): Promise<Booking>;
+  rateBookingEmployees(tenantId: string, bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking>;
+  delete(tenantId: string, id: string): Promise<void>;
 }

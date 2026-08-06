@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { BookingService } from '@repo/application'
 import { CreateBookingSchema, parseTimeToMinutes, zonedDateTimeToUtc } from '@repo/core'
 import { broadcast } from '@/lib/broadcast'
 import { getAuthSession } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 
-const bookingService = new BookingService(new PrismaBookingRepository(db))
+const bookingRepository = new PrismaBookingRepository(db)
 const PublicBookingSchema = z.object({
   serviceId: z.string().min(1),
   name: z.string().trim().min(2).max(80),
@@ -72,7 +71,7 @@ export async function POST(req: NextRequest) {
       createdBy: authSession.userId,
       preferredPaymentMethod: input.preferredPaymentMethod,
     })
-    const booking = await bookingService.createBooking(tenant.id, bookingData)
+    const booking = await bookingRepository.create(tenant.id, bookingData)
     broadcast('booking:created', { bookingNo: booking.bookingNo, status: booking.status, service: service.name }, tenant.id)
     return NextResponse.json({ bookingNo: booking.bookingNo, total: booking.netAmount, service: service.name }, { status: 201 })
   } catch (error) {

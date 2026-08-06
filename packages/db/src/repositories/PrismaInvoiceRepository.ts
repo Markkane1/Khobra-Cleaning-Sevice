@@ -24,16 +24,16 @@ export class PrismaInvoiceRepository implements IInvoiceRepository {
     });
   }
 
-  async updateInvoice(id: string, data: any): Promise<any> {
+  async updateInvoice(tenantId: string, id: string, data: any): Promise<any> {
     return this.prisma.invoice.update({
-      where: { id },
+      where: { id, tenantId },
       data,
     });
   }
 
-  async getInvoiceById(id: string): Promise<any> {
-    return this.prisma.invoice.findUnique({
-      where: { id },
+  async getInvoiceById(tenantId: string, id: string): Promise<any> {
+    return this.prisma.invoice.findFirst({
+      where: { id, tenantId },
       include: {
         customer: { include: { user: { select: { name: true, email: true, phone: true } } } },
         booking: { include: { service: { select: { name: true } } } },

@@ -81,9 +81,9 @@ export class PrismaBookingRepository implements IBookingRepository {
     }) as unknown as Booking[];
   }
 
-  async findById(id: string): Promise<Booking | null> {
+  async findById(tenantId: string, id: string): Promise<Booking | null> {
     return this.db.booking.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
       include: {
         customer: { include: { user: { select: { name: true } } } },
         driver: { include: { user: { select: { name: true } } } },
@@ -388,16 +388,16 @@ export class PrismaBookingRepository implements IBookingRepository {
     return createdBookings[0]!;
   }
 
-  async update(id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
-    const result = await this.db.$transaction(tx => this.updateWithDb(tx, id, data, actor, requiredDriverId, requiredEmployeeId));
+  async update(tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
+    const result = await this.db.$transaction(tx => this.updateWithDb(tx, tenantId, id, data, actor, requiredDriverId, requiredEmployeeId));
     await notifyBookingStatusChange(this.db, id, result.transition);
     return result.booking;
   }
 
-  private async updateWithDb(db: any, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<{ booking: Booking; transition?: StatusTransition }> {
-    await db.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${id} FOR UPDATE`);
-    const existing = await db.booking.findUnique({
-      where: { id },
+  private async updateWithDb(db: any, tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<{ booking: Booking; transition?: StatusTransition }> {
+    await db.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`);
+    const existing = await db.booking.findFirst({
+      where: { id, tenantId },
       include: { items: true, materials: true, assignments: { include: { employee: { include: { user: { select: { name: true } } } } } } },
     });
     if (!existing) throw new Error('Booking not found');
@@ -638,7 +638,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     }
 
     const updated = await db.booking.update({
-      where: { id },
+      where: { id, tenantId },
       data: updateData,
       include: {
         customer: { include: { user: { select: { name: true } } } },
@@ -656,9 +656,9 @@ export class PrismaBookingRepository implements IBookingRepository {
     return { booking: updated, transition };
   }
 
-  async assignEmployees(bookingId: string, employeeIds: string[], autoAssign: boolean = false, actor?: BookingActor): Promise<Booking> {
-    const existing = await this.db.booking.findUnique({
-      where: { id: bookingId },
+  async assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign: boolean = false, actor?: BookingActor): Promise<Booking> {
+    const existing = await this.db.booking.findFirst({
+      where: { id: bookingId, tenantId },
       include: {
         items: { include: { service: true } },
         service: true,
@@ -928,7 +928,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     });
 
     const booking = await tx.booking.update({
-      where: { id: bookingId },
+      where: { id: bookingId, tenantId },
       data: {
         employeeCount: newEmployeeCount,
         materialsCost: pricing.materialsSubtotal,
@@ -954,10 +954,10 @@ export class PrismaBookingRepository implements IBookingRepository {
     return result.booking;
   }
 
-  async rateBookingEmployees(bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking> {
+  async rateBookingEmployees(tenantId: string, bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking> {
     await this.db.$transaction(async tx => {
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
-      const booking = await tx.booking.findUnique({ where: { id: bookingId }, include: { assignments: true, rating: true } });
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} AND "tenantId" = ${tenantId} FOR UPDATE`);
+      const booking = await tx.booking.findFirst({ where: { id: bookingId, tenantId }, include: { assignments: true, rating: true } });
       if (!booking) throw new Error('Booking not found');
       if (booking.customerId !== customerId) throw new Error('You may only rate your own booking');
       if (booking.status !== 'completed') throw new Error('Customer rating can only be submitted for completed bookings');
@@ -974,12 +974,12 @@ export class PrismaBookingRepository implements IBookingRepository {
         data: { tenantId: booking.tenantId, bookingId, customerId, overallRating, comment: overallComment || null },
       });
     });
-    return this.findById(bookingId) as Promise<Booking>;
+    return this.findById(tenantId, bookingId) as Promise<Booking>;
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(tenantId: string, id: string): Promise<void> {
     await this.db.booking.update({
-      where: { id },
+      where: { id, tenantId },
       data: { status: 'cancelled', cancellationReason: 'Archived by administrator', deletedAt: new Date() },
     });
   }

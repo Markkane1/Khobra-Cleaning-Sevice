@@ -57,7 +57,7 @@ export async function PUT(req: NextRequest) {
     const existing = await db.invoice.findFirst({ where: { id: validatedData.id, tenantId: auth.session.tenantId } })
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     if (validatedData.status && Number(existing.paidAmount) > 0) return NextResponse.json({ error: 'Invoice status is controlled by its payment transactions' }, { status: 400 })
-    const updated = await invoiceService.updateInvoice(validatedData)
+    const updated = await invoiceService.updateInvoice(auth.session.tenantId, validatedData)
     
     broadcast('invoice:updated', { invoiceNo: (updated as any).invoiceNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)

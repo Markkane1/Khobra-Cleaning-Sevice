@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaTripRepository } from '@repo/db'
-import { TripService } from '@repo/application'
 import { CreateTripSchema, UpdateTripSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
 const tripRepository = new PrismaTripRepository(db as any)
-const tripService = new TripService(tripRepository)
 
 export async function GET(req: NextRequest) {
   try {
     const auth = await requireAuth(req, ['admin', 'driver'])
     if ('response' in auth) return auth.response
 
-    const trips = await tripService.getTrips(auth.session.tenantId)
+    const trips = await tripRepository.findManyByTenant(auth.session.tenantId)
     if (auth.session.role === 'admin') return NextResponse.json(trips)
     const driver = await db.driver.findFirst({ where: { tenantId: auth.session.tenantId, userId: auth.session.userId } })
     return NextResponse.json(trips.filter(trip => trip.driverId === driver?.id))
@@ -31,7 +29,7 @@ export async function POST(req: NextRequest) {
     const validatedData = CreateTripSchema.parse(body)
     if (!await db.driver.findFirst({ where: { id: validatedData.driverId, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
     
-    const trip = await tripService.createTrip(auth.session.tenantId, validatedData)
+    const trip = await tripRepository.create(auth.session.tenantId, validatedData)
     
     broadcast('dispatch:assigned', { tripId: trip.id, driverId: validatedData.driverId }, auth.session.tenantId)
     return NextResponse.json(trip, { status: 201 })
@@ -60,7 +58,7 @@ export async function PUT(req: NextRequest) {
       }
     }
     
-    const updated = await tripService.updateTrip(auth.session.tenantId, validatedData)
+    const updated = await tripRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     
     broadcast('dispatch:updated', { tripId: updated.id, status: validatedData.status }, auth.session.tenantId)
     return NextResponse.json(updated)
@@ -79,7 +77,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     if (!await db.trip.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
 
-    await tripService.deleteTrip(auth.session.tenantId, id)
+    await tripRepository.delete(auth.session.tenantId, id)
     broadcast('dispatch:updated', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
   } catch {

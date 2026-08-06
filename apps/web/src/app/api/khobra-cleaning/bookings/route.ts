@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { BookingService } from '@repo/application'
 import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, parseTimeToMinutes } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 
 const bookingRepository = new PrismaBookingRepository(db)
-const bookingService = new BookingService(bookingRepository)
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,7 +15,7 @@ export async function GET(req: NextRequest) {
     const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
     if (!tenant) return NextResponse.json([])
     
-    let bookings = await bookingService.getBookings(tenant.id)
+    let bookings = await bookingRepository.findManyByTenant(tenant.id)
     if (auth.session.role === 'customer') {
       const customer = await db.customer.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
       bookings = bookings.filter(booking => booking.customerId === customer?.id)
@@ -63,7 +61,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Customer is not allowed to create this booking' }, { status: 403 })
     }
     
-    const booking = await bookingService.createBooking(tenant.id, { ...validatedData, createdBy: auth.session.role })
+    const booking = await bookingRepository.create(tenant.id, { ...validatedData, createdBy: auth.session.role })
     
     broadcast('booking:created', { bookingNo: booking.bookingNo, status: 'pending', service: booking.service?.name }, auth.session.tenantId)
     return NextResponse.json(booking, { status: 201 })
@@ -126,7 +124,7 @@ export async function PUT(req: NextRequest) {
       : role === 'customer'
         ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason, cancelledBy: 'customer' as const }
         : { id: validatedData.id, status: validatedData.status }
-    const updated = await bookingService.updateBooking(updateData, { userId: auth.session.userId, role, name: auth.session.name }, authorizedDriverId, authorizedEmployeeId)
+    const updated = await bookingRepository.update(auth.session.tenantId, updateData.id, updateData, { userId: auth.session.userId, role, name: auth.session.name }, authorizedDriverId, authorizedEmployeeId)
     
     broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)
@@ -152,7 +150,7 @@ export async function DELETE(req: NextRequest) {
     
     const booking = await db.booking.findFirst({ where: { id, tenantId: auth.session.tenantId } })
     if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
-    await bookingService.deleteBooking(id)
+    await bookingRepository.delete(auth.session.tenantId, id)
     
     broadcast('booking:deleted', { bookingNo: booking?.bookingNo }, auth.session.tenantId)
     return NextResponse.json({ success: true })

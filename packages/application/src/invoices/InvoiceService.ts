@@ -14,8 +14,8 @@ export class InvoiceService {
     return this.invoiceRepository.createInvoice(tenantId, invoiceNo, data);
   }
 
-  async updateInvoice(data: UpdateInvoiceDTO) {
+  async updateInvoice(tenantId: string, data: UpdateInvoiceDTO) {
     const { id, ...updateData } = data;
-    return this.invoiceRepository.updateInvoice(id, updateData);
+    return this.invoiceRepository.updateInvoice(tenantId, id, updateData);
   }
 }

@@ -3,6 +3,7 @@ import { FileValidationSchema, UploadConfig } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { db } from '@repo/db'
+import { uploadToCloudinary } from '@/lib/cloudinary'
 
 // ponytail: magic byte validator function
 function isValidSignature(type: string, bytes: Uint8Array): boolean {
@@ -55,22 +56,9 @@ export async function POST(request: NextRequest) {
     }
 
     const folder = `${process.env.CLOUDINARY_FOLDER || 'khobra'}/${auth.session.tenantId}/${purpose}`
-    const upload = new FormData()
-    const blob = new Blob([bytes], { type: file.type })
-    upload.append('file', blob, file.name)
-    upload.append('folder', folder)
+    const result = await uploadToCloudinary({ cloudName, apiKey, apiSecret, folder }, { name: file.name, type: file.type, bytes })
 
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/auto/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')}` },
-      body: upload,
-    })
-    const result = await response.json()
-    if (!response.ok || !result.secure_url) {
-      return NextResponse.json({ error: result.error?.message || 'Cloudinary upload failed.' }, { status: 502 })
-    }
-
-    const asset = await db.uploadAsset.create({ data: { tenantId: auth.session.tenantId, userId: auth.session.userId, url: result.secure_url, publicId: result.public_id, purpose, mimeType: file.type, size: file.size } })
+    const asset = await db.uploadAsset.create({ data: { tenantId: auth.session.tenantId, userId: auth.session.userId, url: result.url, publicId: result.publicId, purpose, mimeType: file.type, size: file.size } })
     return NextResponse.json({ url: asset.url, name: file.name, size: file.size, type: file.type }, { status: 201 })
   } catch (error) {
     console.error('Cloudinary upload error:', error)

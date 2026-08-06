@@ -50,7 +50,7 @@ export class PrismaVendorItemRepository implements IVendorItemRepository {
     if (!await this.findById(tenantId, id)) throw new Error('VendorItem not found');
     const { id: _id, ...updateData } = data;
     return this.db.vendorItem.update({
-      where: { id },
+      where: { id, vendor: { tenantId } },
       data: {
         unitPrice: updateData.unitCost,
         leadTimeDays: updateData.leadTimeDays,
@@ -64,6 +64,6 @@ export class PrismaVendorItemRepository implements IVendorItemRepository {
 
   async delete(tenantId: string, id: string): Promise<void> {
     if (!await this.findById(tenantId, id)) throw new Error('VendorItem not found');
-    await this.db.vendorItem.delete({ where: { id } });
+    await this.db.vendorItem.delete({ where: { id, vendor: { tenantId } } });
   }
 }
