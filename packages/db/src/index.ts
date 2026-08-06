@@ -20,6 +20,7 @@ export * from './repositories/PrismaStatsRepository.ts';
 export * from './transaction-snapshot.ts';
 export * from './reference-sequence.ts';
 export * from './password.ts';
+export * from './push-notifications.ts';
 export * from './repositories/PrismaTripRepository.ts';
 export * from './repositories/PrismaVendorItemRepository.ts';
 export * from './repositories/PrismaVendorRepository.ts';

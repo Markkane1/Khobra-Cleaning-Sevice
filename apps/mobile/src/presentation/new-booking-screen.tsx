@@ -6,14 +6,14 @@ import { createBooking } from '../application/bookings'
 import { loadOperationRecords } from '../application/operations'
 import type { Session } from '../domain/auth/types'
 import { khobraBookingGateway, khobraOperationsGateway } from '../infrastructure/http/khobra-gateways'
-import { cardShadow, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SecondaryButton } from './mobile-ui'
+import { cardShadow, LoadingState, localDateValue, MessageState, PageHeading, palette, PrimaryButton, SecondaryButton } from './mobile-ui'
 
 export function NewBookingScreen({ session, onCreated, onCancel }: { session: Session; onCreated: () => void; onCancel: () => void }) {
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([])
   const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([])
   const [customerId, setCustomerId] = useState('')
   const [serviceIds, setServiceIds] = useState<string[]>([])
-  const [date, setDate] = useState(new Date(Date.now() + 86_400_000).toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); return localDateValue(tomorrow) })
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('11:00')
   const [address, setAddress] = useState('')
@@ -56,7 +56,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
     {session.user.role === 'admin' ? <View style={styles.section}><View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>1</Text></View><View><Text style={styles.sectionHeading}>Choose a customer</Text><Text style={styles.sectionHint}>The booking will be created for this customer.</Text></View></View><View style={styles.services}>{customers.map(customer => <Pressable accessibilityRole="radio" accessibilityState={{ selected: customer.id === customerId }} key={customer.id} onPress={() => setCustomerId(customer.id)} style={[styles.service, customer.id === customerId && styles.selectedService]}><Ionicons name="person-outline" size={19} color={customer.id === customerId ? '#fff' : palette.primary} /><Text style={[styles.serviceText, customer.id === customerId && styles.selectedText]}>{customer.name}</Text></Pressable>)}</View></View> : null}
 
     <View style={styles.section}>
-      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>1</Text></View><View><Text style={styles.sectionHeading}>Choose a service</Text><Text style={styles.sectionHint}>Select the cleaning service you need.</Text></View></View>
+      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>{session.user.role === 'admin' ? '2' : '1'}</Text></View><View><Text style={styles.sectionHeading}>Choose a service</Text><Text style={styles.sectionHint}>Select the cleaning service you need.</Text></View></View>
       <View style={styles.services}>{services.map((service) => {
         const selected = serviceIds.includes(service.id)
         return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={service.id} onPress={() => setServiceIds(current => selected ? current.filter(id => id !== service.id) : [...current, service.id])} style={[styles.service, selected && styles.selectedService]}>
@@ -68,7 +68,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
     </View>
 
     <View style={styles.section}>
-      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>2</Text></View><View><Text style={styles.sectionHeading}>Date and time</Text><Text style={styles.sectionHint}>Use local date and 24-hour time.</Text></View></View>
+      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>{session.user.role === 'admin' ? '3' : '2'}</Text></View><View><Text style={styles.sectionHeading}>Date and time</Text><Text style={styles.sectionHint}>Use local date and 24-hour time.</Text></View></View>
       <Field label="Service date" icon="calendar-outline" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
       <View style={styles.row}>
         <View style={styles.half}><Field label="Start" icon="time-outline" value={startTime} onChangeText={setStartTime} placeholder="09:00" /></View>
@@ -77,7 +77,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
     </View>
 
     <View style={styles.section}>
-      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>3</Text></View><View><Text style={styles.sectionHeading}>Service address</Text><Text style={styles.sectionHint}>Tell the team where to arrive.</Text></View></View>
+      <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>{session.user.role === 'admin' ? '4' : '3'}</Text></View><View><Text style={styles.sectionHeading}>Service address</Text><Text style={styles.sectionHint}>Tell the team where to arrive.</Text></View></View>
       <Field label="Address" icon="location-outline" value={address} onChangeText={setAddress} placeholder="Building, street, apartment" autoComplete="street-address" />
     </View>
 

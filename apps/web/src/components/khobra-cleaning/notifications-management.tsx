@@ -52,8 +52,8 @@ export function NotificationManagement() {
 
   // Fetch Notifications
   const { data: notifications = [], isLoading, refetch } = useQuery<NotificationItem[]>({
-    queryKey: ['notifications'],
-    queryFn: () => fetch('/api/khobra-cleaning/notifications').then(r => r.json()),
+    queryKey: ['notifications', 'audit'],
+    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app').then(r => r.json()),
   })
 
   // Fetch Users for Target User Selection
@@ -65,25 +65,29 @@ export function NotificationManagement() {
 
   // Create & Dispatch Notification Mutation
   const createNotifMut = useMutation({
-    mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/notifications', {
+    mutationFn: async (d: any) => {
+      const response = await fetch('/api/khobra-cleaning/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to dispatch notification')
+      return result
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       toast.success('Notification broadcast dispatched successfully!')
       setOpenCompose(false)
       setComposeForm({ title: '', message: '', type: 'info', targetAudience: 'all', selectedUserId: '' })
     },
-    onError: () => toast.error('Failed to dispatch notification'),
+    onError: (error: Error) => toast.error(error.message),
   })
 
   // Mark All Read Mutation
   const markAllReadMut = useMutation({
     mutationFn: () =>
-      fetch('/api/khobra-cleaning/notifications', {
+      fetch('/api/khobra-cleaning/notifications?channel=in_app', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ markAllRead: true }),
@@ -98,6 +102,10 @@ export function NotificationManagement() {
     e.preventDefault()
     if (!composeForm.title || !composeForm.message) {
       toast.error('Title and message are required')
+      return
+    }
+    if (composeForm.targetAudience === 'user' && !composeForm.selectedUserId) {
+      toast.error('Select a recipient user')
       return
     }
 

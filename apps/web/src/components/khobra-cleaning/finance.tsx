@@ -20,7 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { exportToCSV } from '@/lib/csv-export'
+import { downloadBlob, exportToCSV } from '@/lib/csv-export'
 import { useSortable } from '@/hooks/use-sort'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -239,12 +239,7 @@ export function Finance() {
       const res = await fetch(`/api/khobra-cleaning/invoice-pdf?id=${invoiceId}`)
       if (!res.ok) throw new Error('Failed')
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${invoiceNo}.pdf`
-      link.click()
-      URL.revokeObjectURL(url)
+      await downloadBlob(blob, `${invoiceNo}.pdf`)
       toast.success(`PDF downloaded: ${invoiceNo}`)
     } catch {
       toast.error('Failed to generate PDF')

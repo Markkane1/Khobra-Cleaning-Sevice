@@ -52,6 +52,7 @@ model Tenant {
   uploadAssets              UploadAsset[]
   paymentEvents             PaymentEvent[]
   pushSubscriptions         PushSubscription[]
+  nativePushTokens          NativePushToken[]
 }
 
 model UploadAsset {
@@ -180,6 +181,7 @@ model User {
   customer Customer?
   bookingStatusChanges BookingStatusHistory[] @relation("BookingStatusActor")
   pushSubscriptions   PushSubscription[]
+  nativePushTokens    NativePushToken[]
   bankAccountsCreated CompanyBankAccount[] @relation("BankAccountCreator")
   bankAccountsUpdated CompanyBankAccount[] @relation("BankAccountUpdater")
   bankAccountsActivated CompanyBankAccount[] @relation("BankAccountActivator")
@@ -826,6 +828,7 @@ model PayrollRecord {
 
 model Notification {
   id                  String    @id @default(cuid())
+  deliveryKey         String?
   tenantId            String
   userId              String?
   statusHistoryId     String?
@@ -846,6 +849,7 @@ model Notification {
 
   @@unique([statusHistoryId, userId, channel])
   @@unique([pickupAlertId, userId, channel])
+  @@unique([deliveryKey, userId, channel])
 }
 
 model PushSubscription {
@@ -855,6 +859,22 @@ model PushSubscription {
   endpoint  String   @unique
   p256dh    String
   auth      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, active])
+}
+
+model NativePushToken {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  platform  String
+  token     String   @unique
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

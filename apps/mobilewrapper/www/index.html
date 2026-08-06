@@ -3,7 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Khobra Cleaning</title>
+    <meta name="theme-color" content="#047857" />
+    <title>Khobra Cleaning — Offline</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: #f0fdf4; color: #14281d; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
+      main { max-width: 360px; }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { margin: 0 0 20px; color: #466153; }
+      button { min-height: 48px; border: 0; border-radius: 12px; padding: 0 24px; background: #047857; color: white; font: inherit; font-weight: 700; }
+      button:focus-visible { outline: 3px solid #10b981; outline-offset: 3px; }
+    </style>
   </head>
-  <body>Khobra Cleaning requires a connection to the web dashboard.</body>
+  <body><main><h1>You're offline</h1><p>Khobra Cleaning needs an internet connection. Check your connection and try again.</p><button type="button" onclick="location.reload()">Try again</button></main></body>
 </html>

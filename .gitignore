@@ -29,6 +29,13 @@ dist/
 .env.development
 !.env.example
 
+# Native signing and push credentials
+**/google-services.json
+**/GoogleService-Info.plist
+*.jks
+*.keystore
+*.p8
+
 # Local test & dev artifacts
 .playwright-cli/
 playwright-report/

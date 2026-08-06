@@ -1,7 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { IBookingRepository, Booking, BookingActor } from '@repo/application';
 import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, employeeHasRequiredSkills, getRequiredSkills, calendarDayRange } from '@repo/core';
-import { deliverWebPush } from '../push-notifications';
+import { deliverPushNotifications } from '../push-notifications';
 import { nextReference } from '../reference-sequence';
 
 type StatusTransition = { id: string; previousStatus: string; newStatus: string; createdAt: Date };
@@ -38,6 +38,7 @@ export async function notifyBookingStatusChange(db: PrismaClient, bookingId: str
     const noticeData = [...recipients].map(([userId, audience]) => ({
       tenantId: booking.tenantId,
       userId,
+      deliveryKey: `booking:${transition.id}`,
       statusHistoryId: transition.id,
       title: `Booking ${booking.bookingNo}: ${newLabel}`,
       message: `${audience === 'customer' ? customerExplanation[transition.newStatus] || `Booking ${booking.bookingNo} is now ${newLabel}.` : `Booking ${booking.bookingNo} has been marked ${newLabel}.`} Previous status: ${previousLabel}. New status: ${newLabel}. Changed at: ${changedAt}.`,
@@ -52,7 +53,7 @@ export async function notifyBookingStatusChange(db: PrismaClient, bookingId: str
         deliveryAttemptedAt: new Date(),
       })),
     });
-    await deliverWebPush(db, noticeData);
+    await deliverPushNotifications(db, noticeData);
   } catch (error) {
     console.error(`Booking ${bookingId} notification delivery failed`, error);
   }

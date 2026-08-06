@@ -14,6 +14,10 @@
     "test:auth": "node --experimental-strip-types --test src/lib/auth.test.mjs"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/push-notifications": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
     "@prisma/client": "^6.11.1",
     "@repo/application": "*",
     "@repo/core": "*",

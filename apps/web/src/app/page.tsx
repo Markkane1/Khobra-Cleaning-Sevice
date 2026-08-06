@@ -26,7 +26,7 @@ import {
 import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useRealtime } from '@/hooks/use-realtime'
-import { PushToggle } from '@/components/push-toggle'
+import { NativePushBridge, PushToggle } from '@/components/push-toggle'
 
 const Dashboard = dynamic(() => import('@/components/khobra-cleaning/dashboard').then(m => ({ default: m.Dashboard })), { loading: () => <PageSkeleton />, ssr: false })
 const Services = dynamic(() => import('@/components/khobra-cleaning/services').then(m => ({ default: m.Services })), { loading: () => <PageSkeleton />, ssr: false })
@@ -339,8 +339,8 @@ function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange
   const { subscribe, onEvent } = useRealtime()
   useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['notifications'] })) }, [onEvent, qc, subscribe])
   const { data: notifications = [] } = useQuery<any[]>({
-    queryKey: ['notifications'],
-    queryFn: () => fetch('/api/khobra-cleaning/notifications').then(r => r.json()),
+    queryKey: ['notifications', 'in_app'],
+    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app').then(r => r.json()),
   })
 
   const markReadMut = useMutation({
@@ -349,7 +349,7 @@ function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange
   })
 
   const markAllReadMut = useMutation({
-    mutationFn: () => fetch('/api/khobra-cleaning/notifications', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }).then(r => r.json()),
+    mutationFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
@@ -583,8 +583,8 @@ export default function HomePage() {
     ]),
   ]
 
-  if (!sessionChecked) return <div className="min-h-screen bg-background p-8"><PageSkeleton /></div>
-  if (!currentUser) return <AuthPage />
+  if (!sessionChecked) return <><NativePushBridge /><div className="min-h-screen bg-background p-8"><PageSkeleton /></div></>
+  if (!currentUser) return <><NativePushBridge /><AuthPage /></>
 
   const sidebar = (
     <div className="flex flex-col h-full overflow-hidden">
@@ -672,7 +672,8 @@ export default function HomePage() {
   )
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-dvh bg-background overflow-hidden">
+      <NativePushBridge userId={currentUser.userId} />
       {/* Desktop Sidebar — static, no portal */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-sidebar/80 backdrop-blur-xl border-r border-sidebar-border shadow-xl z-20">
         {sidebar}
@@ -687,7 +688,7 @@ export default function HomePage() {
             onClick={() => setSidebarOpen(false)}
           />
           {/* Drawer */}
-          <div className="fixed inset-y-0 left-0 z-50 w-64 bg-sidebar backdrop-blur-xl border-r border-sidebar-border shadow-xl lg:hidden flex flex-col">
+          <div className="mobile-safe-drawer fixed inset-y-0 left-0 z-50 w-64 bg-sidebar backdrop-blur-xl border-r border-sidebar-border shadow-xl lg:hidden flex flex-col">
             {sidebar}
           </div>
         </>
@@ -702,7 +703,7 @@ export default function HomePage() {
       {/* Main Content */}
       <main className="flex-1 lg:pl-64 flex flex-col min-h-0">
         {/* Header */}
-        <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 lg:px-6 bg-background/80 backdrop-blur-md">
+        <header className="mobile-safe-header sticky top-0 z-30 flex items-center justify-between lg:px-6 bg-background/80 backdrop-blur-md">
           <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
           <div className="flex items-center gap-3">
@@ -710,7 +711,7 @@ export default function HomePage() {
               <Menu className="h-5 w-5" />
             </Button>
             <div className="lg:hidden flex items-center gap-2">
-              <Logo size={28} showText={true} textClassName="font-bold text-xs truncate" subtextClassName="hidden" />
+              <Logo size={28} showText={true} textClassName="hidden min-[390px]:block font-bold text-xs truncate" subtextClassName="hidden" />
             </div>
             {/* Breadcrumb-style title */}
             <div className="hidden lg:flex items-center gap-2">
@@ -796,8 +797,8 @@ export default function HomePage() {
                         {currentUser.name ? currentUser.name.slice(0, 2).toUpperCase() : 'US'}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="font-semibold text-xs max-w-[120px] truncate">{currentUser.name}</span>
-                    <Badge className={roleColors[currentRole]} variant="secondary">
+                    <span className="hidden sm:inline font-semibold text-xs max-w-[120px] truncate">{currentUser.name}</span>
+                    <Badge className={`hidden sm:inline-flex ${roleColors[currentRole]}`} variant="secondary">
                       {roleLabels[currentRole]}
                     </Badge>
                   </Button>
@@ -843,7 +844,7 @@ export default function HomePage() {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <div className="flex-1 overflow-y-auto p-2 sm:p-4 lg:p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentView}
@@ -852,7 +853,7 @@ export default function HomePage() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+              <main className="p-2 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 <ViewRenderer view={currentView} currentRole={currentRole} allowedPages={allowedPages} />
               </main>
             </motion.div>
@@ -860,7 +861,7 @@ export default function HomePage() {
         </div>
 
         {/* Sticky Footer */}
-        <footer className="relative mt-auto">
+        <footer className="relative mt-auto hidden sm:block">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
           <div className="bg-card px-4 lg:px-6 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-3">

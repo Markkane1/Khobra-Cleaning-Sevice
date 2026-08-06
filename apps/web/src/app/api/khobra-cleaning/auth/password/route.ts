@@ -16,6 +16,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 400 })
   }
 
-  await db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(newPassword), sessionVersion: { increment: 1 } } })
+  await db.$transaction([
+    db.user.update({ where: { id: user.id }, data: { passwordHash: hashPassword(newPassword), sessionVersion: { increment: 1 } } }),
+    db.pushSubscription.updateMany({ where: { userId: user.id }, data: { active: false } }),
+    db.nativePushToken.updateMany({ where: { userId: user.id }, data: { active: false } }),
+  ])
   return NextResponse.json({ success: true })
 }

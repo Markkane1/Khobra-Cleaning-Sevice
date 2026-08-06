@@ -88,6 +88,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (session: Session) => v
 
           <Text style={styles.title}>{mode === 'login' ? 'Welcome back' : 'Join Khobra'}</Text>
           <Text style={styles.description}>{mode === 'login' ? 'Sign in to manage your services and operations.' : 'Create your customer account in a few details.'}</Text>
+          {!apiBaseUrl ? <View style={styles.notice}><Text style={styles.noticeText}>This app is not connected to the secure production service. Contact support.</Text></View> : null}
 
           {mode === 'login' ? <View style={styles.form}>
             <Field label="Email address" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />

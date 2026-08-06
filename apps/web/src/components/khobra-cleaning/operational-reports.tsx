@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { exportToCSV } from '@/lib/csv-export'
+import { downloadBlob, exportToCSV } from '@/lib/csv-export'
 
 type Row = Record<string, string | number>
 
@@ -29,7 +29,7 @@ async function exportPdf(title: string, rows: Row[]) {
   doc.setFontSize(15)
   doc.text(title, 14, 16)
   autoTable(doc, { startY: 22, head: [Object.keys(rows[0])], body: rows.map(row => Object.values(row)) })
-  doc.save(`${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`)
+  await downloadBlob(doc.output('blob'), `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`)
 }
 
 export function OperationalReports({ bookings, currency = 'AED' }: { bookings: any[]; currency?: string }) {

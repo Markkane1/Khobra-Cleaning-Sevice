@@ -4,16 +4,20 @@
   "private": true,
   "scripts": {
     "sync": "cap sync",
+    "sync:production": "node -e \"const u=new URL(process.env.CAPACITOR_SERVER_URL||'');if(u.protocol!=='https:'||u.origin!==u.href.replace(/\\/$/,''))throw Error('CAPACITOR_SERVER_URL must be an HTTPS origin with no path')\" && cap sync",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "run:android": "cap run android",
     "run:ios": "cap run ios",
-    "build:android": "npm run sync && cd android && gradlew assembleDebug"
+    "build:android": "node -e \"const fs=require('fs'),vars=['ANDROID_KEYSTORE_PATH','ANDROID_KEYSTORE_PASSWORD','ANDROID_KEY_ALIAS','ANDROID_KEY_PASSWORD','ANDROID_VERSION_CODE','ANDROID_VERSION_NAME'],missing=vars.filter(k=>!process.env[k]);if(missing.length)throw Error('Missing '+missing.join(', '));if(!/^\\d+$/.test(process.env.ANDROID_VERSION_CODE)||Number(process.env.ANDROID_VERSION_CODE)<1)throw Error('ANDROID_VERSION_CODE must be a positive integer');if(!fs.existsSync(process.env.ANDROID_KEYSTORE_PATH)||!fs.existsSync('android/app/google-services.json'))throw Error('Android keystore or google-services.json is missing')\" && npm run sync:production && cd android && gradlew bundleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
-    "@capacitor/ios": "^8.5.0"
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/ios": "^8.5.0",
+    "@capacitor/push-notifications": "^8.0.0",
+    "@capacitor/share": "^8.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0"

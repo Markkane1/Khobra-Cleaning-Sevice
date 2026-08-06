@@ -9,6 +9,13 @@
     "newArchEnabled": false,
     "android": {
       "package": "com.khobracleaning.app",
+      "googleServicesFile": "./google-services.json",
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#F1FBF8" }
     },
     "ios": {
@@ -16,6 +23,7 @@
     },
     "plugins": [
       "expo-secure-store",
+      "expo-notifications",
       [
         "@preeternal/react-native-cookie-manager",
         { "androidWebkitVersion": "1.16.0" }

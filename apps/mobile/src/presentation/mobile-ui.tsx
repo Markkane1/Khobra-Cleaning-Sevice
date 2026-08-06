@@ -18,6 +18,10 @@ export const palette = {
   warning: '#d97706',
 }
 
+export function localDateValue(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+}
+
 export const headingFont = Platform.select({ ios: 'Avenir Next', android: 'sans-serif-medium' })
 type IconName = ComponentProps<typeof Ionicons>['name']
 

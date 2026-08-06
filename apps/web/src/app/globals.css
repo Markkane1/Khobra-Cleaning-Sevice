@@ -124,6 +124,7 @@
     background-color: var(--background);
     background-attachment: fixed;
     scroll-behavior: smooth;
+    overscroll-behavior-y: none;
   }
 
   .dark body {
@@ -168,6 +169,23 @@
     background-color: var(--primary);
     color: var(--primary-foreground);
   }
+}
+
+.mobile-safe-header {
+  height: calc(4rem + max(env(safe-area-inset-top), var(--safe-area-inset-top, 0px)));
+  padding-top: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left), var(--safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right), var(--safe-area-inset-right, 0px));
+}
+
+.mobile-safe-drawer {
+  padding-top: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom), var(--safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+  .mobile-safe-header { height: 4rem; padding-top: 0; }
+  .mobile-safe-drawer { padding: 0; }
 }
 
 /* Radix portals are siblings: the dialog panel must sit above its overlay. */

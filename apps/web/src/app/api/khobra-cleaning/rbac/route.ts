@@ -36,11 +36,15 @@ export async function PUT(req: NextRequest) {
   if (typeof userId !== 'string' || typeof role !== 'string' || !isRoleId(role)) return NextResponse.json({ error: 'A user and one of the four supported roles are required.' }, { status: 400 })
   const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  const user = await db.user.update({
-    where: { id: target.id },
-    data: { role, sessionVersion: { increment: 1 } },
-    select: { id: true, name: true, email: true, role: true, status: true },
-  })
+  const [user] = await db.$transaction([
+    db.user.update({
+      where: { id: target.id },
+      data: { role, sessionVersion: { increment: 1 } },
+      select: { id: true, name: true, email: true, role: true, status: true },
+    }),
+    db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
+    db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
+  ])
   return NextResponse.json({ success: true, user })
 }
 
@@ -52,7 +56,11 @@ export async function PATCH(req: NextRequest) {
   const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
   const temporaryPassword = randomBytes(12).toString('base64url')
-  await db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), status: 'active', sessionVersion: { increment: 1 } } })
+  await db.$transaction([
+    db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), status: 'active', sessionVersion: { increment: 1 } } }),
+    db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
+    db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
+  ])
   return NextResponse.json({ temporaryPassword })
 }
 

@@ -14,9 +14,8 @@ import { NewBookingScreen } from './src/presentation/new-booking-screen'
 import { OperationsScreen } from './src/presentation/operations-screen'
 import { DriverExpensesScreen } from './src/presentation/driver-expenses-screen'
 import { clearWorkspaceSession, WorkspaceScreen } from './src/presentation/workspace-screen'
-import { setUnauthorizedHandler } from './src/infrastructure/http/api-client'
-
-const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:3000').replace(/\/$/, '') + '/api/khobra-cleaning'
+import { apiBaseUrl, setUnauthorizedHandler } from './src/infrastructure/http/api-client'
+import { registerNativePush } from './src/infrastructure/notifications/native-push'
 
 type MainScreen = 'overview' | 'bookings' | 'expenses' | 'operations' | 'workspace'
 type Screen = MainScreen | 'new-booking'
@@ -45,12 +44,16 @@ export default function App() {
     return () => clearTimeout(timeout)
   }, [session])
 
+  useEffect(() => {
+    if (session) void registerNativePush(session.token).catch(error => console.warn('Push registration failed', error))
+  }, [session])
+
   if (loading) return <SafeAreaView style={styles.screen}><LoadingState /></SafeAreaView>
 
   const signOut = async () => {
     try {
-      if (session?.token) {
-        await fetch(`${API_BASE}/auth/logout`, {
+      if (session?.token && apiBaseUrl) {
+        await fetch(`${apiBaseUrl}/api/khobra-cleaning/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${session.token}` },
         }).catch(() => null)
@@ -166,7 +169,7 @@ function Metric({ icon, label, value, tint, color }: { icon: React.ComponentProp
 
 function BottomNavigation({ screen, role, onChange }: { screen: MainScreen; role: Session['user']['role']; onChange: (screen: Screen) => void }) {
   return <View style={styles.nav}>
-    {navigation.filter(item => (item.id !== 'expenses' || role === 'driver') && (item.id !== 'operations' || role !== 'admin')).map((item) => {
+    {navigation.filter(item => item.id !== 'expenses' || role === 'driver').map((item) => {
       const active = screen === item.id
       return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => onChange(item.id)} style={styles.navItem}>
         <View style={[styles.navIcon, active && styles.activeNavIcon]}><Ionicons name={active ? item.activeIcon : item.icon} size={21} color={active ? '#fff' : palette.muted} /></View>

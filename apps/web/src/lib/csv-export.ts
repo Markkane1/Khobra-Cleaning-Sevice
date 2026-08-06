@@ -1,3 +1,33 @@
+import { Capacitor } from '@capacitor/core'
+import { toast } from 'sonner'
+
+const safeFilename = (value: string) => value.replace(/[^a-zA-Z0-9._-]+/g, '-')
+
+export async function downloadBlob(blob: Blob, filename: string) {
+  const name = safeFilename(filename)
+  if (Capacitor.isNativePlatform()) {
+    const [{ Directory, Filesystem }, { Share }] = await Promise.all([import('@capacitor/filesystem'), import('@capacitor/share')])
+    const data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(reader.error || new Error('Could not read export file'))
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+      reader.readAsDataURL(blob)
+    })
+    const file = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache, recursive: true })
+    await Share.share({ title: name, files: [file.uri], dialogTitle: `Save or share ${name}` })
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.hidden = true
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /**
  * Export data as CSV file download
  */
@@ -26,13 +56,11 @@ export function exportToCSV(data: Record<string, any>[], filename: string, colum
   )
 
   const csv = [header, ...rows].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;chars et=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${filename}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+  void downloadBlob(blob, `${filename}.csv`).catch(error => {
+    console.error('CSV export failed', error)
+    toast.error('CSV export failed')
+  })
 }
 
 /**

@@ -63,7 +63,6 @@ function RecordCard({ record, icon, index, fallbackTitle }: { record: OperationR
       <Text style={styles.title} numberOfLines={1}>{titleEntry ? String(titleEntry[1]) : `${fallbackTitle} ${index + 1}`}</Text>
       {details.map(([key, value]) => <Text key={key} style={styles.detail} numberOfLines={1}><Text style={styles.detailLabel}>{label(key)}:</Text> {String(value)}</Text>)}
     </View>
-    <Ionicons name="chevron-forward" size={19} color="#a3b5ad" />
   </View>
 }
 
@@ -86,7 +85,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { padding: 20, paddingBottom: 6 },
   modules: { gap: 8, paddingRight: 10 },
-  module: { minHeight: 39, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 13, paddingHorizontal: 13, backgroundColor: palette.surfaceMuted, borderWidth: 1, borderColor: '#e3eee9' },
+  module: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 13, paddingHorizontal: 13, backgroundColor: palette.surfaceMuted, borderWidth: 1, borderColor: '#e3eee9' },
   activeModule: { backgroundColor: palette.primary, borderColor: palette.primary },
   moduleText: { color: palette.muted, fontWeight: '700', fontSize: 12 },
   activeModuleText: { color: '#fff' },

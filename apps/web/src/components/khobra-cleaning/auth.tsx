@@ -149,14 +149,14 @@ export function AuthPage() {
 
         <Card className="border-0 shadow-xl backdrop-blur-xl bg-card/90 overflow-hidden relative">
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" />
-          <CardContent className="p-6">
+          <CardContent className="p-4 sm:p-6">
             <Tabs value={tab} onValueChange={(v) => handleTabChange(v as 'login' | 'signup')}>
               <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="login" className="gap-2">
+                <TabsTrigger value="login" className="min-h-11 gap-2">
                   <LogIn className="h-4 w-4" />
                   <span>Login</span>
                 </TabsTrigger>
-                <TabsTrigger value="signup" className="gap-2">
+                <TabsTrigger value="signup" className="min-h-11 gap-2">
                   <UserPlus className="h-4 w-4" />
                   <span>Customer Signup</span>
                 </TabsTrigger>
@@ -176,7 +176,7 @@ export function AuthPage() {
                         autoComplete="email"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
-                        className="pl-9 h-10"
+                        className="h-11 pl-9"
                         placeholder="user@khobra.ae"
                         required
                       />
@@ -194,7 +194,7 @@ export function AuthPage() {
                         autoComplete="current-password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
-                        className="pl-9 h-10"
+                        className="h-11 pl-9"
                         placeholder="••••••••"
                         required
                       />
@@ -203,7 +203,7 @@ export function AuthPage() {
 
                   <Turnstile key={`login-${captchaVersion}`} onVerify={setLoginCaptcha} />
 
-                  <Button type="submit" disabled={!loginCaptcha || loginMut.isPending} className="w-full bg-emerald-600 hover:bg-emerald-700 h-10 gap-2 font-medium">
+                  <Button type="submit" disabled={!loginCaptcha || loginMut.isPending} className="h-11 w-full gap-2 bg-emerald-600 font-medium hover:bg-emerald-700">
                     <span>Sign In to Portal</span>
                     <ArrowRight className="h-4 w-4" />
                   </Button>
@@ -230,13 +230,13 @@ export function AuthPage() {
                         value={signupForm.name}
                         onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
                         placeholder="John Doe"
-                        className="pl-9 h-9 text-xs"
+                        className="h-11 pl-9 text-xs"
                         required
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="signup-email" className="text-xs font-semibold">Email *</Label>
                       <div className="relative">
@@ -249,7 +249,7 @@ export function AuthPage() {
                           value={signupForm.email}
                           onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
                           placeholder="john@example.com"
-                          className="pl-9 h-9 text-xs"
+                          className="h-11 pl-9 text-xs"
                           required
                         />
                       </div>
@@ -268,14 +268,14 @@ export function AuthPage() {
 
                           onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
                           placeholder="+971 50..."
-                          className="pl-9 h-9 text-xs"
+                          className="h-11 pl-9 text-xs"
                           required
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="signup-city" className="text-xs font-semibold">City</Label>
                       <Select
@@ -283,7 +283,7 @@ export function AuthPage() {
                         value={signupForm.city}
                         onValueChange={(v) => setSignupForm({ ...signupForm, city: v })}
                       >
-                        <SelectTrigger id="signup-city" className="h-9 text-xs">
+                        <SelectTrigger id="signup-city" className="min-h-11 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -303,7 +303,7 @@ export function AuthPage() {
                         value={signupForm.area}
                         onChange={(e) => setSignupForm({ ...signupForm, area: e.target.value })}
                         placeholder="e.g. Marina / Downtown"
-                        className="h-9 text-xs"
+                        className="h-11 text-xs"
                       />
                     </div>
                   </div>
@@ -319,7 +319,7 @@ export function AuthPage() {
                         value={signupForm.address}
                         onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
                         placeholder="Building 4, Apt 1201..."
-                        className="pl-9 h-9 text-xs"
+                        className="h-11 pl-9 text-xs"
                       />
                     </div>
                   </div>
@@ -336,7 +336,7 @@ export function AuthPage() {
                         value={signupForm.password}
                         onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
                         placeholder="Create password"
-                        className="pl-9 h-9 text-xs"
+                        className="h-11 pl-9 text-xs"
                         minLength={8}
                         required
                       />
@@ -347,7 +347,7 @@ export function AuthPage() {
 
                   <Button
                     type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 h-9 text-xs gap-2 font-medium mt-2"
+                    className="mt-2 h-11 w-full gap-2 bg-emerald-600 text-xs font-medium hover:bg-emerald-700"
                     disabled={!signupCaptcha || registerCustomerMut.isPending}
                   >
                     {registerCustomerMut.isPending ? 'Creating Customer Account...' : 'Create Customer Account'}

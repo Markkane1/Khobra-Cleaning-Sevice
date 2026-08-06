@@ -24,6 +24,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import { downloadBlob } from '@/lib/csv-export'
 
 export interface CustomerAddress {
   id: string
@@ -118,12 +119,7 @@ export function CustomerProfile() {
     try {
       const response = await fetch(`/api/khobra-cleaning/invoice-pdf?id=${invoice.id}`)
       if (!response.ok) throw new Error('Invoice PDF could not be generated')
-      const url = URL.createObjectURL(await response.blob())
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${invoice.invoiceNo || selectedBooking.bookingNo || 'invoice'}.pdf`
-      link.click()
-      URL.revokeObjectURL(url)
+      await downloadBlob(await response.blob(), `${invoice.invoiceNo || selectedBooking.bookingNo || 'invoice'}.pdf`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Invoice PDF could not be generated')
     }

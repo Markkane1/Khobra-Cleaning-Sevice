@@ -7,7 +7,7 @@ import { loadBookings } from '../application/bookings'
 import type { Session } from '../domain/auth/types'
 import type { Booking, CompanyBankAccount, DriverTrip } from '../domain/bookings/types'
 import { khobraBookingGateway } from '../infrastructure/http/khobra-gateways'
-import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
+import { cardShadow, LoadingState, localDateValue, MessageState, PageHeading, palette } from './mobile-ui'
 
 export function BookingsScreen({ session, onNewBooking }: { session: Session; onNewBooking: () => void }) {
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -36,17 +36,17 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   }, [session.token, session.user.role])
 
   if (loading) return <LoadingState label="Loading bookings..." />
-  const today = new Date().toDateString()
+  const today = localDateValue()
   const visibleBookings = bookings.filter(booking => {
-    const bookingDate = new Date(booking.scheduledDate)
-    if (session.user.role === 'cleaner') return cleanerDateScope === 'all' || bookingDate.toDateString() === today
+    const bookingDate = booking.scheduledDate.slice(0, 10)
+    if (session.user.role === 'cleaner') return cleanerDateScope === 'all' || bookingDate === today
     if (session.user.role !== 'driver') return true
-    if (driverScope === 'today') return bookingDate.toDateString() === today
-    if (driverScope === 'completed') return bookingDate.toDateString() === today && booking.status === 'completed'
-    if (driverScope === 'pending') return bookingDate.toDateString() === today && ['pending', 'pending_assignment', 'assigned', 'scheduled', 'confirmed'].includes(booking.status)
-    return bookingDate >= new Date(new Date().setHours(0, 0, 0, 0)) && !['completed', 'cancelled', 'no_show'].includes(booking.status)
+    if (driverScope === 'today') return bookingDate === today
+    if (driverScope === 'completed') return bookingDate === today && booking.status === 'completed'
+    if (driverScope === 'pending') return bookingDate === today && ['pending', 'pending_assignment', 'assigned', 'scheduled', 'confirmed'].includes(booking.status)
+    return bookingDate >= today && !['completed', 'cancelled', 'no_show'].includes(booking.status)
   })
-  const upcomingStops = trips.flatMap(trip => new Date(trip.date) >= new Date(new Date().setHours(0, 0, 0, 0)) && trip.status !== 'completed' ? (trip.stops || []).filter(stop => stop.status !== 'completed').map(stop => ({ ...stop, tripDate: trip.date })) : [])
+  const upcomingStops = trips.flatMap(trip => trip.date.slice(0, 10) >= today && trip.status !== 'completed' ? (trip.stops || []).filter(stop => stop.status !== 'completed').map(stop => ({ ...stop, tripDate: trip.date })) : [])
   return <>
   <FlatList
     contentContainerStyle={styles.list}
@@ -168,7 +168,7 @@ function BankTransferModal({ booking, token, onClose, onSubmitted }: { booking: 
   const [referenceNo, setReferenceNo] = useState('')
   const [customerBankName, setCustomerBankName] = useState('')
   const [accountHolderName, setAccountHolderName] = useState('')
-  const [transferDate, setTransferDate] = useState(new Date().toISOString().slice(0, 10))
+  const [transferDate, setTransferDate] = useState(localDateValue)
   const [transferAmount, setTransferAmount] = useState('')
   const [remarks, setRemarks] = useState('')
   const [proof, setProof] = useState<{ uri: string; name: string; mimeType: string } | null>(null)
@@ -209,7 +209,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 function StarSelector({ value, onChange }: { value: number; onChange: (rating: number) => void }) {
-  return <View style={styles.stars}>{[1, 2, 3, 4, 5].map(star => <Pressable key={star} accessibilityRole="button" accessibilityLabel={`${star} stars`} onPress={() => onChange(star)}><Ionicons name={star <= value ? 'star' : 'star-outline'} size={30} color="#f59e0b" /></Pressable>)}</View>
+  return <View style={styles.stars}>{[1, 2, 3, 4, 5].map(star => <Pressable key={star} accessibilityRole="button" accessibilityLabel={`${star} stars`} hitSlop={7} onPress={() => onChange(star)}><Ionicons name={star <= value ? 'star' : 'star-outline'} size={30} color="#f59e0b" /></Pressable>)}</View>
 }
 
 function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming, onPayment, onCash, onComplete, onRate, onReportIssue }: { booking: Booking; role: Session['user']['role']; cleanerName: string; updating: boolean; onStatus: (status: string) => void; onTiming: (withinScheduledTime: boolean) => void; onPayment: (method: 'cash' | 'bank_transfer') => void; onCash: () => void; onComplete: () => void; onRate: () => void; onReportIssue: () => void }) {
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#edf2ef', marginVertical: 2 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   detail: { color: palette.muted, fontSize: 13 },
-  statusAction: { alignSelf: 'flex-start', backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9, marginTop: 2 },
+  statusAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 14, marginTop: 2 },
   statusActionText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   timingAction: { alignSelf: 'stretch', borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 10, marginTop: 2 },
   timingActionText: { color: '#1d4ed8', fontWeight: '800', fontSize: 12, textAlign: 'center' },
@@ -280,9 +280,9 @@ const styles = StyleSheet.create({
   timingResultTitle: { color: palette.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   timingResultText: { color: palette.ink, fontSize: 13, fontWeight: '700' },
   timingResultMeta: { color: palette.muted, fontSize: 11 },
-  emptyAction: { backgroundColor: palette.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 11 },
+  emptyAction: { minHeight: 44, justifyContent: 'center', backgroundColor: palette.primary, borderRadius: 12, paddingHorizontal: 18 },
   emptyActionText: { color: '#fff', fontWeight: '700' },
-  ratingAction: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#f59e0b', backgroundColor: '#fffbeb', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 9 },
+  ratingAction: { minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#f59e0b', backgroundColor: '#fffbeb', borderRadius: 11, paddingHorizontal: 14 },
   ratingActionText: { color: '#92400e', fontWeight: '800', fontSize: 12 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'flex-end' },
   ratingModal: { maxHeight: '88%', backgroundColor: palette.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   ratingSubmit: { backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 16, paddingVertical: 11 },
   ratingSubmitText: { color: '#fff', fontWeight: '800' },
   scopeTabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  scopeTab: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: palette.surface },
+  scopeTab: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: palette.border, backgroundColor: palette.surface },
   scopeTabActive: { backgroundColor: palette.primary, borderColor: palette.primary },
   driverScopeActive: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
   transportStops: { marginBottom: 14, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: '#ddd6fe', backgroundColor: '#f5f3ff', gap: 8 },
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   transportAddress: { color: palette.muted, fontSize: 11, marginTop: 2 },
   scopeTabText: { color: palette.muted, fontSize: 12, fontWeight: '700' },
   scopeTabTextActive: { color: '#fff' },
-  issueAction: { minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3', backgroundColor: '#fff1f2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 9 },
+  issueAction: { minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3', backgroundColor: '#fff1f2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 9 },
   issueActionText: { color: '#be123c', fontSize: 12, fontWeight: '800' },
   issueInput: { minHeight: 120, borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, textAlignVertical: 'top', color: palette.ink, backgroundColor: palette.surfaceMuted },
   bankAccount: { borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 13, gap: 8, backgroundColor: palette.surfaceMuted },
