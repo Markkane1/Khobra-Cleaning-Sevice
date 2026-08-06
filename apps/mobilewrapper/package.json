@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "sync": "cap sync",
-    "sync:production": "node -e \"const u=new URL(process.env.CAPACITOR_SERVER_URL||'');if(u.protocol!=='https:'||u.origin!==u.href.replace(/\\/$/,''))throw Error('CAPACITOR_SERVER_URL must be an HTTPS origin with no path')\" && cap sync",
+    "sync": "cap sync && node scripts/normalize-spm-paths.mjs",
+    "sync:production": "node -e \"const u=new URL(process.env.CAPACITOR_SERVER_URL||'');if(u.protocol!=='https:'||u.origin!==u.href.replace(/\\/$/,''))throw Error('CAPACITOR_SERVER_URL must be an HTTPS origin with no path')\" && npm run sync",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "run:android": "cap run android",
