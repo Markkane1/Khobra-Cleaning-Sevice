@@ -43,6 +43,16 @@ playwright-report/
 test-results/
 output/
 
+# Temporary audit/report artifacts
+.expo-emulator-audit.*
+.next-mobile-audit.*
+.web-emulator-audit.*
+.mobile-audit-web.log
+opentestai-*
+Auditfindings.md
+MOBILE_PRODUCTION_CHECKLIST.md
+updatedstatus.md
+
 # Logs and OS/editor files
 *.log
 npm-debug.log*
