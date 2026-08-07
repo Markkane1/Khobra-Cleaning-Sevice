@@ -201,7 +201,7 @@ export function NotificationManagement() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Notification Type</Label>
                     <Select value={composeForm.type} onValueChange={v => setComposeForm({ ...composeForm, type: v })}>

@@ -194,7 +194,7 @@ export function Reports() {
           <Skeleton className="h-8 w-52" />
           <Skeleton className="h-4 w-72" />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
         </div>
         <Skeleton className="h-[360px] w-full rounded-xl" />
@@ -341,7 +341,7 @@ export function Reports() {
       <OperationalReports bookings={bookings} currency={currency} />
 
       {/* ── Summary KPIs ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpis.map((kpi, i) => (
           <motion.div key={kpi.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: (1 + i) * 0.05 }}>
             <Card className="border-0 shadow-sm rounded-xl relative overflow-hidden hover:shadow-md transition-shadow">

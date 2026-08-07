@@ -294,7 +294,7 @@ export function Customers() {
                 </DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Full Name</Label>
                     <Input
@@ -316,7 +316,7 @@ export function Customers() {
                   </div>
                 </div>
                 {!editId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} /></div>}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Phone</Label>
                     <Input
@@ -367,7 +367,7 @@ export function Customers() {
                         <Input value={savedAddress.label} onChange={event => setForm({ ...form, addresses: form.addresses.map((address, addressIndex) => addressIndex === index ? { ...address, label: event.target.value } : address) })} placeholder="Label (e.g. Office)" />
                         <Button type="button" size="icon" variant="ghost" onClick={() => setForm({ ...form, addresses: form.addresses.filter((_, addressIndex) => addressIndex !== index) })} aria-label="Remove address"><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <Input value={savedAddress.city} onChange={event => setForm({ ...form, addresses: form.addresses.map((address, addressIndex) => addressIndex === index ? { ...address, city: event.target.value } : address) })} placeholder="City" />
                         <Input value={savedAddress.area} onChange={event => setForm({ ...form, addresses: form.addresses.map((address, addressIndex) => addressIndex === index ? { ...address, area: event.target.value } : address) })} placeholder="Area" />
                       </div>
@@ -403,7 +403,7 @@ export function Customers() {
       </motion.div>
 
       {/* ---- Summary Cards ---- */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Users, label: 'Total Customers', value: stats.total, color: 'bg-emerald-600', sub: `${stats.active} active` },
           { icon: UserCheck, label: 'Active', value: stats.active, color: 'bg-teal-600', sub: `${stats.total > 0 ? Math.round((stats.active / stats.total) * 100) : 0}% of total` },

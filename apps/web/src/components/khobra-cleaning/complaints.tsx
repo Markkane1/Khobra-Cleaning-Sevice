@@ -357,7 +357,7 @@ export function Complaints() {
       </motion.div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: AlertCircle, label: 'Open', value: openCount, color: openCount > 0 ? 'bg-red-500' : 'bg-emerald-600', sub: openCount > 0 ? 'needs attention' : 'all clear', pulse: openCount > 0 },
           { icon: Timer, label: 'In Progress', value: inProgressCount, color: 'bg-amber-500', sub: `${inProgressCount} active` },
@@ -581,7 +581,7 @@ export function Complaints() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Category <span className="text-red-500">*</span></Label>
                 <Select value={formCategory} onValueChange={setFormCategory}>
@@ -710,7 +710,7 @@ export function Complaints() {
             return (
               <div className="space-y-4 py-2">
                 {/* Complaint Info */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Customer:</span>{' '}
                     <span className="font-medium">{selected.customer?.user?.name || '-'}</span>
@@ -758,7 +758,7 @@ export function Complaints() {
                       <p className="text-xs font-medium">Attachments ({selectedAttachments.length})</p>
                     </div>
                     <motion.div
-                      className="grid grid-cols-2 md:grid-cols-3 gap-2"
+                      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2"
                       initial="hidden"
                       animate="show"
                       variants={{

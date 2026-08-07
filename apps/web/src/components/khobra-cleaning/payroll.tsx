@@ -244,7 +244,7 @@ export function Payroll() {
       </motion.div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Wallet, label: 'Total Gross Pay', value: `${currency} ${(summary.totalGross || 0).toLocaleString()}`, color: 'bg-emerald-600', sub: `${summary.employeeCount || 0} cleaners` },
           { icon: TrendingDown, label: 'Total Deductions', value: `${currency} ${(summary.totalDeductions || 0).toLocaleString()}`, color: 'bg-red-500', sub: (summary.totalDeductions || 0) > 0 ? 'from absences' : 'no deductions' },
@@ -336,7 +336,7 @@ export function Payroll() {
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-6 space-y-4">
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <Skeleton className="h-16 w-full rounded-xl" />
                   <Skeleton className="h-16 w-full rounded-xl" />
                   <Skeleton className="h-16 w-full rounded-xl" />

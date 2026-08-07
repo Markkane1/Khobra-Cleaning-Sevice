@@ -226,7 +226,7 @@ export function Attendance() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Leave Type</Label>
                     <Select value={leaveForm.type} onValueChange={v => setLeaveForm({ ...leaveForm, type: v })}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -240,7 +240,7 @@ export function Attendance() {
                   </div>
                   <div className="grid gap-2"><Label>Number of Days</Label><Input type="number" value={leaveForm.days} onChange={e => setLeaveForm({ ...leaveForm, days: Number(e.target.value) })} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Start Date</Label><Input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({ ...leaveForm, startDate: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>End Date</Label><Input type="date" value={leaveForm.endDate} onChange={e => setLeaveForm({ ...leaveForm, endDate: e.target.value })} /></div>
                 </div>
@@ -260,7 +260,7 @@ export function Attendance() {
       </motion.div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {[
           { icon: UserCheck, label: 'Present Today', value: presentToday, color: 'bg-emerald-600', sub: `of ${todayRecords.length} records` },
           { icon: AlertTriangle, label: 'Absent Today', value: absentToday, color: absentToday > 0 ? 'bg-red-500' : 'bg-emerald-600', sub: absentToday > 0 ? 'needs attention' : 'all present', pulse: absentToday > 0 },

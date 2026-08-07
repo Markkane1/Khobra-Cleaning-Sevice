@@ -180,7 +180,7 @@ export function Settings() {
       {/* Tabbed Layout */}
       <motion.div {...fadeUp}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
             <TabsTrigger value="company" className="text-xs sm:text-sm">
               <Building2 className="h-4 w-4 mr-1.5 hidden sm:inline" />
               Company
@@ -386,7 +386,7 @@ export function Settings() {
                 </CardHeader>
                 <CardContent>
                   {dbStats ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                       {dbStats.map((stat: any) => (
                         <div
                           key={stat.label}
@@ -400,7 +400,7 @@ export function Settings() {
                       ))}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                       {Array.from({ length: 10 }).map((_, i) => (
                         <Skeleton key={i} className="h-16 w-full rounded-xl" />
                       ))}

@@ -281,7 +281,7 @@ export function CustomerProfile() {
 
       {/* Role-Tailored Navigation Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
           <TabsTrigger value="info" className="gap-2">
             <User className="h-4 w-4" />
             <span>Profile Details</span>
@@ -428,7 +428,7 @@ export function CustomerProfile() {
                       </Select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1.5">
                         <Label className="text-xs">City</Label>
                         <Select value={addrForm.city} onValueChange={v => setAddrForm({ ...addrForm, city: v })}>
@@ -452,7 +452,7 @@ export function CustomerProfile() {
                       <Input value={addrForm.street} onChange={e => setAddrForm({ ...addrForm, street: e.target.value })} placeholder="e.g. Al Wasl Road" className="h-9" required />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1.5">
                         <Label className="text-xs">Building / Tower Name</Label>
                         <Input value={addrForm.building} onChange={e => setAddrForm({ ...addrForm, building: e.target.value })} placeholder="e.g. Princess Tower" className="h-9" />

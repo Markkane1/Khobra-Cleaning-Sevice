@@ -151,7 +151,7 @@ export function AuthPage() {
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" />
           <CardContent className="p-4 sm:p-6">
             <Tabs value={tab} onValueChange={(v) => handleTabChange(v as 'login' | 'signup')}>
-              <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 mb-6">
                 <TabsTrigger value="login" className="min-h-11 gap-2">
                   <LogIn className="h-4 w-4" />
                   <span>Login</span>
@@ -236,7 +236,7 @@ export function AuthPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="signup-email" className="text-xs font-semibold">Email *</Label>
                       <div className="relative">
@@ -275,7 +275,7 @@ export function AuthPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="signup-city" className="text-xs font-semibold">City</Label>
                       <Select

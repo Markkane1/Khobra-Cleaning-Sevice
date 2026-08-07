@@ -218,12 +218,12 @@ export function Dispatch() {
               <DialogHeader><DialogTitle>{driverEditId ? 'Edit Driver' : 'Add New Driver'}</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2"><Label>Full Name</Label><Input value={driverForm.name} onChange={e => setDriverForm({ ...driverForm, name: e.target.value })} placeholder="Driver Name" /></div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Phone</Label><Input value={driverForm.phone} onChange={e => setDriverForm({ ...driverForm, phone: e.target.value })} placeholder="+971..." /></div>
                   <div className="grid gap-2"><Label>Email (optional)</Label><Input type="email" value={driverForm.email} onChange={e => setDriverForm({ ...driverForm, email: e.target.value })} placeholder="driver@khobra.ae" /></div>
                 </div>
                 {!driverEditId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={driverForm.temporaryPassword} onChange={e => setDriverForm({ ...driverForm, temporaryPassword: e.target.value })} /></div>}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>License No.</Label><Input value={driverForm.licenseNo} onChange={e => setDriverForm({ ...driverForm, licenseNo: e.target.value })} placeholder="LIC-12345" /></div>
                   <div className="grid gap-2"><Label>Vehicle No.</Label><Input value={driverForm.vehicleNo} onChange={e => setDriverForm({ ...driverForm, vehicleNo: e.target.value })} placeholder="UAE-5678" /></div>
                 </div>
@@ -249,7 +249,7 @@ export function Dispatch() {
                 </Select>
               </div>
               <div className="grid gap-2"><Label>Date</Label><Input type="date" value={tripForm.date} onChange={e => setTripForm({ ...tripForm, date: e.target.value })} /></div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid gap-2"><Label>Start Mileage</Label><Input type="number" value={tripForm.startMileage || ''} onChange={e => setTripForm({ ...tripForm, startMileage: Number(e.target.value) })} /></div>
                 <div className="grid gap-2"><Label>Fuel Cost ({currency})</Label><Input type="number" value={tripForm.fuelCost || ''} onChange={e => setTripForm({ ...tripForm, fuelCost: Number(e.target.value) })} /></div>
               </div>
@@ -265,7 +265,7 @@ export function Dispatch() {
       </motion.div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className={`grid w-full ${currentRole === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} max-w-md`}>
+        <TabsList className={`grid w-full ${currentRole === 'admin' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'} max-w-md`}>
           <TabsTrigger value="today">Today&apos;s Board</TabsTrigger>
           {currentRole === 'admin' && <TabsTrigger value="drivers">Drivers ({drivers.length})</TabsTrigger>}
           <TabsTrigger value="trips">Trips ({trips.length})</TabsTrigger>
@@ -276,7 +276,7 @@ export function Dispatch() {
           {currentRole === 'driver' && <Card className="border-0 shadow-sm mb-4"><CardHeader><CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-violet-600" />Upcoming Pickups / Drop-offs</CardTitle></CardHeader><CardContent className="space-y-2">{upcomingStops.length === 0 ? <p className="text-sm text-muted-foreground">No upcoming transport stops assigned.</p> : upcomingStops.map((stop: any) => <div key={stop.id} className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><p className="text-sm font-semibold capitalize">{stop.type || 'Stop'}</p><p className="text-xs text-muted-foreground">{stop.address || 'Address not provided'}</p></div><div className="text-right"><p className="text-xs font-medium">{format(parseISO(stop.tripDate), 'dd MMM yyyy')}</p><Badge variant="outline" className="text-[10px] capitalize">{stop.tripStatus.replace('_', ' ')}</Badge></div></div>)}</CardContent></Card>}
           {/* Trip Stats for Today */}
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
             {[
               { icon: Layers , label: 'Bookings', value: todayBookings.length, gradient: 'from-emerald-400 to-teal-500', sub: format(new Date(), 'dd MMM yyyy') },
               { icon: CalendarCheck, label: 'Scheduled', value: kanbanColumns[0].items.length, gradient: 'from-teal-400 to-cyan-500', sub: 'Pending & confirmed' },
@@ -474,7 +474,7 @@ export function Dispatch() {
                       </div>
                     </div>
                     <Separator className="my-3" />
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="text-center bg-muted/40 rounded-lg p-2.5">
                         <div className="flex items-center justify-center gap-1 mb-0.5">
                           <Truck className="h-3 w-3 text-emerald-500 transition-transform hover:scale-110" />
@@ -500,7 +500,7 @@ export function Dispatch() {
 
         {/* TRIPS TAB */}
         <TabsContent value="trips" className="mt-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
             {[
               { icon: Layers , label: 'All Trips', value: trips.length, gradient: 'from-emerald-400 to-teal-500', sub: 'Total records' },
               { icon: CalendarCheck, label: 'Planned', value: trips.filter((t: any) => t.status === 'planned').length, gradient: 'from-teal-400 to-cyan-500', sub: 'Awaiting start' },

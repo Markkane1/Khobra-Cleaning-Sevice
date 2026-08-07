@@ -172,7 +172,7 @@ export function Inventory() {
               <DialogHeader><DialogTitle>{vendorEditId ? 'Edit Vendor' : 'Add Vendor'}</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2"><Label>Company Name</Label><Input value={vForm.name} onChange={e => setVForm({ ...vForm, name: e.target.value })} /></div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Contact Person</Label><Input value={vForm.contactPerson} onChange={e => setVForm({ ...vForm, contactPerson: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>Phone</Label><Input value={vForm.phone} onChange={e => setVForm({ ...vForm, phone: e.target.value })} /></div>
                 </div>
@@ -190,11 +190,11 @@ export function Inventory() {
             <DialogContent className="sm:max-w-lg">
               <DialogHeader><DialogTitle>{editId ? 'Edit Item' : 'Add Inventory Item'}</DialogTitle></DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>SKU</Label><Input value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Category</Label>
                     <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
                       <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
@@ -208,11 +208,11 @@ export function Inventory() {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Current Stock</Label><Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: Number(e.target.value) })} /></div>
                   <div className="grid gap-2"><Label>Min Stock (Alert)</Label><Input type="number" value={form.minStock} onChange={e => setForm({ ...form, minStock: Number(e.target.value) })} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Cost Price ({currency})</Label><Input type="number" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: Number(e.target.value) })} /></div>
                   <div className="grid gap-2"><Label>Sell Price ({currency})</Label><Input type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: Number(e.target.value) })} /></div>
                 </div>
@@ -227,7 +227,7 @@ export function Inventory() {
       </motion.div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Package, label: 'Total Items', value: items.length, color: 'bg-emerald-600', sub: `${Object.keys(categories).length} categories` },
           { icon: AlertTriangle, label: 'Low Stock', value: lowStockCount, color: lowStockCount > 0 ? 'bg-amber-500' : 'bg-emerald-600', sub: lowStockCount > 0 ? 'Needs reorder' : 'All stocked', pulse: lowStockCount > 0 },
@@ -283,7 +283,7 @@ export function Inventory() {
       )}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-2 max-w-xs">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 max-w-xs">
           <TabsTrigger value="items"><Package className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />Items ({items.length})</TabsTrigger>
           <TabsTrigger value="vendors"><ShoppingCart className="h-3.5 w-3.5 mr-1.5 hidden sm:inline" />Vendors ({vendors.length})</TabsTrigger>
         </TabsList>

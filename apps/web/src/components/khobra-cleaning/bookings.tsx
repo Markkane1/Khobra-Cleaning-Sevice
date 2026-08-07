@@ -813,7 +813,7 @@ export function Bookings() {
               </div>
 
               {form.bookingType === 'one_time' ? (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="grid gap-2"><Label>Date</Label><Input type="date" min={minimumBookingDate} value={form.scheduledDate} onChange={e => setForm({ ...form, scheduledDate: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>From Time</Label><Input type="time" min={earliestStartTime} max={lastWorkingTime} value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} /></div>
                   <div className="grid gap-2"><Label>To Time</Label><Input type="time" min={form.startTime || earliestStartTime} max={lastWorkingTime} value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} /></div>
@@ -828,18 +828,18 @@ export function Bookings() {
                   <div className="flex flex-wrap gap-1.5">
                     {form.selectedDates.length === 0 ? <span className="text-muted-foreground">Select one or more dates.</span> : form.selectedDates.map(date => <Button key={date} type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setForm({ ...form, selectedDates: form.selectedDates.filter(value => value !== date) })}>{date} ×</Button>)}
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="grid gap-1"><Label className="text-[11px]">From Time</Label><Input type="time" min={earliestStartTime} max={lastWorkingTime} value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="h-8 text-xs" /></div>
                     <div className="grid gap-1"><Label className="text-[11px]">To Time</Label><Input type="time" min={form.startTime || earliestStartTime} max={lastWorkingTime} value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="h-8 text-xs" /></div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3 bg-muted/20 p-3 rounded-lg border border-border/40 text-xs">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="grid gap-1"><Label className="text-[11px]">Start Date</Label><Input type="date" min={minimumBookingDate} value={form.startDate || form.scheduledDate} onChange={e => setForm({ ...form, startDate: e.target.value, scheduledDate: e.target.value })} className="h-8 text-xs" /></div>
                     <div className="grid gap-1"><Label className="text-[11px]">End Date</Label><Input type="date" min={form.startDate || minimumBookingDate} value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="h-8 text-xs" /></div>
                   </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1"><Label className="text-[11px]">From Time</Label><Input type="time" min={earliestStartTime} max={lastWorkingTime} value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="h-8 text-xs" /></div>
                       <div className="grid gap-1"><Label className="text-[11px]">To Time</Label><Input type="time" min={form.startTime || earliestStartTime} max={lastWorkingTime} value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="h-8 text-xs" /></div>
                   </div>
@@ -1082,7 +1082,7 @@ export function Bookings() {
                   </div>
                 </div>
               )}
-              {bookingStep === 2 && <><div className="grid grid-cols-2 gap-4">
+              {bookingStep === 2 && <><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
                 <div className="grid gap-2"><Label>Area</Label><Input value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} /></div>
               </div>
@@ -2191,7 +2191,7 @@ export function Bookings() {
                 {/* Selection Mode choices */}
                 <div className="space-y-2">
                   <span className="text-xs font-semibold text-muted-foreground uppercase">Choose Payment Option</span>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Button
                       type="button"
                       variant={paymentMethod === 'cash' ? 'default' : 'outline'}
@@ -2379,7 +2379,7 @@ export function Bookings() {
                           onChange={e => setPaymentFields({ ...paymentFields, accountHolderName: e.target.value })}
                         />
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
                           <span className="text-xs">Transfer Date *</span>
                           <input

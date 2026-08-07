@@ -53,7 +53,7 @@ function PageSkeleton() {
   return (
     <div className="space-y-6">
       <div><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-72 mt-2" /></div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>
       <Skeleton className="h-[300px] w-full rounded-xl" />
     </div>
   )
@@ -844,7 +844,7 @@ export default function HomePage() {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-4 lg:p-6">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentView}
@@ -853,7 +853,7 @@ export default function HomePage() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              <main className="p-2 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+              <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 <ViewRenderer view={currentView} currentRole={currentRole} allowedPages={allowedPages} />
               </main>
             </motion.div>

@@ -373,7 +373,7 @@ export function Services() {
                     <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Detailed service scope, guidelines, and benefits..." rows={3} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold">Hourly Rate ({currency}) *</Label>
                       <Input type="number" value={form.baseRate} onChange={e => setForm({ ...form, baseRate: Number(e.target.value) })} className="h-9" />
@@ -530,7 +530,7 @@ export function Services() {
                     </p>
 
                     {form[imageModal].length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 gap-3">
                         {form[imageModal].map((url, index) => (
                           <div key={url} className="relative overflow-hidden rounded-lg border bg-muted aspect-video">
                             <img src={url} alt={`${imageModal === 'heroImages' ? 'Hero' : 'Gallery'} image ${index + 1}`} className="h-full w-full object-cover" />
@@ -680,7 +680,7 @@ export function Services() {
 
         {/* Summary Stats */}
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Total Services', value: stats.total, icon: Sparkles, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
               { label: 'Active Services', value: stats.active, icon: TrendingUp, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/50' },

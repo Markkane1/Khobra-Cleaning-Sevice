@@ -307,7 +307,7 @@ export function Finance() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2"><Label>Total Amount ({currency})</Label><Input type="number" value={invForm.totalAmount} onChange={e => setInvForm({ ...invForm, totalAmount: Number(e.target.value) })} /></div>
                   <div className="grid gap-2"><Label>Status</Label>
                     <Select value={invForm.status} onValueChange={v => setInvForm({ ...invForm, status: v })}>
@@ -357,7 +357,7 @@ export function Finance() {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid gap-2"><Label>Amount ({currency})</Label><Input type="number" value={payForm.amount || ''} onChange={e => setPayForm({ ...payForm, amount: Number(e.target.value) })} /></div>
                 <div className="grid gap-2"><Label>Method</Label>
                   <Select value={payForm.method} onValueChange={v => setPayForm({ ...payForm, method: v })}>
@@ -640,7 +640,7 @@ export function Finance() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-2 max-w-xs">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 max-w-xs">
           <TabsTrigger value="invoices">Invoices ({invoices.length})</TabsTrigger>
           <TabsTrigger value="payments">Payments ({payments.length})</TabsTrigger>
         </TabsList>
@@ -815,7 +815,7 @@ export function Finance() {
           <DialogHeader><DialogTitle>Transaction {selectedTransaction?.master?.transactionNumber}</DialogTitle></DialogHeader>
           {selectedTransaction?.master && <div className="space-y-5 text-sm">
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">Confirmed transaction amounts are read-only.</div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-muted/20 p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-muted/20 p-4">
               {[
                 ['Booking', selectedTransaction.master.bookingReference || 'Manual invoice'],
                 ['Payment Reference', selectedTransaction.master.paymentReference || '-'],
@@ -850,7 +850,7 @@ export function Finance() {
                 <div className="flex justify-between p-3 font-bold bg-muted/30"><span>Final amount received</span><span>{selectedTransaction.master.currency} {selectedTransaction.details.detailTotal.toLocaleString()}</span></div>
               </div>
             </div>
-            {selectedTransaction.bankTransferDetails && <div className="rounded-xl border p-4 space-y-3"><h3 className="font-semibold">Bank Transfer Details</h3><div className="grid grid-cols-2 gap-3 text-xs"><div><p className="text-muted-foreground">Customer bank</p><p className="font-medium">{selectedTransaction.bankTransferDetails.customerBankName}</p></div><div><p className="text-muted-foreground">Account holder</p><p className="font-medium">{selectedTransaction.bankTransferDetails.accountHolderName}</p></div><div><p className="text-muted-foreground">Transfer reference</p><p className="font-mono">{selectedTransaction.bankTransferDetails.referenceNumber}</p></div><div><p className="text-muted-foreground">Transfer date</p><p>{selectedTransaction.bankTransferDetails.transferDate ? format(new Date(selectedTransaction.bankTransferDetails.transferDate), 'PP') : '-'}</p></div></div>{selectedTransaction.bankTransferDetails.proofUrl && <a href={selectedTransaction.bankTransferDetails.proofUrl} target="_blank" rel="noopener noreferrer" className="block">{selectedTransaction.bankTransferDetails.proofUrl.match(/\.pdf$/i) ? <Button variant="outline"><FileText className="h-4 w-4 mr-2" />View payment proof</Button> : <img src={selectedTransaction.bankTransferDetails.proofUrl} alt="Bank transfer payment proof" className="max-h-64 rounded-lg border object-contain" />}</a>}</div>}
+            {selectedTransaction.bankTransferDetails && <div className="rounded-xl border p-4 space-y-3"><h3 className="font-semibold">Bank Transfer Details</h3><div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"><div><p className="text-muted-foreground">Customer bank</p><p className="font-medium">{selectedTransaction.bankTransferDetails.customerBankName}</p></div><div><p className="text-muted-foreground">Account holder</p><p className="font-medium">{selectedTransaction.bankTransferDetails.accountHolderName}</p></div><div><p className="text-muted-foreground">Transfer reference</p><p className="font-mono">{selectedTransaction.bankTransferDetails.referenceNumber}</p></div><div><p className="text-muted-foreground">Transfer date</p><p>{selectedTransaction.bankTransferDetails.transferDate ? format(new Date(selectedTransaction.bankTransferDetails.transferDate), 'PP') : '-'}</p></div></div>{selectedTransaction.bankTransferDetails.proofUrl && <a href={selectedTransaction.bankTransferDetails.proofUrl} target="_blank" rel="noopener noreferrer" className="block">{selectedTransaction.bankTransferDetails.proofUrl.match(/\.pdf$/i) ? <Button variant="outline"><FileText className="h-4 w-4 mr-2" />View payment proof</Button> : <img src={selectedTransaction.bankTransferDetails.proofUrl} alt="Bank transfer payment proof" className="max-h-64 rounded-lg border object-contain" />}</a>}</div>}
             <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Company Bank Account</h3>{selectedTransaction.master.companyBankAccount ? <div className="space-y-1 text-xs"><p className="font-medium">{selectedTransaction.master.companyBankAccount.accountTitle}</p><p>{selectedTransaction.master.companyBankAccount.bankName}</p><p className="font-mono">{selectedTransaction.master.companyBankAccount.accountNumber}</p><p className="font-mono">{selectedTransaction.master.companyBankAccount.iban || ''}</p></div> : <p className="text-xs text-muted-foreground">Not applicable</p>}</div><div className="rounded-xl border p-4"><h3 className="font-semibold mb-2">Approval</h3>{selectedTransaction.approvalInformation ? <div className="space-y-1 text-xs"><p className="font-medium">{selectedTransaction.approvalInformation.approvedBy}</p><p>{selectedTransaction.approvalInformation.approvedAt ? format(new Date(selectedTransaction.approvalInformation.approvedAt), 'PPp') : '-'}</p><p>{selectedTransaction.approvalInformation.remarks || '-'}</p></div> : <p className="text-xs text-muted-foreground">Not approved</p>}</div></div>
             <div><h3 className="font-semibold mb-2">Transaction History</h3><div className="rounded-xl border divide-y">{selectedTransaction.history.map((entry: any) => <div key={`${entry.event}-${entry.date}`} className="flex items-start justify-between gap-3 p-3 text-xs"><div><p className="font-medium">{entry.event}</p><p className="text-muted-foreground">{entry.actor}</p></div><div className="text-right"><Badge className={`${payStatusColors[entry.status] || ''} text-[10px]`}>{entry.status}</Badge><p className="mt-1 text-muted-foreground">{format(new Date(entry.date), 'PPp')}</p></div></div>)}</div></div>
           </div>}

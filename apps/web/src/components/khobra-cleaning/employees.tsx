@@ -361,7 +361,7 @@ export function Employees() {
                 <DialogTitle>{editId ? 'Edit Cleaner' : 'Add New Cleaner'}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Full Name</Label>
                     <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -372,7 +372,7 @@ export function Employees() {
                   </div>
                 </div>
                 {!editId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} /></div>}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Phone</Label>
                     <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -382,7 +382,7 @@ export function Employees() {
                     <Input type="number" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: Number(e.target.value) })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>City</Label>
                     <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
@@ -424,7 +424,7 @@ export function Employees() {
       </motion.div>
 
       {/* ─── Summary Cards ───────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Users, label: 'Total Staff', value: stats.total, color: 'bg-emerald-600', sub: stats.active > 0 ? `${stats.active} active` : 'No staff yet' },
           { icon: UserCheck, label: 'Active', value: stats.active, color: 'bg-teal-600', sub: `${stats.total > 0 ? Math.round((stats.active / stats.total) * 100) : 0}% of total` },
