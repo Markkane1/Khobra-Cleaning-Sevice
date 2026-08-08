@@ -3,6 +3,7 @@ import { db } from '@repo/db'
 import { isRoleId, requireAuth } from '@/lib/auth'
 import { hashPassword } from '@repo/db/password'
 import { randomBytes } from 'crypto'
+import { broadcast } from '@/lib/broadcast'
 
 const roles = [
   { id: 'admin', name: 'Administrator', isSystem: true, description: 'Full system administration' },
@@ -45,6 +46,7 @@ export async function PUT(req: NextRequest) {
     db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
     db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
   ])
+  broadcast('session:revoked', {}, auth.session.tenantId, target.id)
   return NextResponse.json({ success: true, user })
 }
 
@@ -61,6 +63,7 @@ export async function PATCH(req: NextRequest) {
     db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
     db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
   ])
+  broadcast('session:revoked', {}, auth.session.tenantId, target.id)
   return NextResponse.json({ temporaryPassword })
 }
 

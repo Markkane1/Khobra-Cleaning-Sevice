@@ -18,7 +18,8 @@ export async function GET(req: NextRequest) {
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
     }))
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to load driver expenses' }, { status: 500 })
+    console.error('Load driver expenses failed:', error)
+    return NextResponse.json({ error: 'Failed to load driver expenses' }, { status: 500 })
   }
 }
 
@@ -53,7 +54,8 @@ export async function POST(req: NextRequest) {
     }), { status: 201 })
   } catch (error: any) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid expense' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Failed to add expense' }, { status: 500 })
+    console.error('Add driver expense failed:', error)
+    return NextResponse.json({ error: 'Failed to add expense' }, { status: 500 })
   }
 }
 
@@ -72,6 +74,7 @@ export async function PUT(req: NextRequest) {
     }))
   } catch (error: any) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid decision' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Failed to review expense' }, { status: 500 })
+    console.error('Review driver expense failed:', error)
+    return NextResponse.json({ error: 'Failed to review expense' }, { status: 500 })
   }
 }

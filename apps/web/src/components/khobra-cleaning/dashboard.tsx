@@ -23,6 +23,7 @@ import {
 import { useAppStore } from '@/store/app-store'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
+import type { DashboardDTO } from '@repo/core'
 
 /* ------------------------------------------------------------------ */
 /*  Animation Variants                                                 */
@@ -211,7 +212,7 @@ export function Dashboard() {
     }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] }),
   })
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<DashboardDTO>({
     queryKey: ['dashboard', currentRole, currentUser?.userId],
     queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()),
     refetchInterval: 30000,
@@ -300,7 +301,7 @@ export function Dashboard() {
   const avgPerBooking = stats.totalBookings > 0
     ? Math.round(stats.totalRevenue / stats.totalBookings)
     : 0
-  const revenueSeries = (revenueByDay || []).map((item: any) => ({ date: new Date(item.issuedAt), amount: Number(item.totalAmount || 0) }))
+  const revenueSeries = (revenueByDay || []).map(item => ({ date: new Date(item.issuedAt), amount: Number(item.totalAmount || 0) }))
   const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
   const currentRevenue = revenueSeries.filter(item => item.date >= sevenDaysAgo).reduce((sum, item) => sum + item.amount, 0)

@@ -11,7 +11,7 @@ export const UpdateSettingsSchema = z.object({
   firstBookingTime: z.string().refine(isValidTime, 'Use a valid time in HH:MM format').optional(),
   lastWorkingTime: z.string().refine(isValidTime, 'Use a valid time in HH:MM format').optional(),
   logoUrl: z.string().optional(),
-  settings: z.record(z.string(), z.any()).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
 }).refine(data => {
   if (data.firstBookingTime && data.lastWorkingTime) {
     const startMins = parseTimeToMinutes(data.firstBookingTime);

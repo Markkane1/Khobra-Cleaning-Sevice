@@ -17,7 +17,7 @@ export const CreateCustomerSchema = z.object({
   area: z.string().optional(),
   addresses: z.array(CustomerAddressSchema).max(10).optional(),
   notes: z.string().optional(),
-  preferences: z.any().optional(),
+  preferences: z.string().max(5000).optional(),
   temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters'),
 });
 

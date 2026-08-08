@@ -16,7 +16,8 @@ export async function GET(req: NextRequest) {
     const items = await vendorItemRepository.findMany(auth.session.tenantId, vendorId)
     return NextResponse.json(items)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch vendor items' }, { status: 500 })
+    console.error('Fetch vendor items failed:', error)
+    return NextResponse.json({ error: 'Failed to fetch vendor items' }, { status: 500 })
   }
 }
 
@@ -31,7 +32,8 @@ export async function POST(req: NextRequest) {
     const vendorItem = await vendorItemRepository.create(auth.session.tenantId, validatedData)
     return NextResponse.json(vendorItem, { status: 201 })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to link vendor item' }, { status: 500 })
+    console.error('Link vendor item failed:', error)
+    return NextResponse.json({ error: 'Failed to link vendor item' }, { status: 500 })
   }
 }
 
@@ -46,7 +48,8 @@ export async function PUT(req: NextRequest) {
     const updated = await vendorItemRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     return NextResponse.json(updated)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to update vendor item' }, { status: 500 })
+    console.error('Update vendor item failed:', error)
+    return NextResponse.json({ error: 'Failed to update vendor item' }, { status: 500 })
   }
 }
 
@@ -63,7 +66,8 @@ export async function DELETE(req: NextRequest) {
     await vendorItemRepository.delete(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to delete vendor item' }, { status: 500 })
+    console.error('Delete vendor item failed:', error)
+    return NextResponse.json({ error: 'Failed to delete vendor item' }, { status: 500 })
   }
 }
 

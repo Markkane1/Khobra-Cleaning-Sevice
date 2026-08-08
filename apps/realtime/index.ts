@@ -2,9 +2,14 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import crypto from 'crypto'
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'i-VS2-xgSC6gMuNBrkZI6kc5YxNwoMqKec8FjSMZEmAh_5VaP4wKY2kIhM-q2DfK'
-const REALTIME_SECRET = process.env.REALTIME_SECRET || 'realtime-internal-secret-key-12345'
-
+const requiredEnv = (name: string) => {
+  const value = process.env[name]
+  if (!value) throw new Error(`${name} must be configured`)
+  return value
+}
+const AUTH_SECRET = requiredEnv('AUTH_SECRET')
+const REALTIME_SECRET = requiredEnv('REALTIME_SECRET')
+const MAX_BROADCAST_BYTES = 64 * 1024
 
 const events = new Set([
   'booking:created', 'booking:updated', 'booking:deleted', 'invoice:created', 'invoice:updated',
@@ -12,6 +17,7 @@ const events = new Set([
   'employee:created', 'employee:updated', 'customer:created', 'customer:updated', 'service:created',
   'service:updated', 'attendance:created', 'attendance:updated', 'attendance:deleted',
   'dispatch:assigned', 'dispatch:updated', 'inventory:updated', 'payroll:updated',
+  'session:revoked',
 ])
 
 function verifyToken(token: unknown) {
@@ -20,7 +26,7 @@ function verifyToken(token: unknown) {
     const [header, data, signature, extra] = token.split('.')
     if (!header || !data || !signature || extra) return null
     const supplied = Buffer.from(signature)
-    const expected = Buffer.from(crypto.createHmac('sha256', AUTH_SECRET!).update(`${header}.${data}`).digest('base64url'))
+    const expected = Buffer.from(crypto.createHmac('sha256', AUTH_SECRET).update(`${header}.${data}`).digest('base64url'))
     if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null
     const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'))
     if (!payload.userId || !payload.tenantId || !Number.isFinite(payload.exp) || payload.exp <= Date.now() / 1000) return null
@@ -39,9 +45,10 @@ const io = new Server(httpServer, {
 const PORT = Number(process.env.PORT) || 3003
 // Track connected socket subscriptions
 const socketRooms = new Map<string, { tenantId?: string; userId?: string }>()
+let shuttingDown = false
 
 io.use((socket, next) => {
-  const session = verifyToken(socket.handshake.auth?.token || socket.handshake.query?.token)
+  const session = verifyToken(socket.handshake.auth?.token)
   if (!session) return next(new Error('Unauthorized'))
   ;(socket as any).tenantId = session.tenantId
   ;(socket as any).userId = session.userId
@@ -72,18 +79,41 @@ httpServer.on('request', (req, res) => {
     const authHeader = req.headers['authorization'] || req.headers['x-internal-secret']
     const suppliedSecret = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader
 
-    if (suppliedSecret !== REALTIME_SECRET) {
+    const supplied = Buffer.from(typeof suppliedSecret === 'string' ? suppliedSecret : '')
+    const expected = Buffer.from(REALTIME_SECRET)
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Unauthorized broadcast request' }))
       return
     }
 
+    const declaredLength = Number(req.headers['content-length'] || 0)
+    if (!Number.isFinite(declaredLength) || declaredLength > MAX_BROADCAST_BYTES) {
+      res.writeHead(413, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Payload too large' }))
+      req.resume()
+      return
+    }
+
     let body = ''
-    req.on('data', (chunk) => { body += chunk })
+    let bytes = 0
+    let rejected = false
+    req.on('data', (chunk: Buffer) => {
+      if (rejected) return
+      bytes += chunk.length
+      if (bytes > MAX_BROADCAST_BYTES) {
+        rejected = true
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Payload too large' }))
+        return
+      }
+      body += chunk.toString('utf8')
+    })
     req.on('end', () => {
+      if (rejected) return
       try {
         const { type, payload, tenantId, userId } = JSON.parse(body)
-        if (!events.has(type) || (!tenantId && !userId)) {
+        if (!events.has(type) || (!tenantId && !userId) || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Allowed type and tenantId or userId are required' }))
           return
@@ -91,7 +121,9 @@ httpServer.on('request', (req, res) => {
 
         const data = { ...payload, _ts: Date.now() }
 
-        if (userId) {
+        if (type === 'session:revoked' && userId) {
+          io.in(`user:${userId}`).disconnectSockets(true)
+        } else if (userId) {
           io.to(`user:${userId}`).emit(type, data)
         } else if (tenantId) {
           io.to(`tenant:${tenantId}`).emit(type, data)
@@ -104,6 +136,9 @@ httpServer.on('request', (req, res) => {
         res.end(JSON.stringify({ error: 'Invalid JSON' }))
       }
     })
+  } else if (req.method === 'GET' && req.url === '/ready') {
+    res.writeHead(shuttingDown ? 503 : 200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ status: shuttingDown ? 'draining' : 'ready' }))
   } else if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ status: 'ok', clients: io.engine.clientsCount, rooms: socketRooms.size }))
@@ -112,6 +147,23 @@ httpServer.on('request', (req, res) => {
     res.end(JSON.stringify({ error: 'Not found' }))
   }
 })
+
+httpServer.requestTimeout = 15_000
+httpServer.headersTimeout = 10_000
+httpServer.keepAliveTimeout = 5_000
+
+function shutdown(signal: string) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[realtime] ${signal} received; draining connections`)
+  io.close(() => {
+    httpServer.close(() => process.exit(0))
+  })
+  setTimeout(() => process.exit(1), 10_000).unref()
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'))
+process.once('SIGINT', () => shutdown('SIGINT'))
 
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[realtime] Authenticated Socket.IO server running on port ${PORT}`)

@@ -5,6 +5,7 @@ import { CreateBookingSchema, parseTimeToMinutes, zonedDateTimeToUtc } from '@re
 import { broadcast } from '@/lib/broadcast'
 import { getAuthSession } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { getClientIp } from '@/lib/client-ip'
 
 
 const bookingRepository = new PrismaBookingRepository(db)
@@ -26,7 +27,7 @@ const PublicBookingSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'anonymous'
+    const ip = getClientIp(req)
     if (!(await checkRateLimit(`public-booking:${ip}`, 10, 60_000)).allowed) return NextResponse.json({ error: 'Too many booking attempts. Please wait and try again.' }, { status: 429 })
     const input = PublicBookingSchema.parse(await req.json())
     const authSession = await getAuthSession(req).catch(() => null)
@@ -77,6 +78,6 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Check your booking details' }, { status: 400 })
     console.error('Public booking error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Booking failed' }, { status: 400 })
+    return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
   }
 }

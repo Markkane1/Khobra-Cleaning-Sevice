@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -23,15 +23,33 @@ const run = (name, args, capture = false) => {
 };
 
 const rehearsal = process.argv.includes('--rehearse');
+const backupDir = resolve(process.env.BACKUP_DIR || 'backups');
 const backupFile = rehearsal
   ? join(tmpdir(), `khobra-backup-${Date.now()}.dump`)
-  : join(resolve(process.env.BACKUP_DIR || 'backups'), `khobra-${new Date().toISOString().replace(/[:.]/g, '-')}.dump`);
+  : join(backupDir, `khobra-${new Date().toISOString().replace(/[:.]/g, '-')}.dump`);
 mkdirSync(dirname(backupFile), { recursive: true });
 
 try {
   run('pg_dump', [...connection, '-d', database, '--format=custom', '--no-owner', '--no-privileges', '--file', backupFile]);
   if (!rehearsal) {
+    const checksum = await new Promise((resolveHash, rejectHash) => {
+      const hash = createHash('sha256');
+      createReadStream(backupFile)
+        .on('data', chunk => hash.update(chunk))
+        .on('error', rejectHash)
+        .on('end', () => resolveHash(hash.digest('hex')));
+    });
+    writeFileSync(`${backupFile}.sha256`, `${checksum}  ${backupFile.split(/[\\/]/).at(-1)}\n`, { mode: 0o600 });
+    const retentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 0);
+    if (Number.isFinite(retentionDays) && retentionDays > 0) {
+      const cutoff = Date.now() - retentionDays * 86_400_000;
+      for (const name of readdirSync(backupDir).filter(name => /^khobra-.*\.dump(?:\.sha256)?$/.test(name))) {
+        const target = join(backupDir, name);
+        if (statSync(target).mtimeMs < cutoff) rmSync(target, { force: true });
+      }
+    }
     console.log(`Database backup created: ${backupFile}`);
+    console.log(`SHA-256 checksum created: ${backupFile}.sha256`);
   } else {
     const restoreDatabase = `khobra_restore_${randomBytes(6).toString('hex')}`;
     if (!/^khobra_restore_[a-f0-9]{12}$/.test(restoreDatabase)) throw new Error('Unsafe restore database name');

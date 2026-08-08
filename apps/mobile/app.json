@@ -16,7 +16,10 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
-      "adaptiveIcon": { "foregroundImage": "./assets/icon.png", "backgroundColor": "#F1FBF8" }
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#F1FBF8"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.khobracleaning.app"
@@ -26,9 +29,21 @@
       "expo-notifications",
       [
         "@preeternal/react-native-cookie-manager",
-        { "androidWebkitVersion": "1.16.0" }
+        {
+          "androidWebkitVersion": "1.16.0"
+        }
       ]
     ],
-    "splash": { "image": "./assets/logo.png", "resizeMode": "contain", "backgroundColor": "#F1FBF8" }
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F1FBF8"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6bc41b36-caa5-404e-bbe2-a38e7e035f8a"
+      }
+    },
+    "owner": "khobra-services"
   }
 }

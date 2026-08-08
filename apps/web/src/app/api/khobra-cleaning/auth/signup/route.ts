@@ -5,10 +5,11 @@ import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getPublicTenant } from '@/lib/public-tenant'
 import { EmailSchema } from '@repo/core'
+import { getClientIp } from '@/lib/client-ip'
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'anonymous'
+    const ip = getClientIp(req)
     if (!(await checkRateLimit(`signup:${ip}`, 5, 60_000)).allowed) return NextResponse.json({ error: 'Too many signup attempts. Please wait and try again.' }, { status: 429 })
     const { name, email, phone, city, area, address, password, turnstileToken } = await req.json()
 
@@ -70,6 +71,6 @@ export async function POST(req: NextRequest) {
     return response
   } catch (error: any) {
     console.error('Signup error:', error)
-    return NextResponse.json({ error: error.message || 'Signup failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Signup failed' }, { status: 500 })
   }
 }

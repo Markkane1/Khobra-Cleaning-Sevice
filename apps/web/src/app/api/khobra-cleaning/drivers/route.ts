@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json(driver, { status: 201 })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to create driver' }, { status: 500 })
+    console.error('Create driver failed:', error)
+    return NextResponse.json({ error: 'Failed to create driver' }, { status: 500 })
   }
 }
 
@@ -45,7 +46,8 @@ export async function PUT(req: NextRequest) {
     
     return NextResponse.json(updated)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to update driver' }, { status: 500 })
+    console.error('Update driver failed:', error)
+    return NextResponse.json({ error: 'Failed to update driver' }, { status: 500 })
   }
 }
 
@@ -62,6 +64,7 @@ export async function DELETE(req: NextRequest) {
     
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to delete driver' }, { status: 500 })
+    console.error('Delete driver failed:', error)
+    return NextResponse.json({ error: 'Failed to delete driver' }, { status: 500 })
   }
 }

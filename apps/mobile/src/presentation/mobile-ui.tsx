@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react'
+import type { StyleProp, ViewStyle } from 'react-native'
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 
@@ -32,9 +33,9 @@ export function PageHeading({ title, subtitle, action }: { title: string; subtit
   </View>
 }
 
-export function PrimaryButton({ label, onPress, icon = 'arrow-forward', loading = false, disabled = false }: { label: string; onPress: () => void; icon?: IconName; loading?: boolean; disabled?: boolean }) {
+export function PrimaryButton({ label, onPress, icon = 'arrow-forward', loading = false, disabled = false, style }: { label: string; onPress: () => void; icon?: IconName; loading?: boolean; disabled?: boolean; style?: StyleProp<ViewStyle> }) {
   const inactive = loading || disabled
-  return <Pressable accessibilityRole="button" disabled={inactive} onPress={onPress} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, inactive && styles.disabled]}>
+  return <Pressable accessibilityRole="button" disabled={inactive} onPress={onPress} style={({ pressed }) => [styles.primaryButton, style, pressed && styles.pressed, inactive && styles.disabled]}>
     {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.primaryButtonText}>{label}</Text><Ionicons name={icon} size={18} color="#fff" /></>}
   </Pressable>
 }
@@ -61,6 +62,22 @@ export const cardShadow = {
   elevation: 3,
 } as const
 
+export function FormLabel({ label }: { label: string }) {
+  return <Text style={styles.formLabel}>{label}</Text>
+}
+
+export function Input(props: ComponentProps<typeof import('react-native').TextInput>) {
+  const TextInput = require('react-native').TextInput
+  return <TextInput style={[styles.input, props.multiline && styles.inputMultiline]} placeholderTextColor={palette.muted} {...props} />
+}
+
+export function SelectButton({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
+  return <Pressable style={styles.selectButton} onPress={onPress}>
+    <Text style={value ? styles.selectValue : styles.selectPlaceholder}>{value || label}</Text>
+    <Ionicons name="chevron-down" size={20} color={palette.muted} />
+  </Pressable>
+}
+
 const styles = StyleSheet.create({
   pageHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 18 },
   pageHeadingText: { flex: 1 },
@@ -76,4 +93,10 @@ const styles = StyleSheet.create({
   stateIcon: { width: 64, height: 64, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.primarySoft, marginBottom: 15 },
   stateTitle: { fontFamily: headingFont, color: palette.ink, textAlign: 'center', fontSize: 17, fontWeight: '700' },
   stateDetail: { color: palette.muted, textAlign: 'center', fontSize: 13, lineHeight: 20, maxWidth: 300, marginTop: 7, marginBottom: 18 },
+  formLabel: { color: palette.ink, fontSize: 13, fontWeight: '700', marginBottom: 6, marginLeft: 4 },
+  input: { minHeight: 48, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, borderRadius: 14, paddingHorizontal: 16, color: palette.ink, fontSize: 15, fontFamily: headingFont },
+  inputMultiline: { minHeight: 100, paddingTop: 14, paddingBottom: 14, textAlignVertical: 'top' },
+  selectButton: { minHeight: 48, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, borderRadius: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectPlaceholder: { color: palette.muted, fontSize: 15, fontFamily: headingFont },
+  selectValue: { color: palette.ink, fontSize: 15, fontFamily: headingFont },
 })

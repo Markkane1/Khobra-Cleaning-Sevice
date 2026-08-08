@@ -827,10 +827,10 @@ export function Services() {
                       <TableCell>{s.minDuration} hrs</TableCell>
                       <TableCell>{s.materials?.length || 0} items</TableCell>
                       <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEdit(s)}>
+                        <Button size="icon" variant="ghost" aria-label={`Edit ${s.name}`} className="h-7 w-7" onClick={() => handleEdit(s)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500" onClick={() => deleteMut.mutate(s.id)}>
+                        <Button size="icon" variant="ghost" aria-label={`Delete ${s.name}`} className="h-7 w-7 text-red-500" onClick={() => deleteMut.mutate(s.id)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </TableCell>

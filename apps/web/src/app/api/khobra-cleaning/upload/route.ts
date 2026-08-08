@@ -18,6 +18,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
   if ('response' in auth) return auth.response
   if (!(await checkRateLimit(`upload:${auth.session.userId}`, 30, 60_000)).allowed) return NextResponse.json({ error: 'Too many uploads. Please wait and try again.' }, { status: 429 })
+  const contentLength = Number(request.headers.get('content-length') || 0)
+  const maxMultipartSize = UploadConfig.MAX_SIZE + 1024 * 1024
+  if (!Number.isFinite(contentLength) || contentLength > maxMultipartSize) return NextResponse.json({ error: `Upload exceeds ${UploadConfig.MAX_SIZE_LABEL}.` }, { status: 413 })
 
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME
   const apiKey = process.env.CLOUDINARY_API_KEY

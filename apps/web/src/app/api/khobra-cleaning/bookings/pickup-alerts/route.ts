@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
           customerLocation: location,
           scheduledEndTime: booking.endTime,
           assignedCleanerNames: booking.assignments.map(assignment => assignment.employee.user.name).join(', '),
-          generatedBy: `admin: ${auth.session.name} (${auth.session.userId})`,
+          generatedBy: auth.session.userId,
         },
         include: { booking: { select: { bookingNo: true } } },
       })

@@ -13,27 +13,35 @@ const publicPaths = new Set([
   '/api/khobra-cleaning/auth/me',
   '/api/khobra-cleaning/public/services',
   '/api/khobra-cleaning/public/bookings',
+  '/api/health',
 ])
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const requestId = crypto.randomUUID()
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-request-id', requestId)
+  const finish = (response: NextResponse) => {
+    response.headers.set('x-request-id', requestId)
+    return response
+  }
   const bearer = request.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1]
   const session = verifySessionToken(bearer || request.cookies.get('khobra_session')?.value || '')
 
-  if (pathname === '/' && !session) return NextResponse.rewrite(new URL('/home', request.url))
+  if (pathname === '/' && !session) return finish(NextResponse.rewrite(new URL('/home', request.url), { request: { headers: requestHeaders } }))
 
   if (publicPaths.has(pathname)) {
     if (session && (pathname === '/login' || pathname === '/signup')) {
-      return NextResponse.redirect(new URL('/', request.url))
+      return finish(NextResponse.redirect(new URL('/', request.url)))
     }
-    return NextResponse.next()
+    return finish(NextResponse.next({ request: { headers: requestHeaders } }))
   }
 
-  if (session) return NextResponse.next()
+  if (session) return finish(NextResponse.next({ request: { headers: requestHeaders } }))
   if (pathname.startsWith('/api/')) {
-    return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 })
+    return finish(NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 }))
   }
-  return NextResponse.redirect(new URL('/login', request.url))
+  return finish(NextResponse.redirect(new URL('/login', request.url)))
 }
 
 export const config = {

@@ -8,7 +8,7 @@ import { operationModules, type OperationModule, type OperationRecord } from '..
 import { khobraOperationsGateway } from '../infrastructure/http/khobra-gateways'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
-export function OperationsScreen({ session }: { session: Session }) {
+export function OperationsScreen({ session, onNavigate }: { session: Session; onNavigate?: (screen: OperationModule) => void }) {
   const allowedByRole: Record<Session['user']['role'], OperationModule[]> = {
     admin: operationModules.map(item => item.id),
     customer: ['services', 'complaints', 'notifications'],
@@ -28,6 +28,14 @@ export function OperationsScreen({ session }: { session: Session }) {
       .finally(() => setLoading(false))
   }, [module, session.token])
 
+  const handleModulePress = (id: OperationModule) => {
+    if (onNavigate && (id === 'services' || id === 'customers' || id === 'employees' || id === 'inventory' || id === 'complaints' || id === 'attendance' || id === 'invoices' || id === 'notifications')) {
+      onNavigate(id)
+    } else {
+      setModule(id)
+    }
+  }
+
   const activeLabel = visibleModules.find((item) => item.id === module)?.label || module
   return <View style={styles.screen}>
     <View style={styles.header}>
@@ -35,7 +43,7 @@ export function OperationsScreen({ session }: { session: Session }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modules}>
         {visibleModules.map((item) => {
           const active = module === item.id
-          return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => setModule(item.id)} style={[styles.module, active && styles.activeModule]}>
+          return <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => handleModulePress(item.id)} style={[styles.module, active && styles.activeModule]}>
             <Ionicons name={moduleIcons[item.id]} size={16} color={active ? '#fff' : palette.muted} /><Text style={[styles.moduleText, active && styles.activeModuleText]}>{item.label}</Text>
           </Pressable>
         })}

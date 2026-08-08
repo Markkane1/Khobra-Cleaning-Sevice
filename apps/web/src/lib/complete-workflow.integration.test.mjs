@@ -168,7 +168,16 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(alerts.length, 1, '6: repeated Yes must not duplicate pickup alert')
     assert.equal(alerts[0].driverId, driver.id)
     assert.equal(alerts[0].priority, 'high')
-    assert.equal(await db.notification.count({ where: { pickupAlertId: alerts[0].id, userId: driverUser.id } }), 1, '6: assigned driver must receive pickup notification')
+    const pickupNotifications = await db.notification.findMany({
+      where: { pickupAlertId: alerts[0].id, userId: driverUser.id },
+      select: { channel: true, deliveryKey: true },
+    })
+    assert.deepEqual(
+      pickupNotifications.map(({ channel }) => channel).sort(),
+      ['in_app', 'native_push', 'web_push'],
+      '6: assigned driver must receive exactly one notification per supported channel',
+    )
+    assert.equal(new Set(pickupNotifications.map(({ deliveryKey }) => deliveryKey)).size, 1, '6: channel notifications must share one logical delivery key')
 
     result = await request('/bookings/cleaner-complete', auth.otherCleaner, 'POST', { bookingId: cashBooking.id })
     assert.equal(result.response.status, 403, '18: unassigned cleaner must not complete')
@@ -285,8 +294,16 @@ test('complete operational workflow passes through real API routes and persisten
     const foreignTenant = await db.tenant.create({ data: { name: 'Foreign Workflow', slug: `foreign-${suffix}` } })
     ids.foreignTenantId = foreignTenant.id
     const foreignUser = await db.user.create({ data: { tenantId: foreignTenant.id, email: `foreign-${suffix}@test.local`, name: 'Foreign Customer', role: 'customer' } })
+    const foreignAdmin = await db.user.create({ data: { tenantId: foreignTenant.id, email: `foreign-admin-${suffix}@test.local`, name: 'Foreign Admin', role: 'admin' } })
+    const foreignAdminToken = createSessionToken({ userId: foreignAdmin.id, tenantId: foreignTenant.id, email: foreignAdmin.email, role: foreignAdmin.role, name: foreignAdmin.name })
     const foreignCustomer = await db.customer.create({ data: { tenantId: foreignTenant.id, userId: foreignUser.id } })
     const foreignInvoice = await db.invoice.create({ data: { tenantId: foreignTenant.id, customerId: foreignCustomer.id, invoiceNo: `FOREIGN-${suffix}`, subtotal: 10, totalAmount: 10 } })
+    const mainCategory = await request('/services/categories', auth.admin, 'POST', { name: `Main ${suffix}`, description: 'Main tenant only', color: 'emerald' })
+    assert.equal(mainCategory.response.status, 201)
+    assert.equal((await request('/services/categories', foreignAdminToken)).data.some(item => item.id === mainCategory.data.id), false, 'Service categories must not cross tenant boundaries')
+    const foreignCategory = await request('/services/categories', foreignAdminToken, 'POST', { name: `Foreign ${suffix}`, description: 'Foreign tenant only', color: 'teal' })
+    assert.equal(foreignCategory.response.status, 201)
+    assert.equal((await request('/services/categories', auth.admin)).data.some(item => item.id === foreignCategory.data.id), false, 'Foreign categories must not appear in the main tenant')
     result = await request('/payments', auth.admin, 'POST', { invoiceId: foreignInvoice.id, amount: 10, method: 'cash', referenceNo: `FOREIGN-${suffix}` })
     assert.equal(result.response.status, 405, 'The disabled generic endpoint cannot bypass tenant-safe workflows')
     result = await request('/dashboard', auth.admin)
@@ -319,7 +336,9 @@ test('complete operational workflow passes through real API routes and persisten
 
     assert.equal((await request('/auth/me', auth.otherDriver)).response.status, 200)
     assert.equal((await request('/auth/logout', auth.otherDriver, 'POST')).response.status, 200)
-    assert.equal((await request('/auth/me', auth.otherDriver)).response.status, 401, 'Logout must revoke the server session, not only clear the client token')
+    const revokedSession = await request('/auth/me', auth.otherDriver)
+    assert.equal(revokedSession.response.status, 200)
+    assert.equal(revokedSession.data.authenticated, false, 'Logout must revoke the server session, not only clear the client token')
 
     const finalCash = await db.booking.findUniqueOrThrow({ where: { id: cashBooking.id }, include: { invoices: true, pickupAlerts: true, rating: true, statusHistory: true } })
     assert.equal(finalCash.status, 'completed')
@@ -334,6 +353,7 @@ test('complete operational workflow passes through real API routes and persisten
     assert.deepEqual(new Set(finalBank.invoices[0].payments.map(item => item.status)), new Set(['rejected', 'paid']), '20: payment decisions must retain audit records')
   } finally {
     if (ids.foreignTenantId) {
+      await db.appSettings.deleteMany({ where: { key: { startsWith: `${ids.foreignTenantId}:` } } })
       await db.invoice.deleteMany({ where: { tenantId: ids.foreignTenantId } })
       await db.customer.deleteMany({ where: { tenantId: ids.foreignTenantId } })
       await db.user.deleteMany({ where: { tenantId: ids.foreignTenantId } })
@@ -357,6 +377,7 @@ test('complete operational workflow passes through real API routes and persisten
     await db.booking.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.service.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.appSettings.deleteMany({ where: { key: `company_bank_accounts_${ids.tenantId}` } })
+    await db.appSettings.deleteMany({ where: { key: { startsWith: `${ids.tenantId}:` } } })
     await db.employee.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.tripStop.deleteMany({ where: { trip: { tenantId: ids.tenantId } } })
     await db.trip.deleteMany({ where: { tenantId: ids.tenantId } })

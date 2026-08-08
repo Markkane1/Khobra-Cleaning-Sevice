@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
 import { hashPassword, requireAuth, verifyPassword } from '@/lib/auth'
+import { broadcast } from '@/lib/broadcast'
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request)
@@ -21,5 +22,6 @@ export async function POST(request: NextRequest) {
     db.pushSubscription.updateMany({ where: { userId: user.id }, data: { active: false } }),
     db.nativePushToken.updateMany({ where: { userId: user.id }, data: { active: false } }),
   ])
+  broadcast('session:revoked', {}, auth.session.tenantId, user.id)
   return NextResponse.json({ success: true })
 }

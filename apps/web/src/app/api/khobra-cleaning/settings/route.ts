@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(settings)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch settings' }, { status: 500 })
+    console.error('Fetch settings failed:', error)
+    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
   }
 }
 
@@ -41,7 +42,8 @@ export async function PUT(req: NextRequest) {
     if (error.message === 'Tenant not found') {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
     }
-    return NextResponse.json({ error: error.message || 'Failed to update settings' }, { status: 500 })
+    console.error('Update settings failed:', error)
+    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
   }
 }
 

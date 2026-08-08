@@ -439,7 +439,7 @@ export function Dispatch() {
                         <Badge variant="outline" className={`${d.status === 'active' || d.status === 'AVAILABLE' ? 'border-emerald-300 text-emerald-700' : 'border-gray-300'} text-xs capitalize`}>
                           {d.status?.toLowerCase()}
                         </Badge>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => {
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${d.user?.name || d.driverCode}`} className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => {
                           setDriverForm({ name: d.user?.name || '', phone: d.phone || '', email: d.user?.email || '', licenseNo: d.licenseNo || '', vehicleNo: d.vehicleInfo || '', temporaryPassword: '' })
                           setDriverEditId(d.id)
                           setDriverOpen(true)
@@ -448,7 +448,7 @@ export function Dispatch() {
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
+                            <Button variant="ghost" size="icon" aria-label={`Remove ${d.user?.name || d.driverCode}`} className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </AlertDialogTrigger>
@@ -590,7 +590,7 @@ export function Dispatch() {
                           {t.status === 'completed' && <span className="text-xs text-muted-foreground">Done</span>}
                           {currentRole === 'admin' && <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
+                              <Button size="icon" variant="ghost" aria-label="Delete trip" className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </AlertDialogTrigger>

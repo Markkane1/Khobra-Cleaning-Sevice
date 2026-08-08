@@ -364,8 +364,8 @@ export function Inventory() {
                           <TableCell className="text-xs text-muted-foreground">{item.unit}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleItemEdit(item)}><Pencil className="h-3.5 w-3.5" /></Button>
-                              <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
+                              <Button variant="ghost" size="icon" aria-label={`Edit ${item.name}`} className="h-7 w-7" onClick={() => handleItemEdit(item)}><Pencil className="h-3.5 w-3.5" /></Button>
+                              <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" aria-label={`Delete ${item.name}`} className="h-7 w-7 text-red-500 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
                                 <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Item</AlertDialogTitle><AlertDialogDescription>Permanently remove this inventory item?</AlertDialogDescription></AlertDialogHeader>
                                 <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => deleteItemMut.mutate(item.id)}>Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
                             </div>
@@ -412,14 +412,14 @@ export function Inventory() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => {
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${v.name}`} className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => {
                           setVForm({ name: v.name || '', contactPerson: v.contactPerson || '', phone: v.phone || '', email: v.email || '', address: v.address || '' })
                           setVendorEditId(v.id)
                           setVendorOpen(true)
                         }}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="text-red-500 h-7 w-7 hover:bg-red-50 dark:hover:bg-red-950/20"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
+                        <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" aria-label={`Remove ${v.name}`} className="text-red-500 h-7 w-7 hover:bg-red-50 dark:hover:bg-red-950/20"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
                           <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove Vendor</AlertDialogTitle><AlertDialogDescription>Remove this vendor?</AlertDialogDescription></AlertDialogHeader>
                           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => deleteVendorMut.mutate(v.id)}>Remove</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
                       </div>

@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
     const branches = await branchRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(branches)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch branches' }, { status: 500 })
+    console.error('Fetch branches failed:', error)
+    return NextResponse.json({ error: 'Failed to fetch branches' }, { status: 500 })
   }
 }
 
@@ -28,7 +29,8 @@ export async function POST(req: NextRequest) {
     const branch = await branchRepository.create(auth.session.tenantId, validatedData)
     return NextResponse.json(branch, { status: 201 })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to create branch' }, { status: 500 })
+    console.error('Create branch failed:', error)
+    return NextResponse.json({ error: 'Failed to create branch' }, { status: 500 })
   }
 }
 
@@ -43,7 +45,8 @@ export async function PUT(req: NextRequest) {
     const updated = await branchRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     return NextResponse.json(updated)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to update branch' }, { status: 500 })
+    console.error('Update branch failed:', error)
+    return NextResponse.json({ error: 'Failed to update branch' }, { status: 500 })
   }
 }
 
@@ -59,7 +62,8 @@ export async function DELETE(req: NextRequest) {
     await branchRepository.delete(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to delete branch' }, { status: 500 })
+    console.error('Delete branch failed:', error)
+    return NextResponse.json({ error: 'Failed to delete branch' }, { status: 500 })
   }
 }
 

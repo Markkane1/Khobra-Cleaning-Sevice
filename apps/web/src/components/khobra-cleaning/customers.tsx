@@ -652,6 +652,7 @@ export function Customers() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                aria-label={`Edit ${c.user?.name || 'customer'}`}
                                 className="h-7 w-7"
                                 onClick={(e) => handleEdit(c, e)}
                               >
@@ -667,6 +668,7 @@ export function Customers() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    aria-label={`Delete ${c.user?.name || 'customer'}`}
                                     className="h-7 w-7 text-red-500 hover:text-red-700"
                                     onClick={(e) => e.stopPropagation()}
                                   >
@@ -820,6 +822,7 @@ export function Customers() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
+                                          aria-label={`Edit ${c.user?.name || 'customer'}`}
                                           className="h-7 w-7"
                                           onClick={(e) => handleEdit(c, e)}
                                         >
@@ -835,6 +838,7 @@ export function Customers() {
                                             <Button
                                               variant="ghost"
                                               size="icon"
+                                              aria-label={`Delete ${c.user?.name || 'customer'}`}
                                               className="h-7 w-7 text-red-500 hover:text-red-700"
                                               onClick={(e) => e.stopPropagation()}
                                             >

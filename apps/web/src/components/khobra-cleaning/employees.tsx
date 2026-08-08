@@ -103,7 +103,7 @@ function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700">
+        <Button variant="ghost" size="icon" aria-label="Remove cleaner" className="h-7 w-7 text-red-500 hover:text-red-700">
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </AlertDialogTrigger>
@@ -674,7 +674,7 @@ export function Employees() {
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleViewDetail(e)}>
+                                <Button variant="ghost" size="icon" aria-label={`View ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleViewDetail(e)}>
                                   <Eye className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
@@ -682,7 +682,7 @@ export function Employees() {
                             </Tooltip>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(e)}>
+                                <Button variant="ghost" size="icon" aria-label={`Edit ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleEdit(e)}>
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
@@ -830,7 +830,7 @@ export function Employees() {
                                   <div className="flex gap-1">
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleViewDetail(e)}>
+                                        <Button variant="ghost" size="icon" aria-label={`View ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleViewDetail(e)}>
                                           <Eye className="h-3.5 w-3.5" />
                                         </Button>
                                       </TooltipTrigger>
@@ -838,7 +838,7 @@ export function Employees() {
                                     </Tooltip>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(e)}>
+                                        <Button variant="ghost" size="icon" aria-label={`Edit ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleEdit(e)}>
                                           <Pencil className="h-3.5 w-3.5" />
                                         </Button>
                                       </TooltipTrigger>

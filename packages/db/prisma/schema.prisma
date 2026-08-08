@@ -313,6 +313,8 @@ model LeaveRecord {
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
   approver User? @relation("LeaveApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, startDate, endDate])
 }
 
 // ============ DRIVErs ============
@@ -394,6 +396,7 @@ model Booking {
   rating                    BookingRating?
 
   @@index([driverId])
+  @@index([tenantId, scheduledDate, status])
 }
 
 model BookingStatusHistory {
@@ -522,6 +525,7 @@ model Assignment {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@unique([bookingId, employeeId])
+  @@index([tenantId, employeeId, status])
 }
 
 // ============ DISPATCH / TRIPS ============
@@ -636,6 +640,8 @@ model Invoice {
   booking  Booking?  @relation(fields: [bookingId], references: [id])
   customer Customer  @relation(fields: [customerId], references: [id])
   payments Payment[]
+
+  @@index([tenantId, status, createdAt])
 }
 
 model Payment {
@@ -679,6 +685,7 @@ model Payment {
 
   @@unique([tenantId, referenceNo])
   @@index([companyBankAccountId])
+  @@index([tenantId, status, createdAt])
 }
 
 model PaymentEvent {
@@ -764,6 +771,8 @@ model StockMovement {
 
   tenant Tenant        @relation(fields: [tenantId], references: [id])
   item   InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([tenantId, itemId, createdAt])
 }
 
 // ============ COMPLAINTS ============

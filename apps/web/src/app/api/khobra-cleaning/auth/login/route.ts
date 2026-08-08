@@ -3,10 +3,11 @@ import { db } from '@repo/db'
 import { createSessionToken, isRoleId, SESSION_TTL_SECONDS, verifyPassword } from '@/lib/auth'
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { getClientIp } from '@/lib/client-ip'
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous'
+    const ip = getClientIp(req)
     const rate = await checkRateLimit(`login:${ip}`, 10, 60_000)
     if (!rate.allowed) {
       return NextResponse.json({ error: 'Too many login attempts. Please wait a minute and try again.' }, { status: 429 })
@@ -21,11 +22,15 @@ export async function POST(req: NextRequest) {
     if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
     }
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!(await checkRateLimit(`login-account:${normalizedEmail.slice(0, 254)}`, 20, 5 * 60_000)).allowed) {
+      return NextResponse.json({ error: 'Too many login attempts. Please wait five minutes and try again.' }, { status: 429 })
+    }
     if (!await verifyTurnstile(turnstileToken, req.headers.get('cf-connecting-ip') || undefined)) {
       return NextResponse.json({ error: 'Please complete the security check again' }, { status: 400 })
     }
 
-    const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } })
+    const user = await db.user.findUnique({ where: { email: normalizedEmail } })
     if (!user?.passwordHash || user.status !== 'active' || !user.tenantId || !isRoleId(user.role) || !verifyPassword(password, user.passwordHash)) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }

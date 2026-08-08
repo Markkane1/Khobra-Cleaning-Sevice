@@ -249,6 +249,7 @@ export function CompanyBankAccounts() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label={`Edit ${acc.accountTitle}`}
                           className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                           onClick={() => {
                             setForm({
@@ -273,6 +274,7 @@ export function CompanyBankAccounts() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label={`Delete ${acc.accountTitle}`}
                           className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
                           onClick={() => {
                             setSelectedAccount(acc)

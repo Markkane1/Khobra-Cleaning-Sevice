@@ -8,8 +8,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
+    "doctor": "expo-doctor",
     "typecheck": "tsc --noEmit",
-    "build:android": "node --env-file-if-exists=.env -e \"const fs=require('fs'),u=new URL(process.env.EXPO_PUBLIC_API_URL||'');if(u.protocol!=='https:'||u.origin!==u.href.replace(/\\/$/,''))throw Error('EXPO_PUBLIC_API_URL must be an HTTPS origin with no path');if(!fs.existsSync('google-services.json'))throw Error('apps/mobile/google-services.json is required for Android push')\" && set NODE_ENV=production&& cd android && gradlew bundleRelease"
+    "build:android": "eas build --platform android --profile production --non-interactive"
   },
   "dependencies": {
     "@expo/vector-icons": "15.0.3",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "expo-doctor": "1.20.1",
     "typescript": "5.9.3"
   }
 }

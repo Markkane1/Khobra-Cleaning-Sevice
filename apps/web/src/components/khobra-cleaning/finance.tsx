@@ -708,7 +708,7 @@ export function Finance() {
                         </TableCell>
                         <TableCell><Badge className={`${invStatusColors [inv.status] || ''} text-xs`}>{inv.status.replace('_', ' ')}</Badge></TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDownloadPDF(inv.id, inv.invoiceNo)} disabled={pdfLoading === inv.id}>
+                          <Button variant="ghost" size="icon" aria-label={`Download invoice ${inv.invoiceNo} PDF`} className="h-7 w-7" onClick={() => handleDownloadPDF(inv.id, inv.invoiceNo)} disabled={pdfLoading === inv.id}>
                             {pdfLoading === inv.id ? <span className="h-3.5 w-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /> : <FileText className="h-3.5 w-3.5 text-emerald-600" />}
                           </Button>
                         </TableCell>

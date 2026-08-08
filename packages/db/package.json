@@ -2,6 +2,7 @@
   "name": "@repo/db",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
@@ -22,9 +23,6 @@
     "test:retention": "tsx scripts/test-operational-retention.ts",
     "audit:actors": "tsx scripts/audit-actor-fields.ts",
     "audit:timezones": "tsx scripts/audit-timezones.ts"
-  },
-  "prisma": {
-    "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",

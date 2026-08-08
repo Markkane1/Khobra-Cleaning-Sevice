@@ -5,6 +5,7 @@ import { loadDashboard } from './src/application/dashboard'
 import type { Session } from './src/domain/auth/types'
 import type { DashboardStats } from './src/domain/dashboard/types'
 import type { PickupAlert } from './src/domain/bookings/types'
+import type { OperationModule } from './src/domain/operations/types'
 import { khobraBookingGateway, khobraDashboardGateway } from './src/infrastructure/http/khobra-gateways'
 import { secureSessionStore } from './src/infrastructure/storage/secure-session-store'
 import { AuthScreen } from './src/presentation/auth-screen'
@@ -13,12 +14,28 @@ import { cardShadow, headingFont, LoadingState, PageHeading, palette } from './s
 import { NewBookingScreen } from './src/presentation/new-booking-screen'
 import { OperationsScreen } from './src/presentation/operations-screen'
 import { DriverExpensesScreen } from './src/presentation/driver-expenses-screen'
-import { clearWorkspaceSession, WorkspaceScreen } from './src/presentation/workspace-screen'
+import { ServicesScreen } from './src/presentation/services-screen'
+import { CustomersScreen } from './src/presentation/customers-screen'
+import { EmployeesScreen } from './src/presentation/employees-screen'
+import { InventoryScreen } from './src/presentation/inventory-screen'
+import { ComplaintsScreen } from './src/presentation/complaints-screen'
+import { AttendanceScreen } from './src/presentation/attendance-screen'
+import { InvoicesScreen } from './src/presentation/invoices-screen'
+import { NotificationsScreen } from './src/presentation/notifications-screen'
+import { AdminHubScreen } from './src/presentation/admin-hub-screen'
+import { BranchesScreen } from './src/presentation/branches-screen'
+import { BankAccountsScreen } from './src/presentation/bank-accounts-screen'
+import { PayrollScreen } from './src/presentation/payroll-screen'
+import { RbacScreen } from './src/presentation/rbac-screen'
+import { SettingsScreen } from './src/presentation/settings-screen'
+import { ReportsScreen } from './src/presentation/reports-screen'
+import { DispatchScreen } from './src/presentation/dispatch-screen'
+import { ProfileScreen } from './src/presentation/profile-screen'
 import { apiBaseUrl, setUnauthorizedHandler } from './src/infrastructure/http/api-client'
 import { registerNativePush } from './src/infrastructure/notifications/native-push'
 
-type MainScreen = 'overview' | 'bookings' | 'expenses' | 'operations' | 'workspace'
-type Screen = MainScreen | 'new-booking'
+type MainScreen = 'overview' | 'bookings' | 'expenses' | 'operations' | 'admin'
+type Screen = MainScreen | 'new-booking' | 'services' | 'customers' | 'employees' | 'inventory' | 'complaints' | 'attendance' | 'invoices' | 'notifications' | 'dispatch' | 'payroll' | 'bank-accounts' | 'branches' | 'rbac' | 'settings' | 'reports' | 'profile'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -30,7 +47,7 @@ export default function App() {
 
   useEffect(() => {
     setUnauthorizedHandler(async () => {
-      await Promise.all([clearWorkspaceSession(), secureSessionStore.clear()])
+      await secureSessionStore.clear()
       setSession(null)
     })
     return () => setUnauthorizedHandler()
@@ -39,7 +56,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return
     const timeout = setTimeout(() => {
-      void Promise.all([clearWorkspaceSession(), secureSessionStore.clear()]).finally(() => setSession(null))
+      void secureSessionStore.clear().finally(() => setSession(null))
     }, Math.max(0, session.expiresAt - Date.now()))
     return () => clearTimeout(timeout)
   }, [session])
@@ -59,7 +76,6 @@ export default function App() {
         }).catch(() => null)
       }
     } catch {}
-    await clearWorkspaceSession()
     await secureSessionStore.clear()
     setSession(null)
   }
@@ -99,11 +115,27 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       {screen === 'overview' ? <Overview stats={stats} loading={loading} pickupAlerts={pickupAlerts.filter(alert => !alert.viewedAt)} onRefresh={refresh} onPickupViewed={async id => { await khobraBookingGateway.markPickupAlertViewed(id, session.token); setPickupAlerts(current => current.filter(alert => alert.id !== id)) }} /> : null}
       {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
       {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} /> : null}
-      {screen === 'operations' ? <OperationsScreen session={session} /> : null}
+      {screen === 'operations' ? <OperationsScreen session={session} onNavigate={setScreen} /> : null}
+      {screen === 'services' ? <ServicesScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'customers' ? <CustomersScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'employees' ? <EmployeesScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'inventory' ? <InventoryScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'complaints' ? <ComplaintsScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'attendance' ? <AttendanceScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'invoices' ? <InvoicesScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'notifications' ? <NotificationsScreen session={session} onBack={() => setScreen('operations')} /> : null}
       {screen === 'expenses' ? <DriverExpensesScreen session={session} /> : null}
-      {screen === 'workspace' ? <WorkspaceScreen session={session} /> : null}
+      {screen === 'admin' ? <AdminHubScreen session={session} onNavigate={setScreen as any} /> : null}
+      {screen === 'branches' ? <BranchesScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'bank-accounts' ? <BankAccountsScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'payroll' ? <PayrollScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'rbac' ? <RbacScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'settings' ? <SettingsScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'reports' ? <ReportsScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'dispatch' ? <DispatchScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'profile' ? <ProfileScreen session={session} onBack={() => setScreen('admin')} /> : null}
     </KeyboardAvoidingView>
-    <BottomNavigation screen={screen === 'new-booking' ? 'bookings' : screen} role={session.user.role} onChange={setScreen} />
+    <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'bank-accounts', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={setScreen} />
   </SafeAreaView>
 }
 
@@ -182,9 +214,9 @@ function BottomNavigation({ screen, role, onChange }: { screen: MainScreen; role
 const navigation: ReadonlyArray<{ id: MainScreen; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; activeIcon: React.ComponentProps<typeof Ionicons>['name'] }> = [
   { id: 'overview', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
   { id: 'bookings', label: 'Bookings', icon: 'calendar-outline', activeIcon: 'calendar' },
-  { id: 'expenses', label: 'Expenses', icon: 'receipt-outline', activeIcon: 'receipt' },
   { id: 'operations', label: 'Operations', icon: 'grid-outline', activeIcon: 'grid' },
-  { id: 'workspace', label: 'Workspace', icon: 'globe-outline', activeIcon: 'globe' },
+  { id: 'admin', label: 'Admin', icon: 'briefcase-outline', activeIcon: 'briefcase' },
+  { id: 'expenses', label: 'Expenses', icon: 'receipt-outline', activeIcon: 'receipt' },
 ]
 
 const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0

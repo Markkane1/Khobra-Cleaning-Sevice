@@ -509,7 +509,7 @@ export class PrismaBookingRepository implements IBookingRepository {
 
     // Rescheduling Availability Validation (Prompt 09 Trigger 8 & 9)
     if ((rest.scheduledDate || rest.startTime || rest.endTime) && existing.assignments && existing.assignments.length > 0) {
-      await db.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join(existing.assignments.map(assignment => assignment.employeeId).sort())}) FOR UPDATE`);
+      await db.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join(existing.assignments.map((assignment: { employeeId: string }) => assignment.employeeId).sort())}) FOR UPDATE`);
       const { start: dateStart, end: dateEnd } = calendarDayRange(rest.scheduledDate ? String(rest.scheduledDate).slice(0, 10) : scheduledDate, tenantObj?.timezone || 'UTC');
 
       const reqStartMins = parseTimeToMinutes(startTime);
@@ -521,6 +521,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         // Check leave
         const onLeave = await db.leaveRecord.findFirst({
           where: {
+            tenantId: existing.tenantId,
             employeeId: empId,
             status: 'approved',
             startDate: { lt: dateEnd },
@@ -534,9 +535,11 @@ export class PrismaBookingRepository implements IBookingRepository {
         // Check overlapping bookings
         const overlapping = await db.assignment.findMany({
           where: {
+            tenantId: existing.tenantId,
             employeeId: empId,
             bookingId: { not: id },
             booking: {
+              tenantId: existing.tenantId,
               scheduledDate: { gte: dateStart, lt: dateEnd },
               status: { notIn: ['cancelled', 'completed', 'no_show'] },
             },
@@ -544,7 +547,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           include: { booking: { select: { startTime: true, endTime: true, duration: true } } },
         });
 
-        const hasConflict = overlapping.some(a => {
+        const hasConflict = overlapping.some((a: { booking: { startTime: string; endTime: string | null; duration: number } }) => {
           const b = a.booking;
           const bStart = parseTimeToMinutes(b.startTime);
           const bEnd = b.endTime ? parseTimeToMinutes(b.endTime) : bStart + Math.round(b.duration * 60);
@@ -564,7 +567,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     } else if (rest.serviceId) {
       serviceIds = [rest.serviceId];
     } else if (existing.items && existing.items.length > 0) {
-      serviceIds = existing.items.map(i => i.serviceId);
+      serviceIds = existing.items.map((i: { serviceId: string }) => i.serviceId);
     } else if (existing.serviceId) {
       serviceIds = [existing.serviceId];
     }
@@ -573,7 +576,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       const services = await db.service.findMany({
         where: { tenantId: existing.tenantId, id: { in: serviceIds } },
       });
-      if (services.length !== serviceIds.length || services.some(service => service.status === 'inactive')) {
+      if (services.length !== serviceIds.length || services.some((service: { status: string }) => service.status === 'inactive')) {
         throw new Error('Selected service(s) are unavailable');
       }
 
@@ -582,8 +585,8 @@ export class PrismaBookingRepository implements IBookingRepository {
         const requiredSkillsList = getRequiredSkills(services);
         if (requiredSkillsList.length > 0) {
           for (const assign of existing.assignments) {
-            const emp = await db.employee.findUnique({
-              where: { id: assign.employeeId },
+            const emp = await db.employee.findFirst({
+              where: { id: assign.employeeId, tenantId: existing.tenantId },
               include: { user: { select: { name: true } } },
             });
 
@@ -595,7 +598,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       }
 
       const employeeCount = rest.employeeCount !== undefined ? rest.employeeCount : existing.employeeCount;
-      const materialsInput = existing.materials.map(material => ({
+      const materialsInput = existing.materials.map((material: { inventoryItemId: string | null; name: string; unit: string; quantity: number; unitPrice: Prisma.Decimal }) => ({
         inventoryItemId: material.inventoryItemId || undefined,
         name: material.name,
         unit: material.unit,
@@ -714,6 +717,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       // 3. Exclude staff on approved leave
       const leaves = await this.db.leaveRecord.findMany({
         where: {
+          tenantId: existing.tenantId,
           status: 'approved',
           startDate: { lt: dateEnd },
           endDate: { gte: dateStart },
@@ -724,6 +728,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       // 4. Exclude staff with overlapping bookings
       const dayBookings = await this.db.booking.findMany({
         where: {
+          tenantId: existing.tenantId,
           scheduledDate: { gte: dateStart, lt: dateEnd },
           status: { notIn: ['cancelled', 'completed', 'no_show'] },
           id: { not: bookingId },
