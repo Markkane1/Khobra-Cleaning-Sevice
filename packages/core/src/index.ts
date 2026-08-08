@@ -8,6 +8,7 @@ export * from './dashboard/schema';
 export * from './drivers/schema';
 export * from './driver-expenses/schema';
 export * from './employees/schema';
+export * from './email';
 export * from './inventory/schema';
 export * from './invoice-pdf/schema';
 export * from './invoices/schema';

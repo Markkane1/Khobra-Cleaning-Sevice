@@ -428,11 +428,11 @@ export function Reports() {
       <motion.div {...fadeUp}>
         <Tabs defaultValue="revenue">
           <TabsList className="bg-muted/60">
-            <TabsTrigger value="revenue" className="text-xs sm:text-sm">Revenue</TabsTrigger>
-            <TabsTrigger value="bookings" className="text-xs sm:text-sm">Bookings</TabsTrigger>
-            <TabsTrigger value="services" className="text-xs sm:text-sm">Services</TabsTrigger>
-            <TabsTrigger value="customers" className="text-xs sm:text-sm">Customer Analytics</TabsTrigger>
-            <TabsTrigger value="performance" className="text-xs sm:text-sm">Performance</TabsTrigger>
+            <TabsTrigger value="revenue" className="flex-none text-xs sm:text-sm">Revenue</TabsTrigger>
+            <TabsTrigger value="bookings" className="flex-none text-xs sm:text-sm">Bookings</TabsTrigger>
+            <TabsTrigger value="services" className="flex-none text-xs sm:text-sm">Services</TabsTrigger>
+            <TabsTrigger value="customers" className="flex-none text-xs sm:text-sm">Customer Analytics</TabsTrigger>
+            <TabsTrigger value="performance" className="flex-none text-xs sm:text-sm">Performance</TabsTrigger>
           </TabsList>
 
           {/* ── Revenue Tab ── */}

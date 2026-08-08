@@ -109,7 +109,7 @@ export function AuthPage() {
       return
     }
     if (!loginCaptcha) return toast.error('Please complete the security check')
-    loginMut.mutate({ email: loginEmail, password: loginPassword, turnstileToken: loginCaptcha })
+    loginMut.mutate({ email: loginEmail.trim().toLowerCase(), password: loginPassword, turnstileToken: loginCaptcha })
   }
 
   const handleSignup = (e: React.FormEvent) => {
@@ -121,7 +121,7 @@ export function AuthPage() {
     if (!signupCaptcha) return toast.error('Please complete the security check')
     registerCustomerMut.mutate({
       name: signupForm.name,
-      email: signupForm.email,
+      email: signupForm.email.trim().toLowerCase(),
       phone: signupForm.phone,
       city: signupForm.city,
       area: signupForm.area,

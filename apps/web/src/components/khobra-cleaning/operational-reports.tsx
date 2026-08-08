@@ -122,7 +122,7 @@ export function OperationalReports({ bookings, currency = 'AED' }: { bookings: a
     </CardHeader>
     <CardContent>
       <Tabs defaultValue="bookings">
-        <TabsList className="mb-4"><TabsTrigger value="bookings">All Bookings ({bookingRows.length})</TabsTrigger><TabsTrigger value="completed">Completed ({completed.length})</TabsTrigger><TabsTrigger value="assignments">Cleaner Assignments ({assignmentRows.length})</TabsTrigger></TabsList>
+        <TabsList className="mb-4"><TabsTrigger value="bookings" className="flex-none">All Bookings ({bookingRows.length})</TabsTrigger><TabsTrigger value="completed" className="flex-none">Completed ({completed.length})</TabsTrigger><TabsTrigger value="assignments" className="flex-none">Cleaner Assignments ({assignmentRows.length})</TabsTrigger></TabsList>
         <TabsContent value="bookings" className="space-y-3"><div className="flex justify-end">{actions(`Booking Record ${from} to ${to}`, bookingRows)}</div>{bookingTable(bookingRows)}</TabsContent>
         <TabsContent value="completed" className="space-y-3"><div className="flex justify-end">{actions(`Completed Bookings ${from} to ${to}`, completedRows)}</div>{bookingTable(completedRows)}</TabsContent>
         <TabsContent value="assignments" className="space-y-5">

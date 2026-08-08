@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EmailSchema } from '../email';
 
 export const CustomerAddressSchema = z.object({
   label: z.string().trim().max(50).optional(),
@@ -8,7 +9,7 @@ export const CustomerAddressSchema = z.object({
 });
 
 export const CreateCustomerSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   name: z.string(),
   phone: z.string().optional(),
   city: z.string().optional(),

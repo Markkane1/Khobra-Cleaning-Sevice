@@ -12,7 +12,7 @@ export async function signIn(
   if (!password) throw new Error('Password is required.')
   if (!turnstileToken) throw new Error('Complete the security check.')
 
-  const session = await gateway.signIn(email.trim(), password, turnstileToken)
+  const session = await gateway.signIn(email.trim().toLowerCase(), password, turnstileToken)
   await sessionStore.write(session)
   return session
 }

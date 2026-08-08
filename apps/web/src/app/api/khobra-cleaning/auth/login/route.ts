@@ -12,8 +12,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many login attempts. Please wait a minute and try again.' }, { status: 429 })
     }
 
-    const { email, password, turnstileToken } = await req.json()
-
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Invalid request data' }, { status: 400 })
+    }
+    const { email, password, turnstileToken } = body
 
     if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -57,8 +60,8 @@ export async function POST(req: NextRequest) {
     })
 
     return response
-  } catch (error: any) {
+  } catch (error) {
     console.error('Login error:', error)
-    return NextResponse.json({ error: error.message || 'Login failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Login failed' }, { status: 500 })
   }
 }

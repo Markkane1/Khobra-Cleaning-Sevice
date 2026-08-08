@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Image, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
+import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { loadDashboard } from './src/application/dashboard'
 import type { Session } from './src/domain/auth/types'
@@ -95,14 +95,14 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   return <SafeAreaView style={styles.screen}>
     <View style={styles.glow} />
     <AppHeader session={session} onSignOut={onSignOut} />
-    <View style={styles.body}>
+    <KeyboardAvoidingView style={styles.body} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {screen === 'overview' ? <Overview stats={stats} loading={loading} pickupAlerts={pickupAlerts.filter(alert => !alert.viewedAt)} onRefresh={refresh} onPickupViewed={async id => { await khobraBookingGateway.markPickupAlertViewed(id, session.token); setPickupAlerts(current => current.filter(alert => alert.id !== id)) }} /> : null}
       {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
       {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} /> : null}
       {screen === 'operations' ? <OperationsScreen session={session} /> : null}
       {screen === 'expenses' ? <DriverExpensesScreen session={session} /> : null}
       {screen === 'workspace' ? <WorkspaceScreen session={session} /> : null}
-    </View>
+    </KeyboardAvoidingView>
     <BottomNavigation screen={screen === 'new-booking' ? 'bookings' : screen} role={session.user.role} onChange={setScreen} />
   </SafeAreaView>
 }

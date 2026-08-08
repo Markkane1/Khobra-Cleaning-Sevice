@@ -45,6 +45,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <a
+          href="#main-content"
+          className="sr-only fixed left-4 top-4 z-[100] rounded-md bg-background px-4 py-3 font-semibold text-foreground shadow-lg focus:not-sr-only"
+        >
+          Skip to main content
+        </a>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -52,7 +58,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <QueryProvider>
-            {children}
+            <div id="main-content" tabIndex={-1}>{children}</div>
             <Toaster richColors position="top-right" />
           </QueryProvider>
         </ThemeProvider>

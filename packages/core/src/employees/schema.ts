@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { EmailSchema } from '../email';
 
 export const CreateEmployeeSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   name: z.string(),
   phone: z.string().optional(),
   address: z.string().optional(),

@@ -4,6 +4,7 @@ import { createSessionToken, hashPassword, SESSION_TTL_SECONDS } from '@/lib/aut
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getPublicTenant } from '@/lib/public-tenant'
+import { EmailSchema } from '@repo/core'
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,14 +24,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase()
-    const existingUser = await db.user.findUnique({ where: { email: normalizedEmail } })
+    const normalizedEmail = EmailSchema.safeParse(email)
+    if (!normalizedEmail.success) {
+      return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 })
+    }
+    const existingUser = await db.user.findUnique({ where: { email: normalizedEmail.data } })
     if (existingUser) {
       return NextResponse.json({ error: 'An account with this email already exists' }, { status: 400 })
     }
 
     const { user, customer } = await db.$transaction(async tx => {
-      const user = await tx.user.create({ data: { tenantId: tenant.id, email: normalizedEmail, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
+      const user = await tx.user.create({ data: { tenantId: tenant.id, email: normalizedEmail.data, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
       const customer = await tx.customer.create({ data: { tenantId: tenant.id, userId: user.id, phone, city, area, address, status: 'active' } })
       return { user, customer }
     })

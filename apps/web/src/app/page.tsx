@@ -701,13 +701,13 @@ export default function HomePage() {
       <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
 
       {/* Main Content */}
-      <main className="flex-1 lg:pl-64 flex flex-col min-h-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-64">
         {/* Header */}
         <header className="mobile-safe-header sticky top-0 z-30 flex items-center justify-between lg:px-6 bg-background/80 backdrop-blur-md">
           <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9" onClick={toggleSidebar}>
+          <div className="flex min-w-0 items-center gap-3">
+            <Button aria-label="Open navigation" variant="ghost" size="icon" className="lg:hidden" onClick={toggleSidebar}>
               <Menu className="h-5 w-5" />
             </Button>
             <div className="lg:hidden flex items-center gap-2">
@@ -721,7 +721,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1.5">
             {/* Quick Actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -770,7 +770,7 @@ export default function HomePage() {
             {/* Notification Bell */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 relative" onClick={() => setNotifOpen(true)}>
+                <Button aria-label="Open notifications" variant="ghost" size="icon" className="relative" onClick={() => setNotifOpen(true)}>
                   <Bell className="h-4 w-4" />
                   {stats && stats.openComplaints > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
@@ -783,7 +783,7 @@ export default function HomePage() {
             </Tooltip>
 
             {/* Theme Toggle */}
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            <Button aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
 
@@ -791,7 +791,7 @@ export default function HomePage() {
             {currentUser ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 gap-2 border-emerald-300 dark:border-emerald-700">
+                  <Button aria-label="Open user menu" variant="outline" size="sm" className="gap-2 border-emerald-300 dark:border-emerald-700">
                     <Avatar className="h-5 w-5 bg-emerald-600 text-white text-[10px] font-bold">
                       <AvatarFallback className="bg-emerald-600 text-white">
                         {currentUser.name ? currentUser.name.slice(0, 2).toUpperCase() : 'US'}

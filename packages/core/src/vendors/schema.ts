@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { EmailSchema } from '../email';
 
 export const CreateVendorSchema = z.object({
   name: z.string(),
   contactPerson: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable().or(z.literal('')),
+  email: EmailSchema.optional().nullable().or(z.literal('')),
   address: z.string().optional().nullable(),
   status: z.string().optional(),
 });

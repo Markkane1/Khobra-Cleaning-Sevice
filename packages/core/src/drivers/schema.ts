@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { EmailSchema } from '../email';
 
 export const CreateDriverSchema = z.object({
   name: z.string().min(1, 'Driver name is required'),
-  email: z.string().email().optional().or(z.literal('')),
+  email: EmailSchema.optional().or(z.literal('')),
   phone: z.string().optional().nullable(),
   licenseNo: z.string().optional(),
   vehicleNo: z.string().optional(),
@@ -13,7 +14,7 @@ export const CreateDriverSchema = z.object({
 export const UpdateDriverSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
-  email: z.string().email().optional().or(z.literal('')),
+  email: EmailSchema.optional().or(z.literal('')),
   phone: z.string().optional().nullable(),
   licenseNo: z.string().optional(),
   vehicleNo: z.string().optional(),

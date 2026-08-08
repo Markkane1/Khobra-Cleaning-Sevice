@@ -159,7 +159,7 @@ export function NotificationManagement() {
           <p className="text-sm text-muted-foreground">Broadcast system alerts, targeted role announcements, and customer updates</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => refetch()}>
             <RefreshCw className="h-3.5 w-3.5" />Refresh
           </Button>
@@ -294,14 +294,14 @@ export function NotificationManagement() {
 
       {/* Filter and Table */}
       <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col items-stretch gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-base">Sent Notifications Audit Log</CardTitle>
             <CardDescription>History of all system broadcasts and targeted messages</CardDescription>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-48">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-48">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Search alerts..."
@@ -312,7 +312,7 @@ export function NotificationManagement() {
             </div>
 
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-8 text-xs w-32"><SelectValue placeholder="All Types" /></SelectTrigger>
+              <SelectTrigger className="h-8 w-full text-xs sm:w-32"><SelectValue placeholder="All Types" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="info">Info</SelectItem>
