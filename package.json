@@ -11,6 +11,7 @@
     "build": "npm --prefix apps/web run build",
     "start": "npm --prefix apps/web run start",
     "lint": "npm --prefix apps/web run lint",
+    "postinstall": "npm --prefix packages/db run db:generate",
     "typecheck": "npx tsc -p apps/web/tsconfig.json --noEmit",
     "test:unit": "node --env-file-if-exists=apps/web/.env --experimental-strip-types --test apps/web/src/lib/auth.test.mjs apps/web/src/lib/client-ip.test.mjs apps/web/src/lib/cloudinary.test.mjs apps/web/src/lib/rate-limit.integration.test.mjs apps/realtime/config.test.mjs packages/db/src/push-notifications.test.mjs packages/core/src/email.test.mjs packages/core/src/timezone.test.mjs packages/core/src/bookings/cleaner-complete.test.mjs packages/core/src/bookings/five-star-rating.test.mjs packages/core/src/bookings/status.test.mjs packages/core/src/payments/bank-transfer.test.mjs packages/core/src/payments/cleaner-cash.test.mjs packages/core/src/payments/company-bank-accounts.test.mjs packages/core/src/payments/payment-selection.test.mjs packages/core/src/payments/transaction-integrity.test.mjs packages/core/src/workflow/complete-workflow-validation.test.mjs",
     "test:workflow": "node scripts/run-workflow-test.mjs",
@@ -40,5 +41,8 @@
   },
   "dependencies": {
     "@khobra/mobilewrapper": "^1.0.0"
+  },
+  "optionalDependencies": {
+    "lightningcss-linux-x64-gnu": "1.32.0"
   }
 }
