@@ -1,0 +1,58 @@
+name: Pre-production gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: preproduction-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: khobra_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d khobra_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: 'true'
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/khobra_ci
+      AUTH_SECRET: ci-only-auth-secret-with-at-least-thirty-two-characters
+      REALTIME_SECRET: ci-only-realtime-secret-with-at-least-thirty-two-characters
+      TURNSTILE_BYPASS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm --prefix packages/db run db:deploy
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm --prefix apps/realtime run typecheck
+      - run: npm --prefix apps/mobile run typecheck
+      - run: npm --prefix packages/db run db:validate
+      - run: npm --prefix packages/db run db:rehearse
+      - run: npm --prefix packages/db run db:rehearse-backup
+      - run: npm --prefix packages/db run test:retention
+      - run: npm --prefix packages/db run audit:actors
+      - run: npm --prefix packages/db run audit:timezones
+      - run: npm audit --omit=dev --audit-level=critical
+      - run: npm run test:unit
+      - run: npm run build
+      - run: npm run test:workflow
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

@@ -55,35 +55,19 @@ MOBILE_PRODUCTION_CHECKLIST.md
 updatedstatus.md
 
 # Local scratch / generated notes
-audit.md
 missingthings.md
-docs/
 
 # Local Expo / mobile generated content
 apps/mobile/khobracleaningservice/
 apps/mobilewrapper/assets/
-apps/mobile/src/presentation/*-screen.tsx
-apps/web/src/app/api/health/
-apps/realtime/config.test.mjs
-apps/realtime/.env.example
 
-# Generated CI / temp files
-.github/workflows/*.yml
-.github/workflows/*.yaml
+# Temporary patch/editor files
 *.orig
 *.rej
 *.tmp
 *.bak
 *.swp
 *.swo
-
-# Local helper files and scratch scripts
-apps/web/src/lib/client-ip.ts
-apps/web/src/lib/client-ip.test.mjs
-packages/db/prisma.config.ts
-packages/db/prisma/migrations/20260808190000_tenant_service_categories/
-packages/db/prisma/migrations/20260808200000_operational_query_indexes/
-scripts/run-e2e.mjs
 
 # Logs and OS/editor files
 *.log
