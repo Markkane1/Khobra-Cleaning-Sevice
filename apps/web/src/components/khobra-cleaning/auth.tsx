@@ -253,7 +253,7 @@ export function AuthPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[['signup-password', 'Password', 'password'], ['signup-confirm-password', 'Confirm Password', 'confirmPassword']].map(([id, label, field]) => (
+                    {[['signup-password', 'Password', 'password'], ['signup-confirm-password', 'Confirm Password', 'confirmPassword']].map(([id, label, field]) => (
                       <div className="space-y-1.5" key={id}>
                         <Label htmlFor={id} className="text-xs font-semibold">{label} *</Label>
                         <div className="relative">
@@ -261,9 +261,20 @@ export function AuthPage() {
                           <Input id={id} name={field} type="password" autoComplete="new-password" value={signupForm[field as 'password' | 'confirmPassword']} onChange={(e) => setSignupForm({ ...signupForm, [field]: e.target.value })} placeholder="At least 8 characters" className="h-11 pl-9 text-xs" minLength={8} required />
                         </div>
                       </div>
-                  ))}
-                  <label className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={signupForm.privacyPolicyAccepted} onChange={event => setSignupForm({ ...signupForm, privacyPolicyAccepted: event.target.checked })} />By creating an account and using our service, I agree to the <a className="font-semibold text-emerald-700 underline" href="/terms">Terms &amp; Conditions</a> and acknowledge the <a className="font-semibold text-emerald-700 underline" href="/privacy-policy">Privacy Policy</a>.</label>
+                    ))}
                   </div>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 text-sm leading-5 text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
+                      checked={signupForm.privacyPolicyAccepted}
+                      onChange={event => setSignupForm({ ...signupForm, privacyPolicyAccepted: event.target.checked })}
+                    />
+                    <span>
+                      By creating an account, I agree to the <a className="font-semibold text-emerald-700 underline underline-offset-2" href="/terms">Terms &amp; Conditions</a> and acknowledge the <a className="font-semibold text-emerald-700 underline underline-offset-2" href="/privacy-policy">Privacy Policy</a>.
+                    </span>
+                  </label>
 
                   <Turnstile key={`signup-${captchaVersion}`} onVerify={setSignupCaptcha} />
 
