@@ -76,6 +76,7 @@ export interface ServiceItemPricing {
   employeeCount: number;
   hours: number;
   totalAmount: number;
+  includesMaterials?: boolean;
 }
 
 export interface MaterialItemInput {
@@ -109,7 +110,7 @@ export interface MultiServicePricingResult {
 }
 
 export function calculateMultiServicePricing(
-  services: Array<{ id: string; name?: string; baseRate: number }>,
+  services: Array<{ id: string; name?: string; baseRate: number; includesMaterials?: boolean }>,
   employeeCount: number = 1,
   durationHours: number = 0,
   materialsInput: MaterialItemInput[] | number = [],
@@ -130,6 +131,7 @@ export function calculateMultiServicePricing(
       employeeCount: validEmployeeCount,
       hours: validDuration,
       totalAmount,
+      includesMaterials: srv.includesMaterials,
     };
   });
 
@@ -298,6 +300,7 @@ export const CreateBookingSchema = z.object({
   customerId: z.string().min(1, 'Customer is required'),
   serviceId: z.string().optional(),
   serviceIds: z.array(z.string()).optional(),
+  serviceOptions: z.array(z.object({ serviceId: z.string().min(1), withMaterials: z.boolean() })).optional(),
   preferredEmployeeId: z.preprocess(val => val === '' ? undefined : val, z.string().optional()),
   preferredEmployeeIds: z.array(z.string()).optional(),
   scheduledDate: BookingDateSchema,
@@ -315,12 +318,17 @@ export const CreateBookingSchema = z.object({
   address: z.string().optional(),
   city: z.string().optional(),
   area: z.string().optional(),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional(),
   notes: z.string().optional(),
   isRecurring: z.boolean().optional().default(false),
   recurringRule: z.string().optional(),
   recurringGroupId: z.string().optional(),
   preferredPaymentMethod: z.enum(['cash', 'bank_transfer']).optional(),
 }).superRefine((data, ctx) => {
+  if ((data.latitude === undefined) !== (data.longitude === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Latitude and longitude must be provided together', path: ['latitude'] });
+  }
   const hasServiceId = Boolean(data.serviceId);
   const hasServiceIds = Boolean(data.serviceIds && data.serviceIds.length > 0);
 
@@ -338,6 +346,12 @@ export const CreateBookingSchema = z.object({
   }
   if (new Set(selectedEmployeeIds).size !== selectedEmployeeIds.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Employees can only be selected once', path: ['preferredEmployeeIds'] });
+  }
+  if (data.serviceOptions) {
+    const selectedServiceIds = data.serviceIds?.length ? data.serviceIds : data.serviceId ? [data.serviceId] : [];
+    if (data.serviceOptions.length !== selectedServiceIds.length || data.serviceOptions.some(option => !selectedServiceIds.includes(option.serviceId)) || new Set(data.serviceOptions.map(option => option.serviceId)).size !== data.serviceOptions.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose one materials option for every selected service', path: ['serviceOptions'] });
+    }
   }
 
   if (calculateDurationHours(data.startTime, data.endTime) <= 0) {
@@ -392,6 +406,7 @@ export const CreateBookingSchema = z.object({
 
 export const PublicBookingSchema = z.object({
   serviceId: z.string().min(1, 'Choose a service'),
+  withMaterials: z.boolean(),
   name: z.string().trim().min(2, 'Name must contain at least 2 characters').max(80),
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
   phone: z.string().trim().min(7, 'Enter a valid phone number').max(24),
@@ -399,12 +414,23 @@ export const PublicBookingSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Choose a valid start time'),
   duration: z.number().int().min(2).max(8),
   employeeCount: z.number().int().min(1).max(10),
-  address: z.string().trim().min(5, 'Service address must contain at least 5 characters').max(250),
+  address: z.string().trim().max(250).optional().default(''),
   city: z.string().trim().min(2, 'City is required').max(80),
   area: z.string().trim().max(80).optional(),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional(),
   notes: z.string().trim().max(500).optional(),
   preferredPaymentMethod: z.enum(['cash', 'bank_transfer']),
-}).strict();
+}).strict().superRefine((data, ctx) => {
+  const hasLatitude = data.latitude !== undefined;
+  const hasLongitude = data.longitude !== undefined;
+  if (!data.address && !(hasLatitude && hasLongitude)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a service address or use your current location', path: ['address'] });
+  }
+  if (hasLatitude !== hasLongitude) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Latitude and longitude must be provided together', path: ['latitude'] });
+  }
+});
 
 export const BOOKING_STATUS_KEYS = [
   'pending_assignment',
@@ -420,6 +446,8 @@ export const BOOKING_STATUS_KEYS = [
 export type BookingStatusKey = typeof BOOKING_STATUS_KEYS[number];
 
 const normalizeBookingStatus = (status: string) => status === 'pending' ? 'pending_assignment' : status === 'confirmed' ? 'scheduled' : status;
+
+export const isTerminalBookingStatus = (status: string) => ['completed', 'cancelled', 'no_show'].includes(normalizeBookingStatus(status));
 
 export function canDriverTransitionToOnTheWay(currentStatus: string, targetStatus: string | undefined, assignedDriverId: string | null, actingDriverId: string | undefined): boolean {
   return Boolean(actingDriverId && assignedDriverId === actingDriverId && normalizeBookingStatus(currentStatus) === 'scheduled' && targetStatus === 'on_the_way');
@@ -472,6 +500,7 @@ export const UpdateBookingSchema = z.object({
   driverId: z.string().min(1, 'Driver ID is required').nullable().optional(),
   serviceId: z.string().min(1, 'Service ID is required').optional(),
   serviceIds: z.array(z.string().min(1, 'Service ID is required')).optional(),
+  serviceOptions: z.array(z.object({ serviceId: z.string().min(1), withMaterials: z.boolean() })).optional(),
   preferredEmployeeId: z.string().min(1, 'Cleaner ID is required').optional(),
   scheduledDate: BookingDateSchema.optional(),
   startTime: TimeSchema.optional(),
@@ -487,16 +516,24 @@ export const UpdateBookingSchema = z.object({
   address: z.string().optional(),
   city: z.string().optional(),
   area: z.string().optional(),
+  latitude: z.number().finite().min(-90).max(90).nullable().optional(),
+  longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   notes: z.string().optional(),
   isRecurring: z.boolean().optional(),
   recurringRule: z.string().optional(),
 }).superRefine((data, ctx) => {
+  if ((data.latitude == null) !== (data.longitude == null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Latitude and longitude must be provided together', path: ['latitude'] });
+  }
   if (data.serviceIds && data.serviceIds.length === 0 && !data.serviceId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'At least one service is required',
       path: ['serviceIds'],
     });
+  }
+  if (data.serviceOptions && data.serviceIds && (data.serviceOptions.length !== data.serviceIds.length || data.serviceOptions.some(option => !data.serviceIds!.includes(option.serviceId)))) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose one materials option for every selected service', path: ['serviceOptions'] });
   }
   if (data.startTime && data.endTime) {
     const duration = calculateDurationHours(data.startTime, data.endTime);
@@ -527,6 +564,7 @@ export const CompletionTimingResponseSchema = z.object({
 export const AssignEmployeesSchema = z.object({
   bookingId: z.string().min(1, 'Booking ID is required'),
   employeeIds: z.array(z.string()).refine(ids => new Set(ids).size === ids.length, 'Each cleaner can only be assigned once').optional().default([]),
+  driverId: z.string().min(1, 'Driver is required'),
   autoAssign: z.boolean().optional().default(false),
 });
 

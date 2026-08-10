@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   SafeAreaView,
@@ -64,6 +65,13 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (session: Session) => v
     setCaptchaVersion(version => version + 1)
   }
 
+  const openPrivacyPolicy = () => {
+    if (!apiBaseUrl) return
+    void Linking.openURL(`${apiBaseUrl}/privacy-policy`).catch(() => {
+      Alert.alert('Could not open privacy policy', 'Please try again when you are connected to the internet.')
+    })
+  }
+
   return <SafeAreaView style={styles.screen}>
     <View style={styles.glowTop} />
     <View style={styles.glowBottom} />
@@ -117,6 +125,9 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (session: Session) => v
           <Text style={styles.switchText}>{mode === 'login' ? 'New to Khobra?' : 'Already have an account?'}{' '}
             <Text onPress={() => changeMode(mode === 'login' ? 'signup' : 'login')} style={styles.switchLink}>{mode === 'login' ? 'Create an account' : 'Sign in'}</Text>
           </Text>
+          {apiBaseUrl ? <Pressable accessibilityRole="link" onPress={openPrivacyPolicy} style={styles.privacyLink} hitSlop={8}>
+            <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+          </Pressable> : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -174,6 +185,8 @@ const styles = StyleSheet.create({
   submitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   switchText: { color: '#64766f', textAlign: 'center', fontSize: 13, marginTop: 18 },
   switchLink: { color: '#047857', fontWeight: '700' },
+  privacyLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
+  privacyLinkText: { color: '#047857', fontSize: 12, fontWeight: '700', textDecorationLine: 'underline' },
   captcha: { height: 72, marginTop: 16, overflow: 'hidden', borderRadius: 12 },
   captchaWebView: { flex: 1, backgroundColor: 'transparent' },
 })

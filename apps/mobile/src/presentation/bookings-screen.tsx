@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as Clipboard from 'expo-clipboard'
 import * as DocumentPicker from 'expo-document-picker'
+import { getDirectionsUrl } from '@repo/core/src/location'
 import { loadBookings } from '../application/bookings'
 import type { Session } from '../domain/auth/types'
 import type { Booking, CompanyBankAccount, DriverTrip } from '../domain/bookings/types'
@@ -231,6 +232,8 @@ function BookingCard({ booking, role, cleanerName, updating, onStatus, onTiming,
     <View style={styles.detailRow}><Ionicons name="calendar-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{date}</Text></View>
     <View style={styles.detailRow}><Ionicons name="time-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{booking.startTime} – {booking.endTime}</Text></View>
     {booking.customer?.name ? <View style={styles.detailRow}><Ionicons name="person-outline" size={17} color={palette.muted} /><Text style={styles.detail}>{booking.customer.name}</Text></View> : null}
+    {role === 'driver' && booking.latitude != null && booking.longitude != null ? <Pressable accessibilityRole="link" accessibilityLabel={`Open directions for booking ${booking.bookingNo}`} onPress={() => Linking.openURL(getDirectionsUrl(Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web', booking.latitude!, booking.longitude!, booking.bookingNo)).catch(() => Alert.alert('Maps unavailable', 'No navigation app could open this location.'))} style={({ pressed }) => [styles.directionsAction, pressed && styles.actionPressed]}><Ionicons name="navigate-outline" size={18} color="#1d4ed8" /><View style={styles.directionsText}><Text style={styles.directionsTitle}>Open directions</Text><Text style={styles.directionsAddress} numberOfLines={2}>{booking.address || `${booking.latitude}, ${booking.longitude}`}</Text></View></Pressable> : null}
+    {role === 'cleaner' && booking.customer?.phone ? <Pressable accessibilityRole="link" accessibilityLabel={`Call customer at ${booking.customer.phone}`} onPress={() => Linking.openURL(`tel:${booking.customer!.phone}`).catch(() => Alert.alert('Could not open dialer', 'Calling is not available on this device.'))} style={styles.callAction}><Ionicons name="call-outline" size={17} color="#166534" /><Text style={styles.callActionText}>Call Customer</Text></Pressable> : null}
     {role === 'driver' && ['scheduled', 'confirmed'].includes(booking.status) ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm On the Way', 'Confirm that you are now on the way to this booking?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', onPress: () => onStatus('on_the_way') }])} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Mark On the Way'}</Text></Pressable> : null}
     {role === 'cleaner' && booking.status === 'on_the_way' ? <Pressable disabled={updating} onPress={() => onStatus('in_progress')} style={styles.statusAction}><Text style={styles.statusActionText}>{updating ? 'Updating...' : 'Start Work'}</Text></Pressable> : null}
     {role === 'cleaner' && booking.status === 'in_progress' ? <Pressable disabled={updating} onPress={() => Alert.alert('Confirm Completion Within Scheduled Time', 'Select the expected completion timing.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Yes — within scheduled time', onPress: () => onTiming(true) }, { text: 'No — additional time required', onPress: () => onTiming(false) }])} style={styles.timingAction}><Text style={styles.timingActionText}>Confirm Completion Within Scheduled Time</Text></Pressable> : null}
@@ -274,6 +277,13 @@ const styles = StyleSheet.create({
   detail: { color: palette.muted, fontSize: 13 },
   statusAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 14, marginTop: 2 },
   statusActionText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  directionsAction: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 8 },
+  directionsText: { flex: 1 },
+  directionsTitle: { color: '#1d4ed8', fontWeight: '800', fontSize: 13 },
+  directionsAddress: { color: '#475569', fontSize: 11, marginTop: 2 },
+  actionPressed: { opacity: 0.72 },
+  callAction: { minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#86efac', backgroundColor: '#f0fdf4', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  callActionText: { color: '#166534', fontSize: 13, fontWeight: '800' },
   timingAction: { alignSelf: 'stretch', minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, marginTop: 2 },
   timingActionText: { color: '#1d4ed8', fontWeight: '800', fontSize: 12, textAlign: 'center' },
   timingResult: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 11, gap: 3 },

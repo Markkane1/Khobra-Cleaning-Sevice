@@ -8,9 +8,12 @@ export interface Booking {
   totalAmount: number
   netAmount: number
   currency: string
+  address?: string
+  latitude?: number | null
+  longitude?: number | null
   discount?: number
   materialsCost?: number
-  customer?: { name?: string; user?: { name?: string } }
+  customer?: { name?: string; phone?: string; user?: { name?: string } }
   driverId?: string | null
   driver?: { user?: { name?: string } }
   service?: { name?: string }
@@ -55,6 +58,7 @@ export interface DriverTrip {
 export interface CreateBookingInput {
   customerId: string
   serviceIds: string[]
+  serviceOptions: Array<{ serviceId: string; withMaterials: boolean }>
   scheduledDate: string
   startTime: string
   endTime: string

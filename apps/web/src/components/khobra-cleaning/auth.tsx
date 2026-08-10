@@ -49,6 +49,7 @@ export function AuthPage() {
     phone: '',
     password: '',
     confirmPassword: '',
+    privacyPolicyAccepted: false,
   })
 
   const registerCustomerMut = useMutation({
@@ -252,7 +253,7 @@ export function AuthPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[['signup-password', 'Password', 'password'], ['signup-confirm-password', 'Confirm Password', 'confirmPassword']].map(([id, label, field]) => (
+                  {[['signup-password', 'Password', 'password'], ['signup-confirm-password', 'Confirm Password', 'confirmPassword']].map(([id, label, field]) => (
                       <div className="space-y-1.5" key={id}>
                         <Label htmlFor={id} className="text-xs font-semibold">{label} *</Label>
                         <div className="relative">
@@ -260,7 +261,8 @@ export function AuthPage() {
                           <Input id={id} name={field} type="password" autoComplete="new-password" value={signupForm[field as 'password' | 'confirmPassword']} onChange={(e) => setSignupForm({ ...signupForm, [field]: e.target.value })} placeholder="At least 8 characters" className="h-11 pl-9 text-xs" minLength={8} required />
                         </div>
                       </div>
-                    ))}
+                  ))}
+                  <label className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><input type="checkbox" className="mt-0.5 h-4 w-4" checked={signupForm.privacyPolicyAccepted} onChange={event => setSignupForm({ ...signupForm, privacyPolicyAccepted: event.target.checked })} />By creating an account and using our service, I agree to the <a className="font-semibold text-emerald-700 underline" href="/terms">Terms &amp; Conditions</a> and acknowledge the <a className="font-semibold text-emerald-700 underline" href="/privacy-policy">Privacy Policy</a>.</label>
                   </div>
 
                   <Turnstile key={`signup-${captchaVersion}`} onVerify={setSignupCaptcha} />
@@ -283,6 +285,10 @@ export function AuthPage() {
             </Tabs>
           </CardContent>
         </Card>
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          By using Khobra Cleaning, you acknowledge our{' '}
+          <a href="/privacy-policy" className="font-semibold text-emerald-700 underline underline-offset-4">Privacy Policy</a>.
+        </p>
       </motion.div>
     </div>
   )

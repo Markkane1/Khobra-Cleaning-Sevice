@@ -26,6 +26,8 @@ export interface Booking {
   cancelledBy?: string;
   noShowReason?: string;
   noShowParty?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   service?: any;
   items?: any[];
   materials?: any[];
@@ -39,7 +41,7 @@ export interface IBookingRepository {
   findById(tenantId: string, id: string): Promise<Booking | null>;
   create(tenantId: string, data: CreateBookingDTO, actor?: BookingActor): Promise<Booking>;
   update(tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking>;
-  assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor): Promise<Booking>;
+  assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign?: boolean, actor?: BookingActor, driverId?: string): Promise<Booking>;
   rateBookingEmployees(tenantId: string, bookingId: string, customerId: string, ratings: RateEmployeeInput[], overallRating: number, overallComment?: string): Promise<Booking>;
   delete(tenantId: string, id: string): Promise<void>;
 }

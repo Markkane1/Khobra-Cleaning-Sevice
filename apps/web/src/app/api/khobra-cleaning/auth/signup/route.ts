@@ -23,13 +23,19 @@ export async function POST(req: NextRequest) {
     }
 
     const existingUser = await db.user.findUnique({ where: { email } })
-    if (existingUser) {
+    if (existingUser && (existingUser.passwordHash || existingUser.tenantId !== tenant.id || existingUser.role !== 'customer')) {
       return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 })
     }
 
     const { user, customer } = await db.$transaction(async tx => {
-      const user = await tx.user.create({ data: { tenantId: tenant.id, email, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
-      const customer = await tx.customer.create({ data: { tenantId: tenant.id, userId: user.id, phone: phone.trim(), status: 'active' } })
+      const user = existingUser
+        ? await tx.user.update({ where: { id: existingUser.id }, data: { passwordHash: hashPassword(password), name, phone, status: 'active', privacyPolicyVersion: 'draft-2026-08-11', privacyAcknowledgedAt: new Date(), sessionVersion: { increment: 1 } } })
+        : await tx.user.create({ data: { tenantId: tenant.id, email, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active', privacyPolicyVersion: 'draft-2026-08-11', privacyAcknowledgedAt: new Date() } })
+      const customer = await tx.customer.upsert({
+        where: { userId: user.id },
+        update: { phone, status: 'active', deletedAt: null },
+        create: { tenantId: tenant.id, userId: user.id, phone, status: 'active' },
+      })
       return { user, customer }
     })
 

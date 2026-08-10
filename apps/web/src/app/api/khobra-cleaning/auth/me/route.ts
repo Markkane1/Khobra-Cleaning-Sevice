@@ -31,3 +31,25 @@ export async function PUT(req: NextRequest) {
     return apiErrorResponse(error, { fallback: 'Could not update profile' })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const auth = await requireAuth(req, ['customer'])
+    if ('response' in auth) return auth.response
+    const user = await db.user.findUniqueOrThrow({ where: { id: auth.session.userId }, include: { customer: true } })
+    const deletedEmail = `deleted-${user.id}@deleted.invalid`
+    await db.$transaction([
+      db.accountDeletionRequest.create({ data: { tenantId: user.tenantId, userId: user.id, email: user.email, status: 'completed', retainedDataReason: 'Completed bookings, invoices, payments, and audit records are retained in anonymized form.', completedAt: new Date() } }),
+      db.pushSubscription.deleteMany({ where: { userId: user.id } }),
+      db.nativePushToken.deleteMany({ where: { userId: user.id } }),
+      db.uploadAsset.deleteMany({ where: { userId: user.id } }),
+      ...(user.customer ? [db.customer.update({ where: { id: user.customer.id }, data: { phone: null, altPhone: null, address: null, addresses: [], city: null, area: null, notes: null, preferences: null, status: 'deleted', deletedAt: new Date() } })] : []),
+      db.user.update({ where: { id: user.id }, data: { email: deletedEmail, name: 'Deleted customer', phone: null, avatarUrl: null, passwordHash: null, status: 'deleted', sessionVersion: { increment: 1 } } }),
+    ])
+    const response = NextResponse.json({ success: true, message: 'Your account has been deleted. Retained operational records have been anonymized.' })
+    response.cookies.set('khobra_session', '', { httpOnly: true, path: '/', maxAge: 0 })
+    return response
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Could not delete account' })
+  }
+}

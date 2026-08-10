@@ -14,6 +14,7 @@ export * from './inventory/schema';
 export * from './invoice-pdf/schema';
 export * from './invoices/schema';
 export * from './leave/schema';
+export * from './location';
 export * from './notifications/schema';
 export * from './payments/schema';
 export * from './payroll/schema';

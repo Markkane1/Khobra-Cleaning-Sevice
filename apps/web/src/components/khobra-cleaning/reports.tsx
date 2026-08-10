@@ -20,6 +20,7 @@ import {
   PieChart, Pie, Cell, Legend, AreaChart, Area,
 } from 'recharts'
 import { OperationalReports } from './operational-reports'
+import { ReportInsights } from './report-insights'
 import { apiRequest } from '@/lib/api-client'
 
 /* ------------------------------------------------------------------ */
@@ -339,7 +340,9 @@ export function Reports() {
         <p className="text-sm text-muted-foreground">Operational insights and performance metrics</p>
       </motion.div>
 
-      <OperationalReports bookings={bookings} currency={currency} />
+      <section className="space-y-2"><div><h2 className="text-lg font-bold">Period Insights</h2><p className="text-sm text-muted-foreground">Date-selected financial and operational metrics.</p></div><ReportInsights /></section>
+
+      <section className="space-y-2"><div><h2 className="text-lg font-bold">Lifetime Overview</h2><p className="text-sm text-muted-foreground">All-time operational records, separate from the selected-period metrics above.</p></div><OperationalReports bookings={bookings} currency={currency} /></section>
 
       {/* ── Summary KPIs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

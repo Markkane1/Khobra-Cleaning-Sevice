@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   appId: 'com.khobracleaning.web',
   appName: 'Khobra Cleaning Web',
   webDir: 'www',
-  includePlugins: ['@capacitor/filesystem', '@capacitor/push-notifications', '@capacitor/share'],
+  includePlugins: ['@capacitor/filesystem', '@capacitor/geolocation', '@capacitor/push-notifications', '@capacitor/share'],
   ...(url ? { server: { url, cleartext: url.startsWith('http://'), errorPath: 'index.html' } } : {}),
   plugins: {
     PushNotifications: { presentationOptions: ['badge', 'sound', 'banner', 'list'] },

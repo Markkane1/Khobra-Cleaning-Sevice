@@ -24,7 +24,6 @@ import { InvoicesScreen } from './src/presentation/invoices-screen'
 import { NotificationsScreen } from './src/presentation/notifications-screen'
 import { AdminHubScreen } from './src/presentation/admin-hub-screen'
 import { BranchesScreen } from './src/presentation/branches-screen'
-import { BankAccountsScreen } from './src/presentation/bank-accounts-screen'
 import { PayrollScreen } from './src/presentation/payroll-screen'
 import { RbacScreen } from './src/presentation/rbac-screen'
 import { SettingsScreen } from './src/presentation/settings-screen'
@@ -35,7 +34,7 @@ import { apiBaseUrl, setUnauthorizedHandler } from './src/infrastructure/http/ap
 import { registerNativePush } from './src/infrastructure/notifications/native-push'
 
 type MainScreen = 'overview' | 'bookings' | 'expenses' | 'operations' | 'admin'
-type Screen = MainScreen | 'new-booking' | 'services' | 'customers' | 'employees' | 'inventory' | 'complaints' | 'attendance' | 'invoices' | 'notifications' | 'dispatch' | 'payroll' | 'bank-accounts' | 'branches' | 'rbac' | 'settings' | 'reports' | 'profile'
+type Screen = MainScreen | 'new-booking' | 'services' | 'customers' | 'employees' | 'inventory' | 'complaints' | 'attendance' | 'invoices' | 'notifications' | 'dispatch' | 'payroll' | 'branches' | 'rbac' | 'settings' | 'reports' | 'profile'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -127,7 +126,6 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       {screen === 'expenses' ? <DriverExpensesScreen session={session} /> : null}
       {screen === 'admin' ? <AdminHubScreen session={session} onNavigate={setScreen as any} /> : null}
       {screen === 'branches' ? <BranchesScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'bank-accounts' ? <BankAccountsScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'payroll' ? <PayrollScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'rbac' ? <RbacScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'settings' ? <SettingsScreen session={session} onBack={() => setScreen('admin')} /> : null}
@@ -135,7 +133,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       {screen === 'dispatch' ? <DispatchScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'profile' ? <ProfileScreen session={session} onBack={() => setScreen(session.user.role === 'customer' ? 'bookings' : 'admin')} /> : null}
     </KeyboardAvoidingView>
-    <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'bank-accounts', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={setScreen} />
+    <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={setScreen} />
   </SafeAreaView>
 }
 

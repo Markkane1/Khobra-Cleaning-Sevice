@@ -6,6 +6,8 @@ const publicPaths = new Set([
   '/signup',
   '/home',
   '/book',
+  '/about',
+  '/privacy-policy',
   '/captcha',
   '/api/khobra-cleaning/auth/login',
   '/api/khobra-cleaning/auth/signup',

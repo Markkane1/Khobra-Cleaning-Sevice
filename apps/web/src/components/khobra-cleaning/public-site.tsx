@@ -12,6 +12,7 @@ export type PublicService = {
   description?: string | null
   category?: string | null
   baseRate: number
+  withMaterialsRate: number
   minDuration: number
   galleryImages?: string[] | null
   heroImages?: string[] | null
@@ -90,7 +91,7 @@ export function PublicLanding() {
   return <main className="min-h-screen overflow-hidden bg-[#f3fbf8] text-slate-950">
     <header className="fixed inset-x-0 top-0 z-50 mx-auto mt-3 flex max-w-6xl items-center justify-between rounded-2xl border border-white/80 bg-white/75 px-4 py-3 shadow-xl shadow-emerald-950/5 backdrop-blur-xl sm:px-6">
       <a href="/" className="flex min-h-11 items-center"><Logo size={40} textClassName="font-black text-sm text-slate-950" subtextClassName="text-[10px] text-emerald-600" /></a>
-      <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-600 md:flex"><a href="#services">Services</a><a href="#why">Why Khobra</a><a href="#process">How it works</a></nav>
+      <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-600 md:flex"><a href="#services">Services</a><a href="#why">Why Khobra</a><a href="#process">How it works</a><a href="/about">About us</a></nav>
       <div className="flex items-center gap-2"><a href="/login" className="hidden min-h-11 items-center px-4 py-2 text-sm font-bold sm:flex">Sign in</a><a href="/book" className="flex min-h-11 items-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/25">Book now</a></div>
     </header>
 
@@ -120,7 +121,7 @@ export function PublicLanding() {
     <section id="process" className="mx-auto max-w-6xl px-6 py-24"><div className="text-center"><p className="text-xs font-black uppercase tracking-[.25em] text-emerald-600">Three tiny steps</p><h2 className="mt-3 text-4xl font-black">From messy to effortless.</h2></div><div className="mt-14 grid gap-5 md:grid-cols-3"><Step icon={Sparkles} number="01" title="Choose your clean" text="Browse clear service details and real imagery."/><Step icon={CalendarCheck} number="02" title="Pick a time" text="Choose your date, crew size and duration."/><Step icon={BadgeCheck} number="03" title="We handle it" text="Your request lands directly with operations."/></div></section>
 
     <section className="mx-auto max-w-6xl px-6 pb-24"><div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-r from-emerald-600 to-teal-500 p-9 text-white shadow-2xl sm:p-14"><div className="absolute -right-12 -top-20 h-72 w-72 rounded-full border-[45px] border-white/10"/><h2 className="relative max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Your fresh start is one tap away.</h2><p className="relative mt-4 text-white/80">See your price before you confirm. No calls, no confusion.</p><a href="/book" className="relative mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-6 py-4 font-black text-emerald-700 shadow-xl">Book a service <ArrowRight className="h-5 w-5"/></a></div></section>
-    <footer className="border-t border-emerald-900/10 bg-white/60"><div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 px-6 py-8 sm:flex-row"><Logo size={38}/><p className="text-sm text-slate-500">Professional cleaning, beautifully simple.</p><div className="flex gap-2 text-sm font-semibold"><a href="/book" className="flex min-h-11 items-center px-3">Book</a><a href="/login" className="flex min-h-11 items-center px-3">Customer login</a></div></div></footer>
+    <footer className="border-t border-emerald-900/10 bg-white/60"><div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 px-6 py-8 sm:flex-row"><Logo size={38}/><p className="text-sm text-slate-500">Professional cleaning, beautifully simple.</p><div className="flex flex-wrap justify-center gap-2 text-sm font-semibold"><a href="/about" className="flex min-h-11 items-center px-3">About us</a><a href="/book" className="flex min-h-11 items-center px-3">Book</a><a href="/privacy-policy" className="flex min-h-11 items-center px-3">Privacy</a><a href="/login" className="flex min-h-11 items-center px-3">Customer login</a></div></div></footer>
   </main>
 }
 

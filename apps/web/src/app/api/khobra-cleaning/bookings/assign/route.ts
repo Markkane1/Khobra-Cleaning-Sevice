@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
       validated.bookingId,
       validated.employeeIds || [],
       validated.autoAssign,
-      { userId: auth.session.userId, role: 'admin', name: auth.session.name }
+      { userId: auth.session.userId, role: 'admin', name: auth.session.name },
+      validated.driverId,
     )
 
     broadcast('booking:updated', {

@@ -8,7 +8,7 @@ export class PrismaTripRepository implements ITripRepository {
   async findManyByTenant(tenantId: string): Promise<Trip[]> {
     return this.db.trip.findMany({
       where: { tenantId, deletedAt: null },
-      include: { driver: { include: { user: { select: { name: true } } } }, stops: true },
+      include: { driver: { include: { user: { select: { name: true } } } }, stops: { orderBy: { sortOrder: 'asc' }, include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } } },
       orderBy: { date: 'desc' },
     }) as unknown as Trip[];
   }
@@ -16,7 +16,7 @@ export class PrismaTripRepository implements ITripRepository {
   async findById(tenantId: string, id: string): Promise<Trip | null> {
     return this.db.trip.findFirst({
       where: { id, tenantId, deletedAt: null },
-      include: { driver: { include: { user: { select: { name: true } } } }, stops: true },
+      include: { driver: { include: { user: { select: { name: true } } } }, stops: { orderBy: { sortOrder: 'asc' }, include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } } },
     }) as unknown as Trip | null;
   }
 
@@ -36,11 +36,12 @@ export class PrismaTripRepository implements ITripRepository {
               contactPhone: s.contactPhone || null,
               status: s.status || 'pending',
               type: s.type || 'stop',
+              sortOrder: s.sortOrder || 0,
             })),
           },
         } : {}),
       },
-      include: { stops: true, driver: { include: { user: { select: { name: true } } } } },
+      include: { stops: { include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } }, driver: { include: { user: { select: { name: true } } } } },
     }) as unknown as Trip;
   }
 
@@ -55,6 +56,7 @@ export class PrismaTripRepository implements ITripRepository {
             data: {
               ...(stop.status && { status: stop.status }),
               ...(stop.completedAt && { completedAt: new Date(stop.completedAt) }),
+              ...(typeof stop.sortOrder === 'number' && { sortOrder: stop.sortOrder }),
             },
           });
         }
@@ -64,7 +66,7 @@ export class PrismaTripRepository implements ITripRepository {
     return this.db.trip.update({
       where: { id, tenantId },
       data: tripData,
-      include: { stops: true, driver: { include: { user: { select: { name: true } } } } },
+      include: { stops: { include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } }, driver: { include: { user: { select: { name: true } } } } },
     }) as unknown as Trip;
   }
 

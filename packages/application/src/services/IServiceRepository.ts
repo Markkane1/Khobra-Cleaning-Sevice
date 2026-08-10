@@ -6,10 +6,10 @@ export interface Service {
   name: string;
   description?: string | null;
   baseRate: number;
+  withMaterialsRate: number;
   minDuration: number;
   category?: string | null;
   status: string;
-  requiresMaterials: boolean;
   skills?: string | null;
   galleryImages?: string[] | null;
   heroImages?: string[] | null;

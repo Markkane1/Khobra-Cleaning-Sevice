@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as DocumentPicker from 'expo-document-picker'
+import * as Location from 'expo-location'
 import type { Session } from '../domain/auth/types'
 import { apiBaseUrl, request, upload } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, PageHeading, palette, PrimaryButton } from './mobile-ui'
@@ -16,6 +17,9 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('Dubai')
   const [area, setArea] = useState('')
+  const [latitude, setLatitude] = useState<number>()
+  const [longitude, setLongitude] = useState<number>()
+  const [locating, setLocating] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
 
   const [currentPassword, setCurrentPassword] = useState('')
@@ -45,6 +49,8 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
         setAddress(primary?.address || record.address || '')
         setCity(primary?.city || record.city || 'Dubai')
         setArea(primary?.area || record.area || '')
+        setLatitude(typeof primary?.latitude === 'number' ? primary.latitude : undefined)
+        setLongitude(typeof primary?.longitude === 'number' ? primary.longitude : undefined)
       })
       .catch(error => Alert.alert('Could not load profile', error.message))
   }, [session.token, session.user.email, session.user.name, session.user.role])
@@ -57,8 +63,10 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
         return
       }
       if (!customer) throw new Error('Customer profile could not be loaded')
-      if (!address.trim() || !area.trim() || !city.trim()) throw new Error('Address, area, and city are required')
-      const primary = { label: 'Primary', address: address.trim(), city: city.trim(), area: area.trim() }
+      const hasPin = latitude !== undefined && longitude !== undefined
+      if ((!address.trim() && !hasPin) || !city.trim()) throw new Error('Enter an address or use your current location')
+      if (!hasPin && !area.trim()) throw new Error('Area is required for a manually entered address')
+      const primary = { label: 'Primary', address: address.trim() || 'Pinned GPS location', city: city.trim(), area: area.trim(), latitude, longitude }
       const remaining = Array.isArray(customer.addresses) ? customer.addresses.slice(1) : []
       const response = await fetch(`${apiBaseUrl}/api/khobra-cleaning/customers`, {
         method: 'PUT',
@@ -74,6 +82,33 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
     } finally {
       setSavingProfile(false)
     }
+  }
+
+  const usePhoneGps = async () => {
+    setLocating(true)
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync()
+      if (permission.status !== 'granted') throw new Error('Location permission was not granted. You can still enter the address manually.')
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+      setLatitude(Number(position.coords.latitude.toFixed(6)))
+      setLongitude(Number(position.coords.longitude.toFixed(6)))
+      if (!address.trim()) setAddress('Pinned GPS location')
+    } catch (error) {
+      Alert.alert('Could not use GPS', error instanceof Error ? error.message : 'Check GPS and try again, or enter the address manually.')
+    } finally {
+      setLocating(false)
+    }
+  }
+
+  const useManualAddress = () => {
+    setLatitude(undefined)
+    setLongitude(undefined)
+    if (address === 'Pinned GPS location') setAddress('')
+  }
+
+  const openGpsPin = () => {
+    if (latitude === undefined || longitude === undefined) return
+    void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`)
   }
 
   const savePassword = async () => {
@@ -153,10 +188,16 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
           {session.user.role === 'customer' ? <>
             <View style={styles.spacer} />
             <Text style={styles.addressTitle}>Primary Address</Text>
-            <FormLabel label="Address" />
-            <Input value={address} onChangeText={setAddress} placeholder="Building, street, apartment" autoComplete="street-address" />
+            <Text style={styles.locationMethodLabel}>How would you like to provide the location?</Text>
+            <View style={styles.locationMethods}>
+              <Pressable accessibilityRole="radio" accessibilityState={{ selected: latitude === undefined }} onPress={useManualAddress} style={({ pressed }) => [styles.locationMethod, latitude === undefined && styles.locationMethodActive, pressed && styles.methodPressed]}><Ionicons name="create-outline" size={18} color={latitude === undefined ? palette.primaryDark : palette.muted} /><Text style={[styles.locationMethodText, latitude === undefined && styles.locationMethodTextActive]}>Enter manually</Text></Pressable>
+              <Pressable accessibilityRole="radio" accessibilityState={{ selected: latitude !== undefined, busy: locating }} disabled={locating} onPress={usePhoneGps} style={({ pressed }) => [styles.locationMethod, latitude !== undefined && styles.locationMethodActive, pressed && styles.methodPressed, locating && styles.methodDisabled]}><Ionicons name={locating ? 'hourglass-outline' : 'locate-outline'} size={18} color={latitude !== undefined ? palette.primaryDark : palette.muted} /><Text style={[styles.locationMethodText, latitude !== undefined && styles.locationMethodTextActive]}>{locating ? 'Finding GPS...' : 'Use phone GPS'}</Text></Pressable>
+            </View>
+            {latitude !== undefined && longitude !== undefined ? <View style={styles.pinCard}><View><Text style={styles.pinTitle}>GPS pin saved</Text><Text style={styles.pinCoordinates}>{latitude}, {longitude}</Text></View><Pressable accessibilityRole="link" onPress={openGpsPin} style={({ pressed }) => [styles.mapLink, pressed && styles.methodPressed]}><Ionicons name="map-outline" size={18} color={palette.primaryDark} /><Text style={styles.mapLinkText}>View in Maps</Text></Pressable></View> : null}
+            <FormLabel label={latitude !== undefined ? 'Building or access details (optional)' : 'Address'} />
+            <Input value={address === 'Pinned GPS location' ? '' : address} onChangeText={setAddress} placeholder={latitude !== undefined ? 'Villa, apartment, floor, or access notes' : 'Building, street, apartment'} autoComplete="street-address" />
             <View style={styles.spacer} />
-            <FormLabel label="Area" />
+            <FormLabel label={latitude !== undefined ? 'Area (optional)' : 'Area'} />
             <Input value={area} onChangeText={setArea} placeholder="Dubai Marina" />
             <View style={styles.spacer} />
             <FormLabel label="City" />
@@ -213,4 +254,17 @@ const styles = StyleSheet.create({
   card: { backgroundColor: palette.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
   spacer: { height: 16 },
   addressTitle: { color: palette.primaryDark, fontSize: 15, fontWeight: '800', marginBottom: 12 },
+  locationMethodLabel: { color: palette.inkSoft, fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  locationMethods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  locationMethod: { flex: 1, minWidth: 135, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 8, backgroundColor: palette.surface },
+  locationMethodActive: { borderColor: palette.primary, backgroundColor: palette.primarySoft },
+  locationMethodText: { color: palette.muted, fontSize: 12, fontWeight: '700' },
+  locationMethodTextActive: { color: palette.primaryDark },
+  methodPressed: { opacity: 0.72 },
+  methodDisabled: { opacity: 0.55 },
+  pinCard: { marginBottom: 12, borderWidth: 1, borderColor: '#a7f3d0', backgroundColor: '#ecfdf5', borderRadius: 12, padding: 12, gap: 8 },
+  pinTitle: { color: palette.primaryDark, fontWeight: '800', fontSize: 13 },
+  pinCoordinates: { color: palette.primaryDark, fontSize: 11, marginTop: 2 },
+  mapLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, backgroundColor: '#fff' },
+  mapLinkText: { color: palette.primaryDark, fontSize: 12, fontWeight: '800' },
 })

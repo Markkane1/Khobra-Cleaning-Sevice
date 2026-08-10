@@ -33,7 +33,7 @@ import {
 import { exportToCSV } from '@/lib/csv-export'
 import { apiRequest } from '@/lib/api-client'
 
-const emptyItem = { name: '', sku: '', category: '', unit: 'pcs', currentStock: 0, minStock: 0, costPrice: 0, sellPrice: 0 }
+const emptyItem = { name: '', sku: '', category: '', unit: 'pcs', currentStock: 0, minStock: 0, costPrice: 0 }
 const emptyVendor = { name: '', contactPerson: '', phone: '', email: '', address: '' }
 
 const categoryColors : Record<string, string> = {
@@ -133,13 +133,12 @@ export function Inventory() {
   }
 
   const handleItemEdit = (item: any) => {
-    setForm({ name: item.name, sku: item.sku || '', category: item.category || '', unit: item.unit, currentStock: item.currentStock, minStock: item.minStock, costPrice: item.costPrice, sellPrice: item.sellPrice })
+    setForm({ name: item.name, sku: item.sku || '', category: item.category || '', unit: item.unit, currentStock: item.currentStock, minStock: item.minStock, costPrice: item.costPrice })
     setEditId(item.id); setItemOpen(true)
   }
 
   const lowStockCount = items.filter((i: any) => i.currentStock <= i.minStock).length
   const totalValue = items.reduce((s: number, i: any) => s + i.currentStock * i.costPrice, 0)
-  const totalRetailValue = items.reduce((s: number, i: any) => s + i.currentStock * i.sellPrice, 0)
   const categories: Record<string, number> = {}
   items.forEach((i: any) => { if (i.category) { const k = i.category as string; categories[k] = (categories[k] || 0) + 1 } })
   const maxCategory = Math.max(...Object.values(categories), 1)
@@ -163,7 +162,6 @@ export function Inventory() {
       { key: 'currentStock', label: 'Current Stock' },
       { key: 'minStock', label: 'Min Stock' },
       { key: 'costPrice', label: 'Cost Price' },
-      { key: 'sellPrice', label: 'Sell Price' },
       { key: 'unit', label: 'Unit' },
     ])
     toast.success('Items exported')
@@ -228,10 +226,7 @@ export function Inventory() {
                   <div className="grid gap-2"><Label>Current Stock</Label><Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: Number(e.target.value) })} /></div>
                   <div className="grid gap-2"><Label>Min Stock (Alert)</Label><Input type="number" value={form.minStock} onChange={e => setForm({ ...form, minStock: Number(e.target.value) })} /></div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="grid gap-2"><Label>Cost Price ({currency})</Label><Input type="number" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: Number(e.target.value) })} /></div>
-                  <div className="grid gap-2"><Label>Sell Price ({currency})</Label><Input type="number" value={form.sellPrice} onChange={e => setForm({ ...form, sellPrice: Number(e.target.value) })} /></div>
-                </div>
+                <div className="grid gap-2"><Label>Cost Price ({currency})</Label><Input type="number" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: Number(e.target.value) })} /></div>
               </div>
               <DialogFooter>
                 {(itemSaveError || (form.name.length > 0 && !itemValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{itemSaveError instanceof Error ? itemSaveError.message : !itemValidation.success ? itemValidation.error.issues[0]?.message : ''}</p>}
@@ -249,7 +244,6 @@ export function Inventory() {
           { icon: Package, label: 'Total Items', value: items.length, color: 'bg-emerald-600', sub: `${Object.keys(categories).length} categories` },
           { icon: AlertTriangle, label: 'Low Stock', value: lowStockCount, color: lowStockCount > 0 ? 'bg-amber-500' : 'bg-emerald-600', sub: lowStockCount > 0 ? 'Needs reorder' : 'All stocked', pulse: lowStockCount > 0 },
           { icon: DollarSign, label: 'Stock Value', value: `${currency} ${totalValue.toLocaleString()}`, color: 'bg-teal-600', sub: `Cost basis` },
-          { icon: TrendingDown, label: 'Retail Value', value: `${currency} ${totalRetailValue.toLocaleString()}`, color: 'bg-cyan-600', sub: `Margin: ${currency} ${(totalRetailValue - totalValue).toLocaleString()}` },
         ].map((card, i) => (
           <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
             <Card className="border-0 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -334,7 +328,6 @@ export function Inventory() {
                   <TableHead className="text-xs hidden md:table-cell">Category</TableHead>
                   <TableHead>Stock Level</TableHead>
                   <TableHead className="text-xs hidden lg:table-cell">Cost</TableHead>
-                  <TableHead className="text-xs hidden lg:table-cell">Sell</TableHead>
                   <TableHead className="text-xs">Unit</TableHead>
                   <TableHead className="text-xs">Actions</TableHead>
                 </TableRow></TableHeader>
@@ -377,7 +370,6 @@ export function Inventory() {
                             </div>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell text-sm tabular-nums">{currency} {item.costPrice.toLocaleString()}</TableCell>
-                          <TableCell className="hidden lg:table-cell text-sm tabular-nums font-medium">{currency} {item.sellPrice.toLocaleString()}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.unit}</TableCell>
                           <TableCell>
                             <div className="flex gap-1">

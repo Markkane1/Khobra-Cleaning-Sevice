@@ -30,7 +30,6 @@ export class PrismaInventoryItemRepository implements IInventoryItemRepository {
         currentStock: data.currentStock,
         minStock: data.minStock,
         costPrice: data.costPrice,
-        sellPrice: data.sellPrice,
         status: data.status,
       },
       include: { movements: true },

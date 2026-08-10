@@ -8,6 +8,7 @@ export class PrismaServiceRepository implements IServiceRepository {
   async findManyByTenant(tenantId: string): Promise<Service[]> {
     return this.db.service.findMany({
       where: { tenantId, deletedAt: null },
+      include: { materials: { include: { inventoryItem: true } } },
       orderBy: { name: 'asc' },
     }) as unknown as Service[];
   }
@@ -15,24 +16,27 @@ export class PrismaServiceRepository implements IServiceRepository {
   async findById(tenantId: string, id: string): Promise<Service | null> {
     return this.db.service.findFirst({
       where: { id, tenantId, deletedAt: null },
+      include: { materials: { include: { inventoryItem: true } } },
     }) as unknown as Service | null;
   }
 
   async create(tenantId: string, data: CreateServiceDTO): Promise<Service> {
+    const { materials = [], ...values } = data as CreateServiceDTO & { materials?: Array<{ inventoryItemId: string; quantityPerCleanerHour: number; unit?: string }> };
     return this.db.service.create({
       data: {
         tenantId,
-        ...data,
+        ...values,
         minDuration: 2,
+        materials: { create: materials.map(item => ({ ...item, unit: item.unit || 'pcs' })) },
       },
     }) as unknown as Service;
   }
 
   async update(tenantId: string, id: string, data: UpdateServiceDTO): Promise<Service> {
-    const { id: _id, ...updateData } = data;
+    const { id: _id, materials, ...updateData } = data as UpdateServiceDTO & { materials?: Array<{ inventoryItemId: string; quantityPerCleanerHour: number; unit?: string }> };
     return this.db.service.update({
       where: { id, tenantId },
-      data: { ...updateData, minDuration: 2 },
+      data: { ...updateData, minDuration: 2, ...(materials ? { materials: { deleteMany: {}, create: materials.map(item => ({ ...item, unit: item.unit || 'pcs' })) } } : {}) },
     }) as unknown as Service;
   }
 

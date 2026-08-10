@@ -5,10 +5,10 @@ import type { Session } from '../domain/auth/types'
 import { apiBaseUrl } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
-type Item = { id: string; name: string; sku: string; category: string; unit: string; currentStock: number; minStock: number; costPrice: number; sellPrice: number }
+type Item = { id: string; name: string; sku: string; category: string; unit: string; currentStock: number; minStock: number; costPrice: number }
 type Vendor = { id: string; name: string; contactPerson: string; phone: string; email: string; address: string }
 
-const emptyItemForm = { name: '', sku: '', category: '', unit: 'pcs', currentStock: '0', minStock: '0', costPrice: '0', sellPrice: '0' }
+const emptyItemForm = { name: '', sku: '', category: '', unit: 'pcs', currentStock: '0', minStock: '0', costPrice: '0' }
 const emptyVendorForm = { name: '', contactPerson: '', phone: '', email: '', address: '' }
 
 export function InventoryScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
@@ -48,7 +48,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
     if (!itemForm.name) return Alert.alert('Validation', 'Please provide Name.')
     setSaving(true)
     try {
-      const payload = { ...itemForm, currentStock: Number(itemForm.currentStock), minStock: Number(itemForm.minStock), costPrice: Number(itemForm.costPrice), sellPrice: Number(itemForm.sellPrice) }
+      const payload = { ...itemForm, currentStock: Number(itemForm.currentStock), minStock: Number(itemForm.minStock), costPrice: Number(itemForm.costPrice) }
       const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/inventory`, {
         method: editItemId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
@@ -121,7 +121,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
           <Text style={styles.metaText}>SKU: {i.sku || 'N/A'} • {i.category}</Text>
         </View>
         <View style={styles.actionsBox}>
-          <Pressable style={styles.iconButton} onPress={() => { setEditItemId(i.id); setItemForm({ name: i.name, sku: i.sku || '', category: i.category || '', unit: i.unit, currentStock: String(i.currentStock), minStock: String(i.minStock), costPrice: String(i.costPrice), sellPrice: String(i.sellPrice) }); setItemFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
+          <Pressable style={styles.iconButton} onPress={() => { setEditItemId(i.id); setItemForm({ name: i.name, sku: i.sku || '', category: i.category || '', unit: i.unit, currentStock: String(i.currentStock), minStock: String(i.minStock), costPrice: String(i.costPrice) }); setItemFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
           <Pressable style={styles.iconButton} onPress={() => removeItem(i.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
         </View>
       </View>
@@ -136,7 +136,6 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
       </View>
       <View style={styles.priceRow}>
         <Text style={styles.priceMeta}>Cost: AED {i.costPrice}</Text>
-        <Text style={styles.priceMeta}>Sell: AED {i.sellPrice}</Text>
       </View>
     </View>
   }
@@ -203,10 +202,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
             <View style={[styles.formGroup, { flex: 1 }]}><FormLabel label="Min Stock" /><Input value={itemForm.minStock} onChangeText={t => setItemForm({ ...itemForm, minStock: t })} keyboardType="numeric" /></View>
           </View>
           <View style={styles.formGroup}><FormLabel label="Current Stock" /><Input value={itemForm.currentStock} onChangeText={t => setItemForm({ ...itemForm, currentStock: t })} keyboardType="numeric" /></View>
-          <View style={styles.row}>
-            <View style={[styles.formGroup, { flex: 1 }]}><FormLabel label="Cost Price" /><Input value={itemForm.costPrice} onChangeText={t => setItemForm({ ...itemForm, costPrice: t })} keyboardType="numeric" /></View>
-            <View style={[styles.formGroup, { flex: 1 }]}><FormLabel label="Sell Price" /><Input value={itemForm.sellPrice} onChangeText={t => setItemForm({ ...itemForm, sellPrice: t })} keyboardType="numeric" /></View>
-          </View>
+          <View style={styles.formGroup}><FormLabel label="Cost Price" /><Input value={itemForm.costPrice} onChangeText={t => setItemForm({ ...itemForm, costPrice: t })} keyboardType="numeric" /></View>
         </ScrollView>
         <View style={styles.modalFooter}>
           <PrimaryButton label={editItemId ? 'Update' : 'Add'} onPress={saveItem} loading={saving} />

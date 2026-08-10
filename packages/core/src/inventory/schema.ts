@@ -8,7 +8,6 @@ export const CreateInventoryItemSchema = z.object({
   currentStock: z.coerce.number().nonnegative('Current stock cannot be negative').optional(),
   minStock: z.coerce.number().nonnegative('Minimum stock cannot be negative').optional(),
   costPrice: z.coerce.number().nonnegative('Cost price cannot be negative').optional(),
-  sellPrice: z.coerce.number().nonnegative('Selling price cannot be negative').optional(),
   status: z.string().optional(),
 });
 

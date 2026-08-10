@@ -43,7 +43,7 @@ test('complete operational workflow passes through real API routes and persisten
       db.employee.create({ data: { tenantId: tenant.id, userId: cleanerOneUser.id, employeeCode: `CLN-1-${suffix}` } }),
       db.employee.create({ data: { tenantId: tenant.id, userId: cleanerTwoUser.id, employeeCode: `CLN-2-${suffix}` } }),
       db.employee.create({ data: { tenantId: tenant.id, userId: otherCleanerUser.id, employeeCode: `CLN-O-${suffix}` } }),
-      db.service.create({ data: { tenantId: tenant.id, name: 'Workflow Cleaning', baseRate: 100 } }),
+      db.service.create({ data: { tenantId: tenant.id, name: 'Workflow Cleaning', baseRate: 100, withMaterialsRate: 130 } }),
     ])
     void otherDriver
     const token = user => createSessionToken({ userId: user.id, tenantId: tenant.id, email: user.email, role: user.role, name: user.name })
@@ -65,6 +65,14 @@ test('complete operational workflow passes through real API routes and persisten
     }
 
     const cashBooking = await makeBooking(`WF-CASH-${suffix}`, 'scheduled')
+
+    const variantDate = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10)
+    const variantResult = await request('/bookings', auth.admin, 'POST', { customerId: customer.id, serviceId: service.id, serviceIds: [service.id], serviceOptions: [{ serviceId: service.id, withMaterials: true }], scheduledDate: variantDate, startDate: variantDate, endDate: variantDate, startTime: '09:00', endTime: '11:00', employeeCount: 1, bookingType: 'one_time', address: 'Villa 10', city: 'Dubai', area: 'Marina' })
+    assert.equal(variantResult.response.status, 201, `Admin must create a with-materials booking: ${JSON.stringify(variantResult.data)}`)
+    ids.bookingIds.push(variantResult.data.id)
+    assert.equal(Number(variantResult.data.hourlyRate), 130, 'Server must use the configured with-materials rate')
+    assert.equal(Number(variantResult.data.netAmount), 273, 'Server must calculate the selected variant, duration, cleaner count, and tax')
+    assert.equal(variantResult.data.items[0].includesMaterials, true, 'Booking line must preserve the selected materials variant')
 
     let scoped = await request('/bookings', auth.cleanerOne)
     assert.equal(scoped.response.status, 200)
@@ -118,6 +126,30 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal((await request('/trips', auth.otherDriver, 'PUT', { id: assignedTrip.id, status: 'in_progress' })).response.status, 403, 'Unassigned driver must not update a trip')
     assert.equal((await request('/trips', auth.driver, 'PUT', { id: assignedTrip.id, date: new Date().toISOString() })).response.status, 403, 'Driver must not reschedule a trip')
     assert.equal((await request('/trips', auth.driver, 'PUT', { id: assignedTrip.id, status: 'in_progress' })).response.status, 200, 'Assigned driver must start a planned trip')
+
+    const dispatchDate = new Date(Date.now() + 3 * 86_400_000)
+    const createDispatchBooking = bookingNo => db.booking.create({ data: { tenantId: tenant.id, bookingNo, customerId: customer.id, serviceId: service.id, status: 'pending_assignment', scheduledDate: dispatchDate, startTime: '14:00', endTime: '16:00', duration: 2, employeeCount: 1, hourlyRate: 100, totalAmount: 200, netAmount: 200, address: 'Villa 10', city: 'Dubai', area: 'Marina' } })
+    const dispatchBooking = await createDispatchBooking(`WF-DISPATCH-${suffix}`)
+    ids.bookingIds.push(dispatchBooking.id)
+    let dispatchAssignment = await request('/bookings/assign', auth.admin, 'POST', { bookingId: dispatchBooking.id, employeeIds: [otherCleaner.id], driverId: otherDriver.id })
+    assert.equal(dispatchAssignment.response.status, 200, `Admin must assign cleaners and driver together: ${JSON.stringify(dispatchAssignment.data)}`)
+    assert.equal(dispatchAssignment.data.driverId, otherDriver.id)
+    const linkedStop = await db.tripStop.findUnique({ where: { bookingId: dispatchBooking.id }, include: { trip: true } })
+    assert.equal(linkedStop?.trip.driverId, otherDriver.id, 'Driver assignment must create a booking-linked trip stop')
+
+    const conflictingDispatchBooking = await createDispatchBooking(`WF-DISPATCH-CONFLICT-${suffix}`)
+    ids.bookingIds.push(conflictingDispatchBooking.id)
+    dispatchAssignment = await request('/bookings/assign', auth.admin, 'POST', { bookingId: conflictingDispatchBooking.id, employeeIds: [cleanerOne.id], driverId: otherDriver.id })
+    assert.equal(dispatchAssignment.response.status, 400, 'A driver cannot be assigned to overlapping bookings')
+    assert.match(dispatchAssignment.data.error, /already assigned/i)
+
+    dispatchAssignment = await request('/bookings', auth.admin, 'PUT', { id: dispatchBooking.id, driverId: driver.id })
+    assert.equal(dispatchAssignment.response.status, 200, 'Admin must reassign a booking before work starts')
+    assert.equal(dispatchAssignment.data.driverId, driver.id)
+    const movedStop = await db.tripStop.findUnique({ where: { bookingId: dispatchBooking.id }, include: { trip: true } })
+    assert.equal(movedStop?.trip.driverId, driver.id, 'Reassignment must move the booking stop to the new driver trip')
+    const assignmentNotices = await db.notification.findMany({ where: { deliveryKey: { startsWith: `booking-driver` }, message: { contains: dispatchBooking.bookingNo } } })
+    assert.deepEqual(new Set(assignmentNotices.map(item => item.userId)), new Set([driverUser.id, otherDriverUser.id]), 'New and previous drivers must be notified')
 
     let expense = await request('/driver-expenses', auth.driver, 'POST', { driverId: otherDriver.id, tripId: assignedTrip.id, category: 'petrol', typeDetail: 'Special 95', amount: 75, expenseDate: new Date().toISOString(), notes: 'Route fuel' })
     assert.equal(expense.response.status, 201, 'Driver must add an expense')

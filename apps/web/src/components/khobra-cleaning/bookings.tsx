@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning } from 'lucide-react'
-import { calculateBookingFinancials, CreateBookingSchema } from '@repo/core'
+import { Plus, Search, Eye, Calendar, Clock, MapPin, Navigation, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning, Phone } from 'lucide-react'
+import { calculateBookingFinancials, CreateBookingSchema, getDirectionsUrl, isTerminalBookingStatus } from '@repo/core'
+import { Capacitor } from '@capacitor/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -121,7 +122,7 @@ const pipelineSteps = [
   { key: 'completed', label: 'Completed', icon: CheckCircle2 },
 ]
 
-const emptyForm = { customerId: '', serviceIds: [] as string[], preferredEmployeeId: '', preferredEmployeeIds: [] as string[], hasPreferredEmployee: false, scheduledDate: '', selectedDates: [] as string[], bookingType: 'one_time', startDate: '', endDate: '', selectedWeekdays: [1, 2, 3, 4, 5], startTime: '09:00', endTime: '11:00', employeeCount: 1, preferredPaymentMethod: 'cash', address: '', city: '', area: '', notes: '' }
+const emptyForm = { customerId: '', serviceIds: [] as string[], serviceOptions: {} as Record<string, boolean>, preferredEmployeeId: '', preferredEmployeeIds: [] as string[], hasPreferredEmployee: false, scheduledDate: '', selectedDates: [] as string[], bookingType: 'one_time', startDate: '', endDate: '', selectedWeekdays: [1, 2, 3, 4, 5], startTime: '09:00', endTime: '11:00', employeeCount: 1, preferredPaymentMethod: 'cash', address: '', city: '', area: '', notes: '' }
 
 const customerAddresses = (customer: any) => {
   const saved = Array.isArray(customer?.addresses) ? customer.addresses.filter((address: any) => address?.address) : []
@@ -130,6 +131,16 @@ const customerAddresses = (customer: any) => {
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const canonicalStatus = (status: string) => status === 'pending' ? 'pending_assignment' : status === 'confirmed' ? 'scheduled' : status
+const isEndedStatus = (status: string) => ['cancelled', 'no_show'].includes(canonicalStatus(status))
+
+const openDirections = (booking: { bookingNo: string; latitude?: number | null; longitude?: number | null }) => {
+  if (booking.latitude == null || booking.longitude == null) return
+  const nativePlatform = Capacitor.getPlatform()
+  const platform = nativePlatform === 'ios' || nativePlatform === 'android' ? nativePlatform : 'web'
+  const url = getDirectionsUrl(platform, booking.latitude, booking.longitude, booking.bookingNo)
+  if (Capacitor.isNativePlatform()) window.location.assign(url)
+  else window.open(url, '_blank', 'noopener,noreferrer')
+}
 
 const calendarStatusDotColors : Record<string, string> = {
   completed: 'bg-emerald-500',
@@ -208,6 +219,12 @@ export function Bookings() {
     enabled: currentRole === 'admin',
   })
 
+  const { data: drivers = [] } = useQuery({
+    queryKey: ['drivers'],
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/drivers'),
+    enabled: currentRole === 'admin',
+  })
+
   const filteredCustomers = useMemo(() => {
     const term = customerSearch.trim().toLowerCase()
     return term ? customers.filter((customer: any) => `${customer.user?.name || ''} ${customer.user?.email || ''} ${customer.city || ''} ${customer.area || ''}`.toLowerCase().includes(term)) : customers
@@ -274,9 +291,10 @@ export function Bookings() {
 
   const [assigningBooking, setAssigningBooking] = useState<any | null>(null)
   const [selectedAssignEmpIds, setSelectedAssignEmpIds] = useState<string[]>([])
+  const [selectedAssignDriverId, setSelectedAssignDriverId] = useState('')
 
   const assignMut = useMutation({
-    mutationFn: (d: { bookingId: string; employeeIds?: string[]; autoAssign?: boolean }) =>
+    mutationFn: (d: { bookingId: string; driverId: string; employeeIds?: string[]; autoAssign?: boolean }) =>
       fetch('/api/khobra-cleaning/bookings/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -288,9 +306,11 @@ export function Bookings() {
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
+      qc.invalidateQueries({ queryKey: ['trips'] })
       toast.success(`Booking ${data.bookingNo} assigned! Total recalculated: ${currency} ${data.netAmount}`)
       setAssigningBooking(null)
       setSelectedAssignEmpIds([])
+      setSelectedAssignDriverId('')
     },
     onError: (err: any) => {
       toast.error(err.message || 'Assignment failed')
@@ -567,6 +587,7 @@ export function Bookings() {
     preferredEmployeeId: undefined,
     serviceIds: form.serviceIds,
     serviceId: form.serviceIds[0],
+    serviceOptions: form.serviceIds.map(serviceId => ({ serviceId, withMaterials: form.serviceOptions[serviceId] || false })),
     duration,
   }
   const bookingValidation = CreateBookingSchema.safeParse(bookingPayload)
@@ -593,8 +614,8 @@ export function Bookings() {
   )
 
   const selectedServices = useMemo(() => {
-    return services.filter((s: any) => form.serviceIds.includes(s.id))
-  }, [services, form.serviceIds])
+    return services.filter((s: any) => form.serviceIds.includes(s.id)).map((service: any) => ({ ...service, includesMaterials: form.serviceOptions[service.id] || false, baseRate: form.serviceOptions[service.id] ? service.withMaterialsRate : service.baseRate }))
+  }, [services, form.serviceIds, form.serviceOptions])
 
   const multiPricing = useMemo(() => {
     return calculateMultiServicePricing(
@@ -701,8 +722,7 @@ export function Bookings() {
   }
 
   const getPipelineIndex = (status: string) => {
-    const idx = pipelineSteps.findIndex(s => s.key === canonicalStatus(status))
-    return idx >= 0 ? idx : 0
+    return pipelineSteps.findIndex(s => s.key === canonicalStatus(status))
   }
 
   const goToToday = useCallback(() => {
@@ -795,7 +815,10 @@ export function Bookings() {
                           const next = isSelected
                             ? form.serviceIds.filter(id => id !== s.id)
                             : [...form.serviceIds, s.id]
-                          setForm({ ...form, serviceIds: next })
+                          const serviceOptions = { ...form.serviceOptions }
+                          if (isSelected) delete serviceOptions[s.id]
+                          else serviceOptions[s.id] = false
+                          setForm({ ...form, serviceIds: next, serviceOptions })
                         }}
                         className={`flex items-center justify-between p-2 rounded-md border text-xs cursor-pointer transition-all ${
                           isSelected
@@ -820,6 +843,16 @@ export function Bookings() {
                 {form.serviceIds.length === 0 && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">⚠️ Please select at least one service.</p>
                 )}
+                {form.serviceIds.length > 0 && <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                  <p className="text-xs font-semibold">Choose a price option for each service</p>
+                  {services.filter((service: any) => form.serviceIds.includes(service.id)).map((service: any) => <div key={service.id} className="grid gap-2 rounded-md bg-background p-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <span className="text-xs font-semibold">{service.name}</span>
+                    <div className="grid grid-cols-2 gap-1" role="radiogroup" aria-label={`${service.name} materials option`}>
+                      <Button type="button" size="sm" variant={!form.serviceOptions[service.id] ? 'default' : 'outline'} className={!form.serviceOptions[service.id] ? 'min-h-11 bg-emerald-600 hover:bg-emerald-700' : 'min-h-11'} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: false } })}>Without · {currency} {service.baseRate}/hr</Button>
+                      <Button type="button" size="sm" variant={form.serviceOptions[service.id] ? 'default' : 'outline'} className={form.serviceOptions[service.id] ? 'min-h-11 bg-teal-600 hover:bg-teal-700' : 'min-h-11'} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: true } })}>With materials · {currency} {service.withMaterialsRate}/hr</Button>
+                    </div>
+                  </div>)}
+                </div>}
               </div>
               <div className="grid gap-3">
                 <div className="grid gap-2">
@@ -1288,7 +1321,7 @@ export function Bookings() {
                         <TableHead className="text-xs font-semibold hidden md:table-cell">Duration</TableHead>
                         <TableHead className="text-xs font-semibold"><SortableHeader col={'netAmount'}>Amount</SortableHeader></TableHead>
                         <TableHead className="text-xs font-semibold"><SortableHeader col={'status'}>Status</SortableHeader></TableHead>
-                        <TableHead className="text-xs font-semibold hidden xl:table-cell">Assigned</TableHead>
+                        <TableHead className="text-xs font-semibold hidden xl:table-cell">Team / Driver</TableHead>
                         <TableHead className="text-xs font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1330,7 +1363,7 @@ export function Bookings() {
                                   return (
                                     <div className="space-y-1">
                                       <div>
-                                        {b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount ? (
+                                        {!isTerminalBookingStatus(b.status) && (b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount || !b.driverId) ? (
                                           <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 font-semibold text-xs">
                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 inline-block animate-pulse" />
                                             Pending Assignment
@@ -1354,11 +1387,7 @@ export function Bookings() {
                                 })()}
                               </TableCell>
                               <TableCell className="hidden xl:table-cell text-sm">
-                                {b.assignments?.length > 0 ? (
-                                  <span className="font-medium">{b.assignments.map((a: any) => a.employee?.user?.name || a.employee?.employeeCode).join(', ')}</span>
-                                ) : (
-                                  <span className="text-amber-600 dark:text-amber-400 text-xs font-semibold">Needs Assignment</span>
-                                )}
+                                <div className="space-y-1"><p className="font-medium">{b.assignments?.length ? b.assignments.map((a: any) => a.employee?.user?.name || a.employee?.employeeCode).join(', ') : <span className="text-amber-600 text-xs">Cleaners needed</span>}</p><p className="flex items-center gap-1 text-xs text-muted-foreground"><Truck className="h-3 w-3"/>{b.driver?.user?.name || <span className="text-amber-600">Driver needed</span>}</p></div>
                               </TableCell>
                               <TableCell>
                                 {(() => {
@@ -1368,7 +1397,8 @@ export function Bookings() {
                                       <Button size="sm" variant="ghost" aria-label={`View booking ${b.bookingNo}`} className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => handleRowClick(b)}>
                                         <Eye className="h-3.5 w-3.5" />
                                       </Button>
-                                      {currentRole === 'admin' && (b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount) && (
+                                      {currentRole === 'driver' && b.latitude != null && b.longitude != null && <Button size="sm" variant="outline" className="min-h-11 border-blue-300 text-xs text-blue-700 hover:bg-blue-50" aria-label={`Open directions for booking ${b.bookingNo}`} onClick={() => openDirections(b)}><Navigation className="mr-1 h-3.5 w-3.5" />Directions</Button>}
+                                      {currentRole === 'admin' && ['pending_assignment', 'assigned', 'scheduled'].includes(canonicalStatus(b.status)) && (
                                         <Button
                                           size="sm"
                                           variant="outline"
@@ -1376,10 +1406,11 @@ export function Bookings() {
                                           onClick={() => {
                                             setAssigningBooking(b)
                                             setSelectedAssignEmpIds(b.assignments?.map((a: any) => a.employeeId) || [])
+                                            setSelectedAssignDriverId(b.driverId || '')
                                           }}
                                         >
                                           <UserCheck className="h-3.5 w-3.5 mr-1" />
-                                          Assign Staff
+                                          {b.driverId && b.assignments?.length === b.employeeCount ? 'Manage Team' : 'Assign Team'}
                                         </Button>
                                       )}
                                       {b.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
@@ -1388,14 +1419,12 @@ export function Bookings() {
                                         </>
                                       )}
                                       {currentRole === 'admin' && b.status === 'assigned' && (
-                                        <Button size="sm" variant="outline" disabled={(b.assignments?.length || 0) < b.employeeCount} className="text-xs h-7 px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleStatusChange(b.id, 'scheduled')}>Confirm</Button>
+                                        <Button size="sm" variant="outline" disabled={(b.assignments?.length || 0) < b.employeeCount || !b.driverId} className="text-xs h-7 px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleStatusChange(b.id, 'scheduled')}>Confirm</Button>
                                       )}
-                                      {(currentRole === 'admin' || currentRole === 'driver') && (b.status === 'scheduled' || b.status === 'confirmed') && (
-                                        <>
-                                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleStatusChange(b.id, 'on_the_way')}>On the Way</Button>
-                                          {currentRole === 'admin' && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50" onClick={() => updateMut.mutate({ id: b.id, status: 'no_show', noShowReason: 'Customer did not attend', noShowParty: 'customer' })}>No Show</Button>}
-                                        </>
+                                      {currentRole === 'driver' && (b.status === 'scheduled' || b.status === 'confirmed') && (
+                                        <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleStatusChange(b.id, 'on_the_way')}>On the Way</Button>
                                       )}
+                                      {currentRole === 'admin' && (b.status === 'scheduled' || b.status === 'confirmed') && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50" onClick={() => updateMut.mutate({ id: b.id, status: 'no_show', noShowReason: 'Customer did not attend', noShowParty: 'customer' })}>No Show</Button>}
                                       {(currentRole === 'admin' || currentRole === 'cleaner') && b.status === 'on_the_way' && (
                                         <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => handleStatusChange(b.id, 'in_progress')}>Start</Button>
                                       )}
@@ -1409,6 +1438,7 @@ export function Bookings() {
                                           Complete Booking
                                         </Button>
                                       )}
+                                      {currentRole === 'cleaner' && b.customer?.phone && <Button asChild size="sm" variant="outline" className="min-h-11 border-emerald-300 text-emerald-700 hover:bg-emerald-50"><a href={`tel:${b.customer.phone}`} aria-label={`Call customer at ${b.customer.phone}`}><Phone className="h-3.5 w-3.5 mr-1" />Call Customer</a></Button>}
                                       {currentRole === 'cleaner' && <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50" onClick={() => setIssueBooking(b)}><MessageSquareWarning className="h-3.5 w-3.5 mr-1" />Report Issue</Button>}
                                       {b.status === 'completed' && (
                                         <>
@@ -1445,7 +1475,7 @@ export function Bookings() {
                                           {(currentRole === 'customer' || (currentRole === 'admin' && b.rating)) && <Button size="sm" variant="outline" className="text-xs h-7 px-2 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRatingBooking(b)}><Star className="h-3 w-3 mr-1" />{b.rating ? 'View Rating' : 'Rate'}</Button>}
                                         </>
                                       )}
-                                      {(b.status === 'cancelled' || b.status === 'no_show') && <span className="text-xs text-muted-foreground px-1">Ended</span>}
+                                      {isEndedStatus(b.status) && <span className="px-1 text-xs font-medium text-muted-foreground">{statusDisplayLabels[canonicalStatus(b.status)]}</span>}
                                       {currentRole === 'admin' && (
                                         <AlertDialog>
                                           <AlertDialogTrigger asChild>
@@ -1679,12 +1709,10 @@ export function Bookings() {
               {/* Pipeline Visual */}
               <div className="py-4">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Status Pipeline</p>
-                <div className="flex items-center justify-between">
+                {isEndedStatus(selectedBooking.status) ? <div className={`flex min-h-16 items-center gap-3 rounded-xl border p-4 ${selectedBooking.status === 'no_show' ? 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-300' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300'}`}><XCircle className="h-6 w-6 shrink-0" /><div><p className="font-semibold">{statusDisplayLabels[canonicalStatus(selectedBooking.status)]}</p><p className="text-xs opacity-80">{selectedBooking.noShowReason || selectedBooking.cancellationReason || 'This booking is closed and requires no further action.'}</p></div></div> : <div className="flex items-center justify-between">
                   {pipelineSteps.map((step, idx) => {
                     const currentIndex = getPipelineIndex(selectedBooking.status)
-                    const isCompleted = selectedBooking.status === 'cancelled'
-                          ? false
-                          : idx <= currentIndex
+                    const isCompleted = idx <= currentIndex
                     const isCurrent = step.key === selectedBooking.status
                     const StepIcon = step.icon
                     return (
@@ -1697,13 +1725,10 @@ export function Bookings() {
                                 ? 'bg-emerald-600 text-white ring-4 ring-emerald-200 dark:ring-emerald-800'
                                 : 'bg-muted text-muted-foreground'
                           }`}>
-                            {selectedBooking.status === 'cancelled' && idx === 0
-                              ? <XCircle className="h-5 w-5" />
-                              : <StepIcon className="h-4 w-4" />
-                            }
+                            <StepIcon className="h-4 w-4" />
                           </div>
                           <span className={`text-xs font-medium ${isCurrent ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-                            {selectedBooking.status === 'cancelled' && idx === 0 ? 'Cancelled' : step.label}
+                            {step.label}
                           </span>
                         </div>
                         {idx < pipelineSteps.length - 1 && (
@@ -1714,7 +1739,7 @@ export function Bookings() {
                       </div>
                     )
                   })}
-                </div>
+                </div>}
               </div>
 
               <Separator />
@@ -1725,6 +1750,7 @@ export function Bookings() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
                     <p className="font-semibold text-sm">{selectedBooking.customer?.user?.name}</p>
+                    {currentRole === 'cleaner' && selectedBooking.customer?.phone && <Button asChild variant="outline" className="mt-2 min-h-11 border-emerald-300 text-emerald-700 hover:bg-emerald-50"><a href={`tel:${selectedBooking.customer.phone}`} aria-label={`Call customer at ${selectedBooking.customer.phone}`}><Phone className="mr-2 h-4 w-4" />Call Customer</a></Button>}
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Service</p>
@@ -1735,6 +1761,7 @@ export function Bookings() {
                     <div>
                       <p className="text-sm font-medium">{selectedBooking.address || 'No address provided'}</p>
                       <p className="text-xs text-muted-foreground">{[selectedBooking.area, selectedBooking.city].filter(Boolean).join(', ')}</p>
+                      {currentRole === 'driver' && selectedBooking.latitude != null && selectedBooking.longitude != null && <Button type="button" variant="outline" className="mt-2 min-h-11 border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => openDirections(selectedBooking)}><Navigation className="mr-2 h-4 w-4" />Open directions</Button>}
                     </div>
                   </div>
                 </div>
@@ -1784,7 +1811,7 @@ export function Bookings() {
                       selectedBooking.items.map((it: any) => (
                         <div key={it.id} className="flex justify-between text-sm items-center">
                           <div>
-                            <p className="font-medium text-sm">{it.service?.name}</p>
+                            <p className="font-medium text-sm">{it.service?.name} <Badge variant="outline" className="ml-1 text-[10px]">{it.includesMaterials ? 'With materials' : 'Without materials'}</Badge></p>
                             <p className="text-xs text-muted-foreground">{currency} {it.hourlyRate}/hr × {it.employeeCount || selectedBooking.employeeCount || 1} staff × {it.hours || selectedBooking.duration}h</p>
                           </div>
                           <span className="font-semibold text-sm">{currency} {it.totalAmount.toLocaleString()}</span>
@@ -1819,6 +1846,8 @@ export function Bookings() {
                       <span className="font-medium">{currency} {selectedBooking.materialsCost.toLocaleString()}</span>
                     </div>
                   ) : null}
+
+                  {selectedBooking.materialReservations?.length > 0 && <div className="space-y-1.5 pt-2 border-t border-border/40"><p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Material operations</p>{selectedBooking.materialReservations.map((reservation: any) => { const shortage = Math.max(0, Number(reservation.requiredQuantity) - Number(reservation.inventoryItem?.currentStock || 0)); return <div key={reservation.id} className="flex items-center justify-between text-xs"><span>{reservation.inventoryItem?.name} · {reservation.requiredQuantity} {reservation.inventoryItem?.unit}</span><Badge variant={shortage ? 'destructive' : 'outline'} className="text-[10px]">{shortage ? `Short ${shortage}` : reservation.status}</Badge></div> })}</div>}
 
                   {selectedBooking.discount > 0 && (
                     <div className="flex justify-between text-sm pt-1 border-t border-border/40">
@@ -1871,6 +1900,13 @@ export function Bookings() {
 
               <Separator />
 
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"><Truck className="mr-1.5 inline h-3.5 w-3.5"/>Assigned Driver</p>
+                <p className={`mt-2 text-sm font-medium ${selectedBooking.driver ? '' : 'text-amber-600'}`}>{selectedBooking.driver?.user?.name || 'No driver assigned'}</p>
+              </div>
+
+              <Separator />
+
               {/* Status History Audit Trail (Prompt 12) */}
               <div className="py-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
@@ -1882,12 +1918,12 @@ export function Bookings() {
                       <div key={h.id} className="text-xs space-y-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-foreground">
-                            {h.previousStatus === 'none' ? 'Created' : h.previousStatus.replace(/_/g, ' ')} → {h.newStatus.replace(/_/g, ' ')}
+                            {h.previousStatus === h.newStatus && h.reason ? h.reason : <>{h.previousStatus === 'none' ? 'Created' : h.previousStatus.replace(/_/g, ' ')} → {h.newStatus.replace(/_/g, ' ')}</>}
                           </span>
                           <span className="text-[10px] text-muted-foreground">({h.changedBy || 'system'})</span>
                         </div>
                         <p className="text-muted-foreground text-[11px]">
-                          {format(parseISO(h.createdAt), 'dd MMM yyyy, hh:mm a')} {h.reason ? `• ${h.reason}` : ''}
+                          {format(parseISO(h.createdAt), 'dd MMM yyyy, hh:mm a')} {h.reason && h.previousStatus !== h.newStatus ? `• ${h.reason}` : ''}
                         </p>
                       </div>
                     ))}
@@ -1898,7 +1934,7 @@ export function Bookings() {
               </div>
 
               {/* Status Action Buttons */}
-              {selectedBooking.status !== 'completed' && selectedBooking.status !== 'cancelled' && (
+              {!isTerminalBookingStatus(selectedBooking.status) && (
                 <>
                   <Separator />
                   <DialogFooter className="flex-row gap-2 sm:justify-start pt-2">
@@ -1908,9 +1944,9 @@ export function Bookings() {
                       </>
                     )}
                     {currentRole === 'admin' && selectedBooking.status === 'assigned' && (
-                      <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { handleStatusChange(selectedBooking.id, 'scheduled'); setDetailOpen(false) }}>Confirm Booking</Button>
+                      <Button disabled={!selectedBooking.driverId} className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { handleStatusChange(selectedBooking.id, 'scheduled'); setDetailOpen(false) }}>{selectedBooking.driverId ? 'Confirm Booking' : 'Assign Driver First'}</Button>
                     )}
-                    {(currentRole === 'admin' || currentRole === 'driver') && (selectedBooking.status === 'scheduled' || selectedBooking.status === 'confirmed') && (
+                    {currentRole === 'driver' && (selectedBooking.status === 'scheduled' || selectedBooking.status === 'confirmed') && (
                       <Button className="bg-cyan-600 hover:bg-cyan-700" onClick={() => { handleStatusChange(selectedBooking.id, 'on_the_way'); setDetailOpen(false) }}>Mark On the Way</Button>
                     )}
                     {(currentRole === 'admin' || currentRole === 'cleaner') && selectedBooking.status === 'on_the_way' && (
@@ -1940,12 +1976,12 @@ export function Bookings() {
       </Dialog>
 
       {/* Assign Staff Modal Dialog (Prompt 07) */}
-      <Dialog open={Boolean(assigningBooking)} onOpenChange={(v) => { if (!v) { setAssigningBooking(null); setSelectedAssignEmpIds([]) } }}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={Boolean(assigningBooking)} onOpenChange={(v) => { if (!v) { setAssigningBooking(null); setSelectedAssignEmpIds([]); setSelectedAssignDriverId('') } }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCheck className="h-5 w-5 text-emerald-600" />
-              Assign Staff — {assigningBooking?.bookingNo}
+              Assign Team & Driver — {assigningBooking?.bookingNo}
             </DialogTitle>
           </DialogHeader>
 
@@ -1966,6 +2002,15 @@ export function Bookings() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="booking-driver">Assigned driver</Label>
+                <Select value={selectedAssignDriverId} onValueChange={setSelectedAssignDriverId}>
+                  <SelectTrigger id="booking-driver" className="min-h-11"><SelectValue placeholder="Select an available driver" /></SelectTrigger>
+                  <SelectContent>{drivers.filter((driver: any) => ['active', 'AVAILABLE'].includes(driver.status)).map((driver: any) => <SelectItem key={driver.id} value={driver.id}>{driver.user?.name} ({driver.driverCode})</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">The server checks tenant, active status, and overlapping bookings before assignment.</p>
+              </div>
+
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select Cleaners</Label>
                 <Button
@@ -1973,10 +2018,10 @@ export function Bookings() {
                   variant="outline"
                   size="sm"
                   className="text-xs h-7 border-emerald-500 text-emerald-700 hover:bg-emerald-600 hover:text-white"
-                  onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, autoAssign: true })}
-                  disabled={assignMut.isPending}
+                  onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, driverId: selectedAssignDriverId, autoAssign: true })}
+                  disabled={!selectedAssignDriverId || assignMut.isPending}
                 >
-                  ⚡ Auto Assign Top Staff
+                  Auto assign cleaners
                 </Button>
               </div>
 
@@ -2037,11 +2082,11 @@ export function Bookings() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAssigningBooking(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setAssigningBooking(null); setSelectedAssignDriverId('') }}>Cancel</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, employeeIds: selectedAssignEmpIds })}
-              disabled={selectedAssignEmpIds.length === 0 || assignMut.isPending}
+              onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, driverId: selectedAssignDriverId, employeeIds: selectedAssignEmpIds })}
+              disabled={!selectedAssignDriverId || selectedAssignEmpIds.length !== (assigningBooking?.employeeCount || 1) || assignMut.isPending}
             >
               {assignMut.isPending ? 'Assigning...' : `Confirm Assignment (${selectedAssignEmpIds.length})`}
             </Button>
@@ -2808,7 +2853,7 @@ export function Bookings() {
       </AlertDialog>
 
       <Dialog open={Boolean(issueBooking)} onOpenChange={open => { if (!open) { setIssueBooking(null); setIssueDescription(''); setIssuePriority('medium') } }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Report Customer Issue</DialogTitle>
             <AlertDialogDescription>Booking {issueBooking?.bookingNo} · {issueBooking?.customer?.user?.name || 'Customer'}</AlertDialogDescription>

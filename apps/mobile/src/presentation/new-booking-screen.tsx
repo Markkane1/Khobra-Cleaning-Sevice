@@ -9,10 +9,11 @@ import { khobraBookingGateway, khobraOperationsGateway } from '../infrastructure
 import { cardShadow, LoadingState, localDateValue, MessageState, PageHeading, palette, PrimaryButton, SecondaryButton } from './mobile-ui'
 
 export function NewBookingScreen({ session, onCreated, onCancel, onAddAddress }: { session: Session; onCreated: () => void; onCancel: () => void; onAddAddress: () => void }) {
-  const [services, setServices] = useState<Array<{ id: string; name: string }>>([])
+  const [services, setServices] = useState<Array<{ id: string; name: string; baseRate: number; withMaterialsRate: number }>>([])
   const [customers, setCustomers] = useState<Array<{ id: string; name: string; address?: string }>>([])
   const [customerId, setCustomerId] = useState('')
   const [serviceIds, setServiceIds] = useState<string[]>([])
+  const [serviceOptions, setServiceOptions] = useState<Record<string, boolean>>({})
   const [date, setDate] = useState(() => { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); return localDateValue(tomorrow) })
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('11:00')
@@ -26,7 +27,7 @@ export function NewBookingScreen({ session, onCreated, onCancel, onAddAddress }:
       loadOperationRecords(khobraOperationsGateway, 'customers', session.token),
     ])
       .then(([serviceRecords, customerRecords]) => {
-        setServices(serviceRecords.map((service) => ({ id: service.id, name: String(service.name || 'Service') })))
+        setServices(serviceRecords.map((service) => ({ id: service.id, name: String(service.name || 'Service'), baseRate: Number(service.baseRate || 0), withMaterialsRate: Number(service.withMaterialsRate || service.baseRate || 0) })))
         setCustomers(customerRecords.map(customer => ({ id: customer.id, name: String((customer.user as { name?: string } | undefined)?.name || customer.email || customer.id), address: String((Array.isArray(customer.addresses) ? customer.addresses[0]?.address : '') || customer.address || '') })))
         const customer = customerRecords.find((item) => item.userId === session.user.userId)
         setCustomerId(session.user.role === 'customer' ? customer?.id || '' : '')
@@ -39,7 +40,7 @@ export function NewBookingScreen({ session, onCreated, onCancel, onAddAddress }:
   const submit = async () => {
     try {
       setSubmitting(true)
-      await createBooking(khobraBookingGateway, { customerId, serviceIds, scheduledDate: date, startTime, endTime, address }, session.token)
+      await createBooking(khobraBookingGateway, { customerId, serviceIds, serviceOptions: serviceIds.map(serviceId => ({ serviceId, withMaterials: serviceOptions[serviceId] || false })), scheduledDate: date, startTime, endTime, address }, session.token)
       onCreated()
     } catch (error) {
       Alert.alert('Could not create booking', error instanceof Error ? error.message : 'Try again.')
@@ -61,12 +62,13 @@ export function NewBookingScreen({ session, onCreated, onCancel, onAddAddress }:
       <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>{session.user.role === 'admin' ? '2' : '1'}</Text></View><View><Text style={styles.sectionHeading}>Choose a service</Text><Text style={styles.sectionHint}>Select the cleaning service you need.</Text></View></View>
       <View style={styles.services}>{services.map((service) => {
         const selected = serviceIds.includes(service.id)
-        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={service.id} onPress={() => setServiceIds(current => selected ? current.filter(id => id !== service.id) : [...current, service.id])} style={[styles.service, selected && styles.selectedService]}>
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} key={service.id} onPress={() => { setServiceIds(current => selected ? current.filter(id => id !== service.id) : [...current, service.id]); setServiceOptions(current => { const next = { ...current }; if (selected) delete next[service.id]; else next[service.id] = false; return next }) }} style={[styles.service, selected && styles.selectedService]}>
           <View style={[styles.serviceIcon, selected && styles.selectedServiceIcon]}><Ionicons name="sparkles-outline" size={19} color={selected ? '#fff' : palette.primary} /></View>
           <Text style={[styles.serviceText, selected && styles.selectedText]}>{service.name}</Text>
           <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={21} color={selected ? '#fff' : '#a8bbb2'} />
         </Pressable>
       })}</View>
+      {serviceIds.map(serviceId => { const service = services.find(item => item.id === serviceId)!; return <View key={serviceId} style={styles.variantBlock}><Text style={styles.variantTitle}>{service.name} option</Text><View style={styles.variantRow}><Pressable accessibilityRole="radio" accessibilityState={{ selected: !serviceOptions[serviceId] }} onPress={() => setServiceOptions(current => ({ ...current, [serviceId]: false }))} style={[styles.variant, !serviceOptions[serviceId] && styles.variantSelected]}><Text style={[styles.variantText, !serviceOptions[serviceId] && styles.variantTextSelected]}>Without materials</Text><Text style={[styles.variantPrice, !serviceOptions[serviceId] && styles.variantTextSelected]}>AED {service.baseRate}/hr</Text></Pressable><Pressable accessibilityRole="radio" accessibilityState={{ selected: serviceOptions[serviceId] }} onPress={() => setServiceOptions(current => ({ ...current, [serviceId]: true }))} style={[styles.variant, serviceOptions[serviceId] && styles.variantSelected]}><Text style={[styles.variantText, serviceOptions[serviceId] && styles.variantTextSelected]}>With materials</Text><Text style={[styles.variantPrice, serviceOptions[serviceId] && styles.variantTextSelected]}>AED {service.withMaterialsRate}/hr</Text></Pressable></View></View> })}
     </View>
 
     <View style={styles.section}>
@@ -110,6 +112,14 @@ const styles = StyleSheet.create({
   selectedServiceIcon: { backgroundColor: '#ffffff26' },
   serviceText: { flex: 1, color: palette.ink, fontWeight: '600' },
   selectedText: { color: '#fff', fontWeight: '700' },
+  variantBlock: { gap: 7, borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 12 },
+  variantTitle: { color: palette.inkSoft, fontSize: 12, fontWeight: '700' },
+  variantRow: { flexDirection: 'row', gap: 8 },
+  variant: { flex: 1, minHeight: 64, justifyContent: 'center', borderWidth: 1, borderColor: palette.border, borderRadius: 13, padding: 10, backgroundColor: '#fbfdfc' },
+  variantSelected: { borderColor: palette.primary, backgroundColor: palette.primarySoft },
+  variantText: { color: palette.ink, fontSize: 12, fontWeight: '700' },
+  variantPrice: { color: palette.muted, fontSize: 11, marginTop: 3 },
+  variantTextSelected: { color: palette.primaryDark },
   field: { gap: 7 },
   label: { color: palette.inkSoft, fontSize: 12, fontWeight: '700' },
   inputWrap: { height: 50, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderColor: '#ccdad4', backgroundColor: '#fbfdfc', borderRadius: 13, paddingHorizontal: 13 },

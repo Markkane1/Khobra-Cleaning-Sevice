@@ -6,6 +6,7 @@ import { getAuthSession } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getClientIp } from '@/lib/client-ip'
 import { apiErrorResponse } from '@/lib/api-error'
+import { getPublicTenant } from '@/lib/public-tenant'
 
 
 const bookingRepository = new PrismaBookingRepository(db)
@@ -15,8 +16,9 @@ export async function POST(req: NextRequest) {
     if (!(await checkRateLimit(`public-booking:${ip}`, 10, 60_000)).allowed) return NextResponse.json({ error: 'Too many booking attempts. Please wait and try again.' }, { status: 429 })
     const input = PublicBookingSchema.parse(await req.json())
     const authSession = await getAuthSession(req).catch(() => null)
-    if (!authSession || authSession.role !== 'customer') return NextResponse.json({ error: 'Please sign in or create an account before booking.' }, { status: 401 })
-    const tenant = await db.tenant.findUnique({ where: { id: authSession.tenantId } })
+    const tenant = authSession?.role === 'customer'
+      ? await db.tenant.findUnique({ where: { id: authSession.tenantId } })
+      : await getPublicTenant()
     if (!tenant || tenant.status !== 'active') return NextResponse.json({ error: 'Booking is temporarily unavailable' }, { status: 503 })
 
     const service = await db.service.findFirst({ where: { id: input.serviceId, tenantId: tenant.id, status: 'active' } })
@@ -34,14 +36,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Bookings require at least two hours notice' }, { status: 400 })
     }
 
-    const customer = await db.customer.findFirst({ where: { tenantId: tenant.id, userId: authSession.userId, deletedAt: null } })
-    if (!customer) return NextResponse.json({ error: 'Customer profile not found.' }, { status: 403 })
+    let actor = authSession?.role === 'customer'
+      ? { userId: authSession.userId, name: authSession.name }
+      : null
+    let customer = actor
+      ? await db.customer.findFirst({ where: { tenantId: tenant.id, userId: actor.userId, deletedAt: null } })
+      : null
+
+    if (actor && !customer) return NextResponse.json({ error: 'Customer profile not found.' }, { status: 403 })
+
+    if (!actor) {
+      const guest = await db.$transaction(async tx => {
+        const existing = await tx.user.findUnique({ where: { email: input.email } })
+        if (existing?.passwordHash || (existing && (existing.tenantId !== tenant.id || existing.role !== 'customer'))) return null
+
+        const user = existing
+          ? await tx.user.update({ where: { id: existing.id }, data: { name: input.name, phone: input.phone, status: 'active' } })
+          : await tx.user.create({ data: { tenantId: tenant.id, email: input.email, name: input.name, phone: input.phone, role: 'customer', status: 'active' } })
+        const savedAddress = { label: 'Primary', address: input.address || 'Pinned GPS location', city: input.city, area: input.area || '', latitude: input.latitude, longitude: input.longitude }
+        const customer = await tx.customer.upsert({
+          where: { userId: user.id },
+          update: { phone: input.phone, address: savedAddress.address, addresses: [savedAddress], city: input.city, area: input.area, status: 'active', deletedAt: null },
+          create: { tenantId: tenant.id, userId: user.id, phone: input.phone, address: savedAddress.address, addresses: [savedAddress], city: input.city, area: input.area, status: 'active' },
+        })
+        return { user, customer }
+      })
+      if (!guest) return NextResponse.json({ error: 'An account already uses this email. Sign in to continue with it.' }, { status: 409 })
+      actor = { userId: guest.user.id, name: guest.user.name }
+      customer = guest.customer
+    }
 
 
     const bookingData = CreateBookingSchema.parse({
-      customerId: customer.id,
+      customerId: customer!.id,
       serviceId: service.id,
       serviceIds: [service.id],
+      serviceOptions: [{ serviceId: service.id, withMaterials: input.withMaterials }],
       scheduledDate: input.scheduledDate,
       startDate: input.scheduledDate,
       endDate: input.scheduledDate,
@@ -49,19 +79,21 @@ export async function POST(req: NextRequest) {
       endTime,
       employeeCount: input.employeeCount,
       bookingType: 'one_time',
-      address: input.address,
+      address: input.address || 'Pinned GPS location',
       city: input.city,
       area: input.area,
+      latitude: input.latitude,
+      longitude: input.longitude,
       notes: input.notes,
       preferredPaymentMethod: input.preferredPaymentMethod,
     })
     const booking = await bookingRepository.create(tenant.id, bookingData, {
-      userId: authSession.userId,
+      userId: actor!.userId,
       role: 'customer',
-      name: authSession.name,
+      name: actor!.name,
     })
     broadcast('booking:created', { bookingNo: booking.bookingNo, status: booking.status, service: service.name }, tenant.id)
-    return NextResponse.json({ bookingNo: booking.bookingNo, total: booking.netAmount, service: service.name }, { status: 201 })
+    return NextResponse.json({ bookingNo: booking.bookingNo, total: booking.netAmount, service: service.name, guest: !authSession }, { status: 201 })
   } catch (error) {
     return apiErrorResponse(error, { fallback: 'Booking failed', domainErrorStatus: 400 })
   }

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, startOfDay } from 'date-fns'
-import { Truck, MapPin, Plus, Phone, Clock, CheckCircle2, Navigation, Fuel, Gauge, Users, CalendarCheck, Layers, Trash2, Pencil } from 'lucide-react'
+import { Truck, MapPin, Plus, Phone, Clock, CheckCircle2, Navigation, Fuel, Gauge, Users, CalendarCheck, Layers, Trash2, Pencil, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,6 +49,8 @@ export function Dispatch() {
   const [tripForm, setTripForm] = useState(emptyTrip)
   const [driverOpen, setDriverOpen] = useState(false)
   const [driverEditId, setDriverEditId] = useState<string | null>(null)
+  const [assigningDriverBooking, setAssigningDriverBooking] = useState<any | null>(null)
+  const [dispatchDriverId, setDispatchDriverId] = useState('')
   const emptyDriverForm = { name: '', phone: '', email: '', licenseNo: '', vehicleNo: '', temporaryPassword: '' }
   const [driverForm, setDriverForm] = useState(emptyDriverForm)
   const qc = useQueryClient()
@@ -110,7 +112,7 @@ export function Dispatch() {
       if (!r.ok) throw new Error(body.error || 'Failed to update booking status')
       return body
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bookings'] }); toast.success('Booking status updated') },
+    onSuccess: (_data, variables: any) => { qc.invalidateQueries({ queryKey: ['bookings'] }); qc.invalidateQueries({ queryKey: ['trips'] }); toast.success(variables.driverId !== undefined ? 'Driver assignment updated' : 'Booking status updated'); setAssigningDriverBooking(null); setDispatchDriverId('') },
     onError: (error: Error) => toast.error(error.message),
   })
 
@@ -124,6 +126,15 @@ export function Dispatch() {
     const bDate = format(parseISO(b.scheduledDate), 'yyyy-MM-dd')
     return bDate === todayStr
   }), [bookings, todayStr])
+
+  const awaitingDrivers = useMemo(() => bookings
+    .filter((booking: any) => !booking.driverId && ['pending', 'pending_assignment', 'assigned', 'scheduled', 'confirmed'].includes(booking.status))
+    .sort((a: any, b: any) => `${a.scheduledDate}${a.startTime}`.localeCompare(`${b.scheduledDate}${b.startTime}`)), [bookings])
+
+  const openDriverAssignment = (booking: any) => {
+    setAssigningDriverBooking(booking)
+    setDispatchDriverId(booking.driverId || '')
+  }
 
   const kanbanColumns = useMemo(() => {
     return [
@@ -178,7 +189,7 @@ export function Dispatch() {
   const upcomingStops = useMemo(() => trips.flatMap((trip: any) => {
     const tripDate = format(parseISO(trip.date), 'yyyy-MM-dd')
     if (tripDate < todayStr || trip.status === 'completed') return []
-    return (trip.stops || []).filter((stop: any) => stop.status !== 'completed').map((stop: any) => ({ ...stop, tripDate, tripStatus: trip.status }))
+    return (trip.stops || []).filter((stop: any) => !['completed', 'cancelled'].includes(stop.status)).map((stop: any) => ({ ...stop, tripId: trip.id, tripDate, tripStatus: trip.status }))
   }), [trips, todayStr])
 
   // Driver stats
@@ -272,6 +283,14 @@ export function Dispatch() {
         </div>
       </motion.div>
 
+      <Dialog open={Boolean(assigningDriverBooking)} onOpenChange={open => { if (!open) { setAssigningDriverBooking(null); setDispatchDriverId('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Assign Driver — {assigningDriverBooking?.bookingNo}</DialogTitle></DialogHeader>
+          {assigningDriverBooking && <div className="space-y-4 py-2"><div className="rounded-lg border bg-muted/30 p-3 text-sm"><p className="font-semibold">{assigningDriverBooking.customer?.user?.name}</p><p className="mt-1 text-muted-foreground">{format(parseISO(assigningDriverBooking.scheduledDate), 'dd MMM yyyy')} · {assigningDriverBooking.startTime} · {assigningDriverBooking.area || assigningDriverBooking.city || 'Address pending'}</p></div><div className="space-y-2"><Label htmlFor="dispatch-driver">Active driver</Label><Select value={dispatchDriverId} onValueChange={setDispatchDriverId}><SelectTrigger id="dispatch-driver" className="min-h-11"><SelectValue placeholder="Select a driver" /></SelectTrigger><SelectContent>{drivers.filter((driver: any) => ['active', 'AVAILABLE'].includes(driver.status)).map((driver: any) => <SelectItem key={driver.id} value={driver.id}>{driver.user?.name} ({driver.driverCode})</SelectItem>)}</SelectContent></Select><p className="text-xs text-muted-foreground">Overlapping booking assignments are rejected automatically.</p></div></div>}
+          <DialogFooter className="gap-2">{assigningDriverBooking?.driverId && <Button variant="outline" className="border-red-200 text-red-700" disabled={updateBookingMut.isPending} onClick={() => updateBookingMut.mutate({ id: assigningDriverBooking.id, driverId: null })}>Unassign</Button>}<Button variant="outline" onClick={() => setAssigningDriverBooking(null)}>Cancel</Button><Button disabled={!dispatchDriverId || updateBookingMut.isPending} onClick={() => updateBookingMut.mutate({ id: assigningDriverBooking.id, driverId: dispatchDriverId })}>{updateBookingMut.isPending ? 'Assigning…' : assigningDriverBooking?.driverId ? 'Reassign Driver' : 'Assign Driver'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className={`grid w-full ${currentRole === 'admin' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'} max-w-md`}>
           <TabsTrigger value="today">Today&apos;s Board</TabsTrigger>
@@ -281,7 +300,8 @@ export function Dispatch() {
 
         {/* TODAY'S ASSIGNMENTS - KANBAN BOARD */}
         <TabsContent value="today" className="mt-4">
-          {currentRole === 'driver' && <Card className="border-0 shadow-sm mb-4"><CardHeader><CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-violet-600" />Upcoming Pickups / Drop-offs</CardTitle></CardHeader><CardContent className="space-y-2">{upcomingStops.length === 0 ? <p className="text-sm text-muted-foreground">No upcoming transport stops assigned.</p> : upcomingStops.map((stop: any) => <div key={stop.id} className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><p className="text-sm font-semibold capitalize">{stop.type || 'Stop'}</p><p className="text-xs text-muted-foreground">{stop.address || 'Address not provided'}</p></div><div className="text-right"><p className="text-xs font-medium">{format(parseISO(stop.tripDate), 'dd MMM yyyy')}</p><Badge variant="outline" className="text-[10px] capitalize">{stop.tripStatus.replace('_', ' ')}</Badge></div></div>)}</CardContent></Card>}
+          {currentRole === 'driver' && <Card className="border-0 shadow-sm mb-4"><CardHeader><CardTitle className="text-base flex items-center gap-2"><MapPin className="h-4 w-4 text-violet-600" />Upcoming Booking Stops</CardTitle></CardHeader><CardContent className="space-y-2">{upcomingStops.length === 0 ? <p className="text-sm text-muted-foreground">No upcoming transport stops assigned.</p> : upcomingStops.map((stop: any) => <div key={stop.id} className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><p className="text-sm font-semibold">{stop.booking?.bookingNo || stop.type || 'Stop'}</p><p className="text-xs text-muted-foreground">{stop.address || 'Address not provided'}</p></div><div className="flex shrink-0 items-center gap-2"><div className="text-right"><p className="text-xs font-medium">{format(parseISO(stop.tripDate), 'dd MMM yyyy')}</p><Badge variant="outline" className="text-[10px] capitalize">{stop.tripStatus.replace('_', ' ')}</Badge></div>{stop.tripStatus === 'in_progress' && <Button size="sm" variant="outline" disabled={updateTripMut.isPending} onClick={() => updateTripMut.mutate({ id: stop.tripId, stops: [{ id: stop.id, status: 'completed', completedAt: new Date().toISOString() }] })}>Stop done</Button>}</div></div>)}</CardContent></Card>}
+          {currentRole === 'admin' && <Card className="mb-4 border-amber-200 bg-amber-50/40 shadow-sm"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Truck className="h-4 w-4 text-amber-700"/>Driver Assignment Queue <Badge variant="secondary">{awaitingDrivers.length}</Badge></CardTitle></CardHeader><CardContent>{awaitingDrivers.length === 0 ? <p className="text-sm text-muted-foreground">Every active booking has a driver.</p> : <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{awaitingDrivers.slice(0, 9).map((booking: any) => <div key={booking.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{booking.bookingNo} · {booking.customer?.user?.name}</p><p className="mt-1 text-xs text-muted-foreground">{format(parseISO(booking.scheduledDate), 'dd MMM')} at {booking.startTime}</p></div><Button size="sm" className="min-h-9 shrink-0" onClick={() => openDriverAssignment(booking)}>Assign</Button></div>)}</div>}</CardContent></Card>}
           {/* Trip Stats for Today */}
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-4">
@@ -387,19 +407,16 @@ export function Dispatch() {
                                 <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{b.startTime}</span>
                                 <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{b.area || b.city || '-'}</span>
                               </div>
+                              <div className={`flex items-center gap-1.5 text-xs font-medium ${b.driver ? 'text-violet-700 dark:text-violet-300' : 'text-amber-700'}`}><Truck className="h-3 w-3"/>{b.driver?.user?.name || 'Driver needed'}</div>
                               {/* Quick action buttons to move status */}
                               <div className="flex gap-1 pt-1">
+                                {currentRole === 'admin' && ['scheduled', 'confirmed'].includes(b.status) && <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => openDriverAssignment(b)}>{b.driverId ? 'Reassign' : 'Assign driver'}</Button>}
                                 {currentRole === 'driver' && col.id === 'scheduled' && (
                                   <>
                                     <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-cyan-300 text-cyan-700 hover:bg-cyan-50" onClick={() => handleKanbanMove(b.id, 'on_the_way')}>
                                       On the Way
                                     </Button>
                                   </>
-                                )}
-                                {currentRole === 'admin' && col.id === 'in_progress' && (
-                                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => handleKanbanMove(b.id, 'completed')}>
-                                    Complete
-                                  </Button>
                                 )}
                               </div>
                             </motion.div>
@@ -585,7 +602,7 @@ export function Dispatch() {
                           </span>
                         ) : '-'}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm">{t.stops?.length || 0}</TableCell>
+                      <TableCell className="hidden md:table-cell text-sm"><div className="space-y-1">{(t.stops || []).map((stop: any, stopIndex: number) => <div key={stop.id} className="flex items-center gap-1 text-xs"><span className="max-w-24 truncate">{stop.booking?.bookingNo || stop.type}</span>{currentRole === 'admin' && <><Button size="icon" variant="ghost" className="h-6 w-6" disabled={stopIndex === 0 || updateTripMut.isPending} aria-label="Move stop up" onClick={() => { const next = [...t.stops]; [next[stopIndex - 1], next[stopIndex]] = [next[stopIndex], next[stopIndex - 1]]; updateTripMut.mutate({ id: t.id, stops: next.map((item: any, index: number) => ({ id: item.id, sortOrder: index })) }) }}><ArrowUp className="h-3 w-3" /></Button><Button size="icon" variant="ghost" className="h-6 w-6" disabled={stopIndex === t.stops.length - 1 || updateTripMut.isPending} aria-label="Move stop down" onClick={() => { const next = [...t.stops]; [next[stopIndex + 1], next[stopIndex]] = [next[stopIndex], next[stopIndex + 1]]; updateTripMut.mutate({ id: t.id, stops: next.map((item: any, index: number) => ({ id: item.id, sortOrder: index })) }) }}><ArrowDown className="h-3 w-3" /></Button></>}</div>)}</div></TableCell>
                       <TableCell><Badge className={`${tripStatusColors [t.status] || ''} text-xs`}>{t.status.replace('_', ' ')}</Badge></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">

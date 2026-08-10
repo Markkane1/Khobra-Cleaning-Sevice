@@ -15,7 +15,7 @@ const roles = [
 ]
 
 const permissions = {
-  admin: ['dashboard', 'services', 'customers', 'employees', 'bookings', 'finance', 'driver_expenses', 'dispatch', 'inventory', 'reports', 'complaints', 'settings', 'attendance', 'payroll', 'branches', 'rbac', 'notifications', 'profile'],
+  admin: ['dashboard', 'services', 'customers', 'employees', 'bookings', 'finance', 'dispatch', 'inventory', 'reports', 'complaints', 'settings', 'attendance', 'payroll', 'branches', 'rbac', 'notifications', 'profile'],
   driver: ['dashboard', 'bookings', 'dispatch', 'driver_expenses', 'profile'],
   customer: ['dashboard', 'bookings', 'complaints', 'profile'],
   cleaner: ['dashboard', 'attendance', 'bookings', 'complaints', 'profile'],

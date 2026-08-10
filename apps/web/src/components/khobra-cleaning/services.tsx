@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Download, LayoutGrid, List, Sparkles, Tag, TrendingUp, Eye, Upload, Image as ImageIcon, Package, X, Cloud, Check, FolderPlus, Settings2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Download, LayoutGrid, List, Sparkles, Tag, TrendingUp, Eye, Upload, Image as ImageIcon, X, Cloud, Check, FolderPlus, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
@@ -31,14 +31,6 @@ import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { apiRequest } from '@/lib/api-client'
 import { CreateServiceSchema, UpdateServiceSchema } from '@repo/core'
 
-export type ServiceMaterial = {
-  id: string
-  name: string
-  quantity: number
-  unit: string
-  isOptional: boolean
-}
-
 export type ServiceCategory = {
   id: string
   name: string
@@ -51,9 +43,9 @@ export type Service = {
   name: string
   description: string
   baseRate: number
+  withMaterialsRate: number
   minDuration: number
   category: string
-  requiresMaterials: boolean
   skills: string
   status: string
   galleryImages?: string[]
@@ -61,6 +53,9 @@ export type Service = {
   materials?: ServiceMaterial[]
   createdAt: string
 }
+
+type ServiceMaterial = { inventoryItemId: string; quantityPerCleanerHour: number; unit: string; inventoryItem?: { id: string; name: string; unit: string; currentStock: number } }
+type InventoryItem = { id: string; name: string; unit: string; currentStock: number }
 
 const catStyles: Record<string, { border: string; bg: string; pill: string }> = {
   Cleaning:    { border: 'border-l-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', pill: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -82,9 +77,9 @@ const emptyForm = {
   name: '',
   description: '',
   baseRate: 150,
+  withMaterialsRate: 180,
   minDuration: 2,
   category: 'Cleaning',
-  requiresMaterials: false,
   skills: '',
   galleryImages: [] as string[],
   heroImages: [] as string[],
@@ -108,14 +103,6 @@ export function Services() {
   const [catForm, setCatForm] = useState({ id: '', name: '', description: '', color: 'emerald' })
   const [editingCatId, setEditingCatId] = useState<string | null>(null)
 
-  // Material Form input state
-  const [matForm, setMatForm] = useState<Partial<ServiceMaterial>>({
-    name: '',
-    quantity: 1,
-    unit: 'pcs',
-    isOptional: true,
-  })
-
   const qc = useQueryClient()
 
   // Fetch Services
@@ -129,11 +116,9 @@ export function Services() {
     queryKey: ['service-categories'],
     queryFn: () => apiRequest<ServiceCategory[]>('/api/khobra-cleaning/services/categories'),
   })
-
-  // Fetch Inventory Items
-  const { data: inventoryItems = [] } = useQuery({
+  const { data: inventory = [] } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
-    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/inventory'),
+    queryFn: () => apiRequest<InventoryItem[]>('/api/khobra-cleaning/inventory'),
   })
 
   // Service Mutations
@@ -241,29 +226,6 @@ export function Services() {
     setForm(prev => ({ ...prev, [kind]: prev[kind].filter((_, i) => i !== index) }))
   }
 
-  // Add Material Row
-  const handleAddMaterial = () => {
-    if (!matForm.name) {
-      toast.error('Please enter or select a material name')
-      return
-    }
-    const newMat: ServiceMaterial = {
-      id: 'mat-' + Date.now(),
-      name: matForm.name,
-      quantity: Number(matForm.quantity) || 1,
-      unit: matForm.unit || 'pcs',
-      isOptional: Boolean(matForm.isOptional),
-    }
-    setForm(prev => ({ ...prev, materials: [...prev.materials, newMat], requiresMaterials: true }))
-    setMatForm({ name: '', quantity: 1, unit: 'pcs', isOptional: true })
-    toast.success(`Material '${newMat.name}' added to service`)
-  }
-
-  // Remove Material Row
-  const handleRemoveMaterial = (id: string) => {
-    setForm(prev => ({ ...prev, materials: prev.materials.filter(m => m.id !== id) }))
-  }
-
   const handleSubmit = () => {
     const result = editId ? UpdateServiceSchema.safeParse({ id: editId, ...form }) : CreateServiceSchema.safeParse(form)
     if (!result.success) return
@@ -283,13 +245,13 @@ export function Services() {
       name: s.name,
       description: s.description || '',
       baseRate: s.baseRate,
+      withMaterialsRate: s.withMaterialsRate,
       minDuration: s.minDuration,
       category: s.category || (dbCategories[0]?.name || 'Cleaning'),
-      requiresMaterials: s.requiresMaterials || false,
       skills: s.skills || '',
       galleryImages: s.galleryImages || [],
       heroImages: s.heroImages || [],
-      materials: s.materials || [],
+      materials: (s.materials || []).map(material => ({ inventoryItemId: material.inventoryItemId, quantityPerCleanerHour: material.quantityPerCleanerHour, unit: material.unit })),
     })
     setOpen(true)
   }
@@ -380,15 +342,40 @@ export function Services() {
                     <Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Detailed service scope, guidelines, and benefits..." rows={3} />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="grid gap-2">
-                      <Label className="text-xs font-semibold">Hourly Rate ({currency}) *</Label>
+                      <Label className="text-xs font-semibold">Without Materials ({currency}/hr) *</Label>
                       <Input type="number" value={form.baseRate} onChange={e => setForm({ ...form, baseRate: Number(e.target.value) })} className="h-9" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs font-semibold">With Materials ({currency}/hr) *</Label>
+                      <Input type="number" value={form.withMaterialsRate} onChange={e => setForm({ ...form, withMaterialsRate: Number(e.target.value) })} className="h-9" />
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold">Minimum Booking Duration</Label>
                       <Input value="2 hours (all services)" readOnly className="h-9 bg-muted" />
                     </div>
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label className="text-xs font-semibold">Material bill of materials</Label>
+                        <p className="text-[11px] text-muted-foreground">Internal expected usage per cleaner-hour. This does not change the customer price.</p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, materials: [...form.materials, { inventoryItemId: inventory[0]?.id || '', quantityPerCleanerHour: 1, unit: inventory[0]?.unit || 'pcs' }] })} disabled={!inventory.length}>Add item</Button>
+                    </div>
+                    {form.materials.map((material, index) => (
+                      <div key={`${material.inventoryItemId}-${index}`} className="grid grid-cols-[1fr_110px_72px_32px] gap-2 items-center">
+                        <Select value={material.inventoryItemId} onValueChange={inventoryItemId => {
+                          const item = inventory.find(candidate => candidate.id === inventoryItemId)
+                          setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, inventoryItemId, unit: item?.unit || candidate.unit } : candidate) })
+                        }}><SelectTrigger className="h-9"><SelectValue placeholder="Inventory item" /></SelectTrigger><SelectContent>{inventory.map(item => <SelectItem key={item.id} value={item.id}>{item.name} ({item.currentStock} {item.unit})</SelectItem>)}</SelectContent></Select>
+                        <Input className="h-9" type="number" min="0.01" step="0.01" value={material.quantityPerCleanerHour} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, quantityPerCleanerHour: Number(event.target.value) } : candidate) })} aria-label="Quantity per cleaner hour" />
+                        <Input className="h-9" value={material.unit} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, unit: event.target.value } : candidate) })} aria-label="Unit" />
+                        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => setForm({ ...form, materials: form.materials.filter((_, i) => i !== index) })} aria-label="Remove material"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    ))}
                   </div>
 
                   {/* Dynamic Category Selection */}
@@ -433,85 +420,8 @@ export function Services() {
                     </div>
                   </div>
 
-                  {/* Service Materials Section */}
-                  <div className="space-y-2 pt-3 border-t">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold flex items-center gap-1.5">
-                        <Package className="h-4 w-4 text-teal-600" />
-                        Related Materials & Supplies (Multiple & Optional)
-                      </Label>
-                    </div>
-
-                    {form.materials.length > 0 && (
-                      <div className="space-y-1.5 py-1">
-                        {form.materials.map((mat) => (
-                          <div key={mat.id} className="flex items-center justify-between p-2 rounded-md bg-muted/40 border text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">{mat.name}</span>
-                              <Badge variant="outline" className="text-[10px]">
-                                {mat.quantity} {mat.unit}
-                              </Badge>
-                              <Badge className={mat.isOptional ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30'}>
-                                {mat.isOptional ? 'Optional' : 'Required'}
-                              </Badge>
-                            </div>
-                            <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:text-red-700" onClick={() => handleRemoveMaterial(mat.id)}>
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
-                      <div className="sm:col-span-2">
-                        {Array.isArray(inventoryItems) && inventoryItems.length > 0 ? (
-                          <Select value={matForm.name} onValueChange={v => setMatForm({ ...matForm, name: v })}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select from Inventory..." /></SelectTrigger>
-                            <SelectContent>
-                              {inventoryItems.map((inv: any) => (
-                                <SelectItem key={inv.id} value={inv.name}>{inv.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            placeholder="Material name (e.g. Sanitizer)"
-                            value={matForm.name}
-                            onChange={e => setMatForm({ ...matForm, name: e.target.value })}
-                            className="h-8 text-xs"
-                          />
-                        )}
-                      </div>
-
-                      <div className="flex gap-1">
-                        <Input
-                          type="number"
-                          placeholder="Qty"
-                          value={matForm.quantity}
-                          onChange={e => setMatForm({ ...matForm, quantity: Number(e.target.value) })}
-                          className="h-8 text-xs w-16"
-                        />
-                        <Select value={matForm.unit} onValueChange={v => setMatForm({ ...matForm, unit: v })}>
-                          <SelectTrigger className="h-8 text-xs w-20"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pcs">Pcs</SelectItem>
-                            <SelectItem value="litre">Litres</SelectItem>
-                            <SelectItem value="pack">Packs</SelectItem>
-                            <SelectItem value="can">Cans</SelectItem>
-                            <SelectItem value="kg">Kg</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <Button type="button" size="sm" variant="outline" onClick={handleAddMaterial} className="h-8 text-xs gap-1 border-teal-300 text-teal-700">
-                        <Plus className="h-3 w-3" />Add Material
-                      </Button>
-                    </div>
-                  </div>
-
                   <div className="grid gap-2 pt-2 border-t">
-                    <Label className="text-xs font-semibold">Required Staff Skills (comma-separated)</Label>
+                    <Label className="text-xs font-semibold">Skill tags (informational only)</Label>
                     <Input value={form.skills} onChange={e => setForm({ ...form, skills: e.target.value })} placeholder="deep_cleaning, bathroom, kitchen" className="h-9" />
                   </div>
                 </div>
@@ -761,26 +671,12 @@ export function Services() {
                         <Badge className={`${catStyle.pill} mt-1 text-[10px]`}>{s.category || 'General'}</Badge>
                       </div>
                       <div className="text-right">
-                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{currency} {s.baseRate}</span>
-                        <span className="text-xs text-muted-foreground">/hr</span>
+                        <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{currency} {s.baseRate}/hr <span className="font-normal text-muted-foreground">without</span></p>
+                        <p className="text-sm font-bold text-teal-600 dark:text-teal-400">{currency} {s.withMaterialsRate}/hr <span className="font-normal text-muted-foreground">with materials</span></p>
                       </div>
                     </div>
 
                     <p className="text-xs text-muted-foreground line-clamp-2">{s.description || 'Professional cleaning service.'}</p>
-
-                    {s.materials && s.materials.length > 0 && (
-                      <div className="space-y-1 pt-1">
-                        <span className="text-[10px] font-semibold text-muted-foreground">Supplies Included:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {s.materials.map((m, idx) => (
-                            <Badge key={idx} variant="outline" className="text-[9px] bg-muted/50">
-                              <Package className="h-2.5 w-2.5 mr-1" />
-                              {m.quantity} {m.unit} {m.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="pt-2 border-t flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">Min Duration: {s.minDuration} hrs</span>
@@ -820,9 +716,9 @@ export function Services() {
                   <TableRow className="bg-muted/40">
                     <TableHead>Service</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead>Rate</TableHead>
+                    <TableHead>Without Materials</TableHead>
+                    <TableHead>With Materials</TableHead>
                     <TableHead>Min Duration</TableHead>
-                    <TableHead>Materials</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -832,8 +728,8 @@ export function Services() {
                       <TableCell className="font-semibold">{s.name}</TableCell>
                       <TableCell><Badge variant="outline">{s.category}</Badge></TableCell>
                       <TableCell className="font-bold text-emerald-600">{currency} {s.baseRate}/hr</TableCell>
+                      <TableCell className="font-bold text-teal-600">{currency} {s.withMaterialsRate}/hr</TableCell>
                       <TableCell>{s.minDuration} hrs</TableCell>
-                      <TableCell>{s.materials?.length || 0} items</TableCell>
                       <TableCell className="text-right">
                         <Button size="icon" variant="ghost" aria-label={`Edit ${s.name}`} className="h-7 w-7" onClick={() => handleEdit(s)}>
                           <Pencil className="h-3.5 w-3.5" />

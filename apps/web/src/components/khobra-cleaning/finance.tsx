@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { downloadBlob, exportToCSV } from '@/lib/csv-export'
 import { apiRequest } from '@/lib/api-client'
 import { useSortable } from '@/hooks/use-sort'
+import { DriverExpenses } from '@/components/khobra-cleaning/driver-expenses'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -288,7 +289,7 @@ export function Finance() {
       <motion.div {...fadeUp} className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Finance</h1>
-          <p className="text-sm text-muted-foreground">Invoices, payments, and reconciliation</p>
+          <p className="text-sm text-muted-foreground">Income, expenses, and reconciliation</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="text-xs h-8" onClick={handleExport}><Download className="h-3.5 w-3.5 mr-1.5" />Export</Button>
@@ -653,9 +654,10 @@ export function Finance() {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 max-w-xs">
-          <TabsTrigger value="invoices">Invoices ({invoices.length})</TabsTrigger>
-          <TabsTrigger value="payments">Payments ({payments.length})</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 sm:max-w-md">
+          <TabsTrigger value="invoices" className="min-h-11">Invoices ({invoices.length})</TabsTrigger>
+          <TabsTrigger value="payments" className="min-h-11">Payments ({payments.length})</TabsTrigger>
+          <TabsTrigger value="expenses" className="min-h-11">Expenses</TabsTrigger>
         </TabsList>
 
         <TabsContent value="invoices" className="mt-4">
@@ -820,6 +822,10 @@ export function Finance() {
               </div>
             )}
           </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="expenses" className="mt-4">
+          <DriverExpenses />
         </TabsContent>
       </Tabs>
 

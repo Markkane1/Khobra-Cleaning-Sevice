@@ -10,7 +10,6 @@ export interface InventoryItem {
   currentStock: number;
   minStock: number;
   costPrice: number;
-  sellPrice: number;
   status: string;
   movements?: any[];
 }

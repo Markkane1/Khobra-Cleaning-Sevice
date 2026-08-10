@@ -7,6 +7,7 @@ export const TripStopSchema = z.object({
   status: z.string().optional(),
   completedAt: z.coerce.date('Completion date is invalid').optional(),
   type: z.string().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
 });
 
 export const CreateTripSchema = z.object({

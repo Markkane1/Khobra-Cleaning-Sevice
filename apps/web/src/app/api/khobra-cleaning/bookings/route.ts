@@ -75,9 +75,11 @@ export async function POST(req: NextRequest) {
       if (!primaryAddress) return NextResponse.json({ error: 'Add a primary address in Profile before booking', code: 'PRIMARY_ADDRESS_REQUIRED' }, { status: 409 })
       validatedData.address = primaryAddress
       const savedAddresses = Array.isArray(customer.addresses) ? customer.addresses : []
-      const primary = savedAddresses[0] as { city?: unknown; area?: unknown } | undefined
+      const primary = savedAddresses[0] as { city?: unknown; area?: unknown; latitude?: unknown; longitude?: unknown } | undefined
       validatedData.city = typeof primary?.city === 'string' ? primary.city : customer.city || validatedData.city
       validatedData.area = typeof primary?.area === 'string' ? primary.area : customer.area || validatedData.area
+      validatedData.latitude = typeof primary?.latitude === 'number' ? primary.latitude : undefined
+      validatedData.longitude = typeof primary?.longitude === 'number' ? primary.longitude : undefined
     }
     
     const booking = await bookingRepository.create(tenant.id, validatedData, {

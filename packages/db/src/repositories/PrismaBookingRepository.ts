@@ -5,6 +5,117 @@ import { deliverPushNotifications } from '../push-notifications';
 import { nextReference } from '../reference-sequence';
 
 type StatusTransition = { id: string; previousStatus: string; newStatus: string; createdAt: Date };
+type BookingDb = PrismaClient | Prisma.TransactionClient;
+const AUTO_TRIP_NOTE = 'Automatically created from booking assignments';
+
+async function assertDriverAvailable(db: BookingDb, input: { tenantId: string; driverId: string; bookingId: string; scheduledDate: Date; startTime: string; endTime?: string | null; duration: number; timezone: string }) {
+  await db.$queryRaw(Prisma.sql`SELECT id FROM "Driver" WHERE id = ${input.driverId} FOR UPDATE`);
+  const driver = await db.driver.findFirst({ where: { id: input.driverId, tenantId: input.tenantId, status: { in: ['active', 'AVAILABLE'] } }, include: { user: { select: { name: true } } } });
+  if (!driver) throw new Error('Select an active driver from this tenant');
+
+  const { start, end } = calendarDayRange(input.scheduledDate, input.timezone);
+  const requestedStart = parseTimeToMinutes(input.startTime);
+  const requestedEnd = input.endTime ? parseTimeToMinutes(input.endTime) : requestedStart + Math.round(input.duration * 60);
+  const bookings = await db.booking.findMany({
+    where: { tenantId: input.tenantId, driverId: input.driverId, id: { not: input.bookingId }, scheduledDate: { gte: start, lt: end }, status: { notIn: ['cancelled', 'completed', 'no_show'] }, deletedAt: null },
+    select: { bookingNo: true, startTime: true, endTime: true, duration: true },
+  });
+  const conflict = bookings.find(booking => {
+    const bookingStart = parseTimeToMinutes(booking.startTime);
+    const bookingEnd = booking.endTime ? parseTimeToMinutes(booking.endTime) : bookingStart + Math.round(booking.duration * 60);
+    return isTimeSlotOverlapping(bookingStart, bookingEnd, requestedStart, requestedEnd);
+  });
+  if (conflict) throw new Error(`${driver.user.name} is already assigned to booking ${conflict.bookingNo} during this time`);
+  return driver;
+}
+
+async function syncBookingTripStop(db: BookingDb, booking: any, timezone: string) {
+  const existingStop = await db.tripStop.findUnique({ where: { bookingId: booking.id }, include: { trip: true } });
+  const inactive = !booking.driverId || ['cancelled', 'no_show'].includes(booking.status);
+
+  if (inactive) {
+    if (!existingStop) return;
+    if (existingStop.trip.status === 'planned') await db.tripStop.delete({ where: { id: existingStop.id } });
+    else await db.tripStop.update({ where: { id: existingStop.id }, data: { status: 'cancelled' } });
+    if (existingStop.trip.notes === AUTO_TRIP_NOTE && !await db.tripStop.count({ where: { tripId: existingStop.tripId } })) {
+      await db.trip.update({ where: { id: existingStop.tripId }, data: { status: 'cancelled', deletedAt: new Date() } });
+    }
+    return;
+  }
+
+  const { start, end } = calendarDayRange(booking.scheduledDate, timezone);
+  const currentTripMatches = existingStop && existingStop.trip.driverId === booking.driverId && existingStop.trip.date >= start && existingStop.trip.date < end && existingStop.trip.deletedAt === null;
+  const address = [booking.address, booking.area, booking.city].filter(Boolean).join(', ');
+  if (currentTripMatches) {
+    await db.tripStop.update({ where: { id: existingStop.id }, data: { address, contactPhone: booking.customer?.phone || null } });
+    return;
+  }
+  if (existingStop) {
+    if (existingStop.trip.status !== 'planned') throw new Error('This booking belongs to a trip already in progress and cannot be reassigned');
+    await db.tripStop.delete({ where: { id: existingStop.id } });
+    if (existingStop.trip.notes === AUTO_TRIP_NOTE && !await db.tripStop.count({ where: { tripId: existingStop.tripId } })) {
+      await db.trip.update({ where: { id: existingStop.tripId }, data: { status: 'cancelled', deletedAt: new Date() } });
+    }
+  }
+
+  let trip = await db.trip.findFirst({ where: { tenantId: booking.tenantId, driverId: booking.driverId, date: { gte: start, lt: end }, status: 'planned', deletedAt: null }, orderBy: { createdAt: 'asc' } });
+  trip ||= await db.trip.create({ data: { tenantId: booking.tenantId, driverId: booking.driverId, date: booking.scheduledDate, notes: AUTO_TRIP_NOTE } });
+  await db.tripStop.create({ data: { tripId: trip.id, bookingId: booking.id, type: 'service', address, contactPhone: booking.customer?.phone || null } });
+}
+
+async function syncMaterialReservations(db: BookingDb, bookingId: string) {
+  const booking = await db.booking.findUnique({ where: { id: bookingId }, include: { items: { include: { service: { include: { materials: { include: { inventoryItem: true } } } } } } } });
+  if (!booking || booking.pricingMode === 'legacy_addon') return;
+  if (['cancelled', 'no_show'].includes(booking.status)) {
+    await db.bookingMaterialReservation.updateMany({ where: { bookingId, status: 'reserved' }, data: { status: 'released', releasedAt: new Date() } });
+    return;
+  }
+  if (booking.status !== 'scheduled') return;
+  const required = new Map<string, { quantity: number; unitCost: number }>();
+  booking.items.filter(item => item.includesMaterials).forEach(item => item.service.materials.forEach(material => {
+    const previous = required.get(material.inventoryItemId) || { quantity: 0, unitCost: Number(material.inventoryItem.costPrice) };
+    required.set(material.inventoryItemId, { quantity: previous.quantity + material.quantityPerCleanerHour * item.hours * item.employeeCount, unitCost: previous.unitCost });
+  }));
+  await db.bookingMaterialReservation.deleteMany({ where: { bookingId, status: 'reserved' } });
+  if (required.size) await db.bookingMaterialReservation.createMany({ data: [...required.entries()].map(([inventoryItemId, value]) => ({ bookingId, inventoryItemId, requiredQuantity: value.quantity, unitCost: value.unitCost, status: 'reserved' })) });
+  // Reservations deliberately permit shortages. Alert operations with the exact over-reserved amount.
+  const admins = await db.user.findMany({ where: { tenantId: booking.tenantId, role: 'admin', status: 'active' }, select: { id: true } });
+  for (const [inventoryItemId] of required) {
+    const [item, totals] = await Promise.all([
+      db.inventoryItem.findUnique({ where: { id: inventoryItemId }, select: { name: true, unit: true, currentStock: true } }),
+      db.bookingMaterialReservation.aggregate({ where: { inventoryItemId, status: 'reserved' }, _sum: { requiredQuantity: true } }),
+    ]);
+    const shortage = Math.max(0, Number(totals._sum.requiredQuantity || 0) - Number(item?.currentStock || 0));
+    if (shortage > 0 && item) await db.notification.createMany({ skipDuplicates: true, data: admins.map(admin => ({ tenantId: booking.tenantId, userId: admin.id, deliveryKey: `material-shortage:${bookingId}:${inventoryItemId}`, title: 'Material stock shortage', message: `${item.name} is over-reserved by ${shortage} ${item.unit} for booking ${booking.bookingNo}.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) });
+  }
+}
+
+async function consumeMaterialReservations(db: BookingDb, bookingId: string) {
+  const reservations = await db.bookingMaterialReservation.findMany({ where: { bookingId, status: 'reserved' } });
+  for (const reservation of reservations) {
+    await db.inventoryItem.update({ where: { id: reservation.inventoryItemId }, data: { currentStock: { decrement: reservation.requiredQuantity } } });
+    await db.stockMovement.create({ data: { tenantId: (await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { tenantId: true } })).tenantId, itemId: reservation.inventoryItemId, type: 'booking_consumption', quantity: -reservation.requiredQuantity, unitCost: reservation.unitCost, reference: bookingId } });
+  }
+  await db.bookingMaterialReservation.updateMany({ where: { bookingId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
+}
+
+async function notifyDriverAssignment(db: PrismaClient, bookingId: string, previousDriverId?: string | null) {
+  try {
+    const booking = await db.booking.findUnique({ where: { id: bookingId }, include: { driver: { include: { user: true } } } });
+    if (!booking) return;
+    const notices: Array<{ tenantId: string; userId: string; deliveryKey: string; title: string; message: string; type: string }> = [];
+    if (booking.driver) notices.push({ tenantId: booking.tenantId, userId: booking.driver.userId, deliveryKey: `booking-driver:${booking.id}:${booking.driverId}:${booking.updatedAt.getTime()}`, title: `Booking ${booking.bookingNo} assigned`, message: `You are assigned to booking ${booking.bookingNo} on ${booking.scheduledDate.toISOString().slice(0, 10)} at ${booking.startTime}.`, type: 'dispatch' });
+    if (previousDriverId && previousDriverId !== booking.driverId) {
+      const previous = await db.driver.findUnique({ where: { id: previousDriverId }, select: { userId: true } });
+      if (previous) notices.push({ tenantId: booking.tenantId, userId: previous.userId, deliveryKey: `booking-driver-removed:${booking.id}:${previousDriverId}:${booking.updatedAt.getTime()}`, title: `Booking ${booking.bookingNo} reassigned`, message: `Booking ${booking.bookingNo} is no longer assigned to you.`, type: 'dispatch' });
+    }
+    if (!notices.length) return;
+    await db.notification.createMany({ skipDuplicates: true, data: notices.map(notice => ({ ...notice, channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) });
+    await deliverPushNotifications(db, notices);
+  } catch (error) {
+    console.error(`Booking ${bookingId} driver notification failed`, error);
+  }
+}
 
 export async function notifyBookingStatusChange(db: PrismaClient, bookingId: string, transition?: StatusTransition) {
   if (!transition) return;
@@ -71,6 +182,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
+        materialReservations: { include: { inventoryItem: { select: { name: true, unit: true, currentStock: true } } } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
         completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
@@ -91,6 +203,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         service: { select: { id: true, name: true, baseRate: true } },
         items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
         materials: { include: { inventoryItem: true } },
+        materialReservations: { include: { inventoryItem: { select: { name: true, unit: true, currentStock: true } } } },
         assignments: { include: { employee: { include: { user: { select: { name: true } } } } } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
         completionTimingResponses: { include: { employee: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } },
@@ -163,8 +276,13 @@ export class PrismaBookingRepository implements IBookingRepository {
     const taxRate = data.taxRate ?? Number(tenant?.taxRate ?? 0);
 
     // 3. Authoritative Pricing Engine Calculation
+    const serviceOptions = new Map((data.serviceOptions || []).map(option => [option.serviceId, option.withMaterials]));
+    const pricedServices = services.map(service => {
+      const includesMaterials = serviceOptions.get(service.id) || false;
+      return { ...service, includesMaterials, baseRate: Number(includesMaterials ? service.withMaterialsRate : service.baseRate) };
+    });
     const pricing = calculateMultiServicePricing(
-      services.map(service => ({ ...service, baseRate: Number(service.baseRate) })),
+      pricedServices,
       employeeCount,
       duration,
       [],
@@ -173,7 +291,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     );
 
     const primaryServiceId = services[0]?.id;
-    const primaryHourlyRate = Number(services[0]?.baseRate || 0);
+    const primaryHourlyRate = Number(pricedServices[0]?.baseRate || 0);
 
     // Prompt 10: Occurrence Dates Generation
     const occurrenceDates = generateBookingOccurrenceDates({
@@ -193,6 +311,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     const {
       serviceId: _a,
       serviceIds: _b,
+      serviceOptions: _serviceOptions,
       duration: _c,
       endTime: _d,
       discount: _e,
@@ -288,7 +407,8 @@ export class PrismaBookingRepository implements IBookingRepository {
       }
 
       // A direct preferred assignment is assigned; confirmation moves it to scheduled.
-      const initialStatus = isPreferredAssignedForThisDate ? 'assigned' : 'pending_assignment';
+      // A preferred cleaner is only a preference until an available driver is assigned.
+      const initialStatus = 'pending_assignment';
 
       const result = await this.db.$transaction(async tx => {
         const bookingNo = await nextReference(tx, tenantId, 'booking', 'BK', 5, 999);
@@ -341,6 +461,7 @@ export class PrismaBookingRepository implements IBookingRepository {
               employeeCount: it.employeeCount,
               hours: it.hours,
               totalAmount: it.totalAmount,
+              includesMaterials: it.includesMaterials || false,
             })),
           },
           ...(isPreferredAssignedForThisDate && preferredEmployeeIds.length
@@ -393,10 +514,11 @@ export class PrismaBookingRepository implements IBookingRepository {
   async update(tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
     const result = await this.db.$transaction(tx => this.updateWithDb(tx, tenantId, id, data, actor, requiredDriverId, requiredEmployeeId));
     await notifyBookingStatusChange(this.db, id, result.transition);
+    if (result.driverChanged) await notifyDriverAssignment(this.db, id, result.previousDriverId);
     return result.booking;
   }
 
-  private async updateWithDb(db: any, tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<{ booking: Booking; transition?: StatusTransition }> {
+  private async updateWithDb(db: Prisma.TransactionClient, tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<{ booking: Booking; transition?: StatusTransition; driverChanged: boolean; previousDriverId: string | null }> {
     await db.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${id} AND "tenantId" = ${tenantId} FOR UPDATE`);
     const existing = await db.booking.findFirst({
       where: { id, tenantId },
@@ -407,7 +529,11 @@ export class PrismaBookingRepository implements IBookingRepository {
     if (requiredEmployeeId && !existing.assignments.some((assignment: any) => assignment.employeeId === requiredEmployeeId)) throw new Error('Only a cleaner assigned to this booking may update its status');
 
     const { id: _id, ...rest } = data;
+    const driverChanged = rest.driverId !== undefined && rest.driverId !== existing.driverId;
+    const targetDriverId = rest.driverId !== undefined ? rest.driverId : existing.driverId;
+    if (driverChanged && ['on_the_way', 'in_progress', 'completed', 'cancelled', 'no_show'].includes(existing.status)) throw new Error(`Driver cannot be reassigned while booking is ${existing.status}`);
     const updateData: any = { ...rest };
+    delete updateData.serviceOptions;
     if (rest.status === 'cancelled') updateData.cancelledBy = actor?.userId;
     let transition: StatusTransition | undefined;
 
@@ -424,6 +550,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       if (['scheduled', 'on_the_way', 'in_progress'].includes(rest.status) && (!existing.assignments || existing.assignments.length < existing.employeeCount)) {
         throw new Error(`A booking cannot transition to '${rest.status}' until all ${existing.employeeCount} required cleaners are assigned`);
       }
+      if (rest.status === 'scheduled' && !targetDriverId) throw new Error('Assign a driver before scheduling this booking');
 
       if (['on_the_way', 'in_progress', 'completed', 'cancelled', 'no_show'].includes(rest.status)) {
         await db.assignment.updateMany({
@@ -509,6 +636,10 @@ export class PrismaBookingRepository implements IBookingRepository {
       throw new Error(hoursCheck.error);
     }
 
+    if (targetDriverId && (driverChanged || rest.scheduledDate || rest.startTime || rest.endTime || rest.duration)) {
+      await assertDriverAvailable(db, { tenantId, driverId: targetDriverId, bookingId: id, scheduledDate, startTime, endTime, duration, timezone: tenantObj?.timezone || 'UTC' });
+    }
+
     // Rescheduling Availability Validation (Prompt 09 Trigger 8 & 9)
     if ((rest.scheduledDate || rest.startTime || rest.endTime) && existing.assignments && existing.assignments.length > 0) {
       await db.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join(existing.assignments.map((assignment: { employeeId: string }) => assignment.employeeId).sort())}) FOR UPDATE`);
@@ -588,24 +719,30 @@ export class PrismaBookingRepository implements IBookingRepository {
         name: material.name,
         unit: material.unit,
         quantity: material.quantity,
-        unitPrice: material.unitPrice,
+        unitPrice: Number(material.unitPrice),
       }));
       const discount = rest.discount !== undefined ? rest.discount : existing.discount;
       const taxRate = rest.taxRate !== undefined ? rest.taxRate : tenantObj?.taxRate || 0;
 
+      const requestedOptions = new Map((rest.serviceOptions || []).map(option => [option.serviceId, option.withMaterials]));
+      const existingOptions = new Map(existing.items.map((item: { serviceId: string; includesMaterials: boolean }) => [item.serviceId, item.includesMaterials]));
+      const pricedServices = services.map(service => {
+        const includesMaterials = requestedOptions.has(service.id) ? requestedOptions.get(service.id)! : existingOptions.get(service.id) || false;
+        return { ...service, includesMaterials, baseRate: Number(includesMaterials ? service.withMaterialsRate : service.baseRate) };
+      });
       const pricing = calculateMultiServicePricing(
-        services,
+        pricedServices,
         employeeCount,
         duration,
         materialsInput,
-        discount,
-        taxRate
+        Number(discount),
+        Number(taxRate)
       );
 
       updateData.serviceId = services[0]?.id || existing.serviceId;
       updateData.employeeCount = employeeCount;
       updateData.materialsCost = existing.materialsCost;
-      updateData.hourlyRate = services[0]?.baseRate || existing.hourlyRate;
+      updateData.hourlyRate = pricedServices[0]?.baseRate || existing.hourlyRate;
       updateData.totalAmount = pricing.totalAmount;
       updateData.discount = pricing.discount;
       updateData.netAmount = pricing.netAmount;
@@ -621,9 +758,16 @@ export class PrismaBookingRepository implements IBookingRepository {
           employeeCount: it.employeeCount,
           hours: it.hours,
           totalAmount: it.totalAmount,
+          includesMaterials: it.includesMaterials || false,
         })),
       });
 
+    }
+
+    if (driverChanged) {
+      const previousDriver = existing.driverId ? await db.driver.findUnique({ where: { id: existing.driverId }, include: { user: { select: { name: true } } } }) : null;
+      const nextDriver = targetDriverId ? await db.driver.findUnique({ where: { id: targetDriverId }, include: { user: { select: { name: true } } } }) : null;
+      await db.bookingStatusHistory.create({ data: { bookingId: id, previousStatus: existing.status, newStatus: existing.status, changedBy: actor ? `${actor.role}: ${actor.name}` : 'system', changedByUserId: actor?.userId, changedByRole: actor?.role || 'system', reason: nextDriver ? `Driver assigned: ${nextDriver.user.name}${previousDriver ? ` (replacing ${previousDriver.user.name})` : ''}` : `Driver removed${previousDriver ? `: ${previousDriver.user.name}` : ''}` } });
     }
 
     const updated = await db.booking.update({
@@ -642,10 +786,13 @@ export class PrismaBookingRepository implements IBookingRepository {
         invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } },
       },
     }) as unknown as Booking;
-    return { booking: updated, transition };
+    await syncBookingTripStop(db, updated, tenantObj?.timezone || 'UTC');
+    await syncMaterialReservations(db, updated.id);
+    if (updated.status === 'in_progress' && existing.status !== 'in_progress') await consumeMaterialReservations(db, updated.id);
+    return { booking: updated, transition, driverChanged, previousDriverId: existing.driverId };
   }
 
-  async assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign: boolean = false, actor?: BookingActor): Promise<Booking> {
+  async assignEmployees(tenantId: string, bookingId: string, employeeIds: string[], autoAssign: boolean = false, actor?: BookingActor, driverId?: string): Promise<Booking> {
     const existing = await this.db.booking.findFirst({
       where: { id: bookingId, tenantId },
       include: {
@@ -728,7 +875,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         .filter(emp => !leaveEmpIds.has(emp.id) && !busyEmpIds.has(emp.id))
         .map(emp => {
           const ratings = emp.assignments.map(a => a.customerRating).filter((r): r is number => typeof r === 'number' && r > 0);
-          const averageRating = ratings.length > 0 ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10 : 4.8;
+          const averageRating = ratings.length > 0 ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10 : 0;
           const completedCount = emp.assignments.filter(a => a.status === 'completed').length;
           const currentWorkload = emp.assignments.filter(a => a.booking && a.booking.scheduledDate >= dateStart && a.booking.scheduledDate < dateEnd && !['cancelled', 'no_show'].includes(a.status)).length;
 
@@ -741,8 +888,8 @@ export class PrismaBookingRepository implements IBookingRepository {
           };
         })
         .sort((a, b) => {
-          if (a.currentWorkload !== b.currentWorkload) return a.currentWorkload - b.currentWorkload;
           if (b.averageRating !== a.averageRating) return b.averageRating - a.averageRating;
+          if (a.currentWorkload !== b.currentWorkload) return a.currentWorkload - b.currentWorkload;
           return b.completedCount - a.completedCount;
         });
 
@@ -813,6 +960,8 @@ export class PrismaBookingRepository implements IBookingRepository {
     const result = await this.db.$transaction(async tx => {
     // Lock the selected employees before the final check so concurrent assignments serialize.
     await tx.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join([...new Set(targetEmpIds)])}) FOR UPDATE`);
+    if (!driverId) throw new Error('Select a driver to complete the assignment');
+    await assertDriverAvailable(tx, { tenantId, driverId, bookingId, scheduledDate: existing.scheduledDate, startTime: existing.startTime, endTime: existing.endTime, duration: existing.duration, timezone: tenantHours?.timezone || 'UTC' });
 
     // Atomic Race Condition Revalidation
     for (const empId of targetEmpIds) {
@@ -861,8 +1010,12 @@ export class PrismaBookingRepository implements IBookingRepository {
       : Number(existing.materialsCost || 0);
     const tenant = await tx.tenant.findUnique({ where: { id: existing.tenantId }, select: { taxRate: true } });
 
+    const existingOptions = new Map(existing.items.map((item: { serviceId: string; includesMaterials: boolean }) => [item.serviceId, item.includesMaterials]));
     const pricing = calculateMultiServicePricing(
-      services.map(service => ({ ...service, baseRate: Number(service.baseRate) })),
+      services.map(service => {
+        const includesMaterials = existingOptions.get(service.id) || false;
+        return { ...service, includesMaterials, baseRate: Number(includesMaterials ? service.withMaterialsRate : service.baseRate) };
+      }),
       newEmployeeCount,
       existing.duration,
       mappedMaterials,
@@ -882,6 +1035,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         employeeCount: it.employeeCount,
         hours: it.hours,
         totalAmount: it.totalAmount,
+        includesMaterials: it.includesMaterials || false,
       })),
     });
 
@@ -910,6 +1064,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     const booking = await tx.booking.update({
       where: { id: bookingId, tenantId },
       data: {
+        driverId,
         employeeCount: newEmployeeCount,
         materialsCost: pricing.materialsSubtotal,
         totalAmount: pricing.totalAmount,
@@ -928,9 +1083,16 @@ export class PrismaBookingRepository implements IBookingRepository {
         pickupAlerts: { orderBy: { generatedAt: 'desc' } },
       },
     }) as unknown as Booking;
-    return { booking, transition };
+    if (existing.driverId !== driverId) {
+      const previousDriver = existing.driverId ? await tx.driver.findUnique({ where: { id: existing.driverId }, include: { user: { select: { name: true } } } }) : null;
+      const nextDriver = await tx.driver.findUnique({ where: { id: driverId }, include: { user: { select: { name: true } } } });
+      await tx.bookingStatusHistory.create({ data: { bookingId, previousStatus: existing.status, newStatus: 'assigned', changedBy: actor ? `${actor.role}: ${actor.name}` : 'system', changedByUserId: actor?.userId, changedByRole: actor?.role || 'system', reason: `Driver assigned: ${nextDriver?.user.name || driverId}${previousDriver ? ` (replacing ${previousDriver.user.name})` : ''}` } });
+    }
+    await syncBookingTripStop(tx, booking, tenantHours?.timezone || 'UTC');
+    return { booking, transition, driverChanged: existing.driverId !== driverId, previousDriverId: existing.driverId };
     });
     await notifyBookingStatusChange(this.db, bookingId, result.transition);
+    if (result.driverChanged) await notifyDriverAssignment(this.db, bookingId, result.previousDriverId);
     return result.booking;
   }
 

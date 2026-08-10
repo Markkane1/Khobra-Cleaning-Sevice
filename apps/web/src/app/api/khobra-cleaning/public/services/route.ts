@@ -14,10 +14,10 @@ export async function GET() {
       description: true,
       category: true,
       baseRate: true,
+      withMaterialsRate: true,
       minDuration: true,
       galleryImages: true,
       heroImages: true,
-      requiresMaterials: true,
     },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
   })

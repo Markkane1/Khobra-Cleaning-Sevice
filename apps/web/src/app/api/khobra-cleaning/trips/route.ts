@@ -47,6 +47,12 @@ export async function PUT(req: NextRequest) {
     const validatedData = UpdateTripSchema.parse(body)
     const existing = await db.trip.findFirst({ where: { id: validatedData.id, tenantId: auth.session.tenantId }, include: { driver: true } })
     if (!existing) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
+    if (validatedData.driverId && validatedData.driverId !== existing.driverId && await db.tripStop.count({ where: { tripId: existing.id, bookingId: { not: null } } })) {
+      return NextResponse.json({ error: 'Reassign linked bookings from the Dispatch board instead of changing this trip driver' }, { status: 409 })
+    }
+    if (validatedData.status === 'completed' && await db.tripStop.count({ where: { tripId: existing.id, booking: { status: { notIn: ['completed', 'cancelled', 'no_show'] } } } })) {
+      return NextResponse.json({ error: 'Complete or cancel every linked booking before completing this trip' }, { status: 409 })
+    }
     if (auth.session.role === 'driver') {
       if (existing.driver.userId !== auth.session.userId) return NextResponse.json({ error: 'This trip is assigned to another driver' }, { status: 403 })
       const allowedKeys = Object.keys(validatedData).every(key => ['id', 'status', 'startMileage', 'endMileage', 'stops'].includes(key))
@@ -75,6 +81,7 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
     if (!await db.trip.findFirst({ where: { id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Trip not found' }, { status: 404 })
+    if (await db.tripStop.count({ where: { tripId: id, booking: { status: { notIn: ['completed', 'cancelled', 'no_show'] } } } })) return NextResponse.json({ error: 'This trip contains active bookings. Reassign those bookings before deleting it.' }, { status: 409 })
 
     await tripRepository.delete(auth.session.tenantId, id)
     broadcast('dispatch:updated', { status: 'deleted' }, auth.session.tenantId)

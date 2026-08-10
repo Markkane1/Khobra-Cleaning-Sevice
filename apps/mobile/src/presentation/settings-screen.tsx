@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
 import { apiBaseUrl } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, PageHeading, palette, PrimaryButton } from './mobile-ui'
+import { BankAccountsScreen } from './bank-accounts-screen'
 
 export function SettingsScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
+  const [activeTab, setActiveTab] = useState<'information' | 'bank-accounts'>('information')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   
@@ -65,10 +67,18 @@ export function SettingsScreen({ session, onBack }: { session: Session; onBack?:
   return <View style={styles.screen}>
     <View style={styles.header}>
       {onBack && <Ionicons name="arrow-back" size={24} color={palette.ink} onPress={onBack} style={styles.backButton} />}
-      <PageHeading title="Settings" subtitle="Platform & Company configuration" />
+      <PageHeading title="Company" subtitle="Information, bank accounts, and configuration" />
+      <View style={styles.tabs} accessibilityRole="tablist">
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'information' }} onPress={() => setActiveTab('information')} style={({ pressed }) => [styles.tab, activeTab === 'information' && styles.tabActive, pressed && styles.tabPressed]}>
+          <Text style={[styles.tabText, activeTab === 'information' && styles.tabTextActive]}>Company Information</Text>
+        </Pressable>
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'bank-accounts' }} onPress={() => setActiveTab('bank-accounts')} style={({ pressed }) => [styles.tab, activeTab === 'bank-accounts' && styles.tabActive, pressed && styles.tabPressed]}>
+          <Text style={[styles.tabText, activeTab === 'bank-accounts' && styles.tabTextActive]}>Bank Accounts</Text>
+        </Pressable>
+      </View>
     </View>
 
-    {loading ? <LoadingState label="Loading settings..." /> : <ScrollView contentContainerStyle={styles.form}>
+    {activeTab === 'bank-accounts' ? <BankAccountsScreen session={session} embedded /> : loading ? <LoadingState label="Loading settings..." /> : <ScrollView contentContainerStyle={styles.form}>
       
       <View style={styles.section}>
         <View style={styles.secHead}><Ionicons name="business" size={18} color={palette.primaryDark} /><Text style={styles.secTitle}>Company Details</Text></View>
@@ -128,7 +138,7 @@ export function SettingsScreen({ session, onBack }: { session: Session; onBack?:
 
     </ScrollView>}
     
-    {!loading && <View style={styles.footer}>
+    {activeTab === 'information' && !loading && <View style={styles.footer}>
       <PrimaryButton label="Save Settings" onPress={save} loading={saving} />
     </View>}
   </View>
@@ -138,6 +148,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.background },
   header: { padding: 20, paddingBottom: 10 },
   backButton: { marginBottom: 10 },
+  tabs: { flexDirection: 'row', marginTop: 16, padding: 4, borderRadius: 12, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border },
+  tab: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderRadius: 9 },
+  tabActive: { backgroundColor: palette.primarySoft },
+  tabPressed: { opacity: 0.7 },
+  tabText: { fontSize: 13, fontWeight: '600', color: palette.muted, textAlign: 'center' },
+  tabTextActive: { color: palette.primaryDark },
   
   form: { padding: 20, gap: 24, paddingBottom: 100 },
   section: { gap: 10 },

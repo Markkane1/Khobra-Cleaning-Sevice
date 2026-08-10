@@ -23,6 +23,7 @@ export const SignupSchema = z.object({
   phone: z.string().trim().min(5, 'Enter a valid phone number').max(30),
   password: z.string().min(8, 'Password must contain at least 8 characters').max(128),
   confirmPassword: z.string().min(1, 'Confirm your password'),
+  privacyPolicyAccepted: z.literal(true, { message: 'Accept the Privacy Policy to create an account' }),
   turnstileToken: z.string().min(1, 'Please complete the security check'),
 }).strict().refine(data => data.password === data.confirmPassword, {
   message: 'Passwords do not match',

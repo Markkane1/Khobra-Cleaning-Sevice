@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
         include: {
           customer: { select: { userId: true, user: { select: { name: true } } } },
           assignments: { select: { id: true, employeeId: true, startedAt: true, employee: { select: { userId: true, user: { select: { name: true } } } } } },
-          service: { select: { id: true, name: true, baseRate: true } },
-          items: { include: { service: { select: { id: true, name: true, baseRate: true } } } },
+          service: { select: { id: true, name: true, baseRate: true, withMaterialsRate: true } },
+          items: { include: { service: { select: { id: true, name: true, baseRate: true, withMaterialsRate: true } } } },
         },
       })
 
@@ -79,10 +79,12 @@ export async function POST(req: NextRequest) {
       // Calculate actual total hours worked
       const avgActualHours = updatedAssignments.reduce((acc, curr) => acc + (curr.actualHours || booking.duration), 0) / (updatedAssignments.length || 1)
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: auth.session.tenantId }, select: { taxRate: true } })
-      const itemServices = booking.items.flatMap(item => item.service ? [item.service] : [])
-      const services = itemServices.length ? itemServices : booking.service ? [booking.service] : []
+      const itemServices = booking.items.flatMap(item => item.service ? [{ ...item.service, includesMaterials: item.includesMaterials }] : [])
+      const services = itemServices.length
+        ? itemServices.map(service => ({ id: service.id, name: service.name, baseRate: Number(service.includesMaterials ? service.withMaterialsRate : service.baseRate), includesMaterials: service.includesMaterials }))
+        : booking.service ? [{ id: booking.service.id, name: booking.service.name, baseRate: Number(booking.service.baseRate), includesMaterials: false }] : []
       if (!services.length) throw new Error('Booking has no billable service')
-      const pricing = calculateMultiServicePricing(services.map(service => ({ ...service, baseRate: Number(service.baseRate) })), updatedAssignments.length, avgActualHours, Number(booking.materialsCost), Number(booking.discount), Number(tenant.taxRate))
+      const pricing = calculateMultiServicePricing(services, updatedAssignments.length, avgActualHours, Number(booking.materialsCost), Number(booking.discount), Number(tenant.taxRate))
 
       // 3. Record BookingStatusHistory
       const statusHistory = await tx.bookingStatusHistory.create({

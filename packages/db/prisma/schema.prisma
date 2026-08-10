@@ -172,6 +172,8 @@ model User {
   status       String    @default("active")
   sessionVersion Int     @default(0)
   lastLoginAt  DateTime?
+  privacyPolicyVersion String?
+  privacyAcknowledgedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -182,6 +184,7 @@ model User {
   bookingStatusChanges BookingStatusHistory[] @relation("BookingStatusActor")
   pushSubscriptions   PushSubscription[]
   nativePushTokens    NativePushToken[]
+  notificationReceipts NotificationReceipt[]
   bankAccountsCreated CompanyBankAccount[] @relation("BankAccountCreator")
   bankAccountsUpdated CompanyBankAccount[] @relation("BankAccountUpdater")
   bankAccountsActivated CompanyBankAccount[] @relation("BankAccountActivator")
@@ -201,6 +204,21 @@ model User {
   complaintsAssigned Complaint[] @relation("ComplaintAssignee")
 }
 
+model AccountDeletionRequest {
+  id              String   @id @default(cuid())
+  tenantId        String?
+  userId          String?
+  email           String
+  reason          String?
+  status          String   @default("requested")
+  retainedDataReason String?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([email, status])
+  @@index([tenantId, status])
+}
+
 // ============ SERVICE CATALOG ============
 
 model Service {
@@ -209,10 +227,10 @@ model Service {
   name              String
   description       String?
   baseRate          Decimal  @db.Decimal(14, 2)
+  withMaterialsRate Decimal  @default(0) @db.Decimal(14, 2)
   minDuration       Int      @default(2)
   category          String?
   status            String   @default("active")
-  requiresMaterials Boolean  @default(false)
   skills            String?
   galleryImages     Json?
   heroImages        Json?
@@ -223,6 +241,7 @@ model Service {
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   bookings     Booking[]
   bookingItems BookingItem[]
+  materials    ServiceMaterial[]
 }
 
 // ============ CRM - CUSTOMErs ============
@@ -361,6 +380,7 @@ model Booking {
   duration           Float
   employeeCount      Int      @default(1)
   materialsCost      Decimal  @default(0) @db.Decimal(14, 2)
+  pricingMode        String   @default("service_variants")
   hourlyRate         Decimal  @db.Decimal(14, 2)
   totalAmount        Decimal  @db.Decimal(14, 2)
   discount           Decimal  @default(0) @db.Decimal(14, 2)
@@ -368,6 +388,8 @@ model Booking {
   address            String?
   city               String?
   area               String?
+  latitude           Float?
+  longitude          Float?
   notes              String?
   isRecurring        Boolean  @default(false)
   recurringRule      String?
@@ -398,6 +420,8 @@ model Booking {
   completionTimingResponses BookingCompletionTimingResponse[]
   pickupAlerts              BookingPickupAlert[]
   rating                    BookingRating?
+  tripStop                  TripStop?
+  materialReservations      BookingMaterialReservation[]
 
   @@index([driverId])
   @@unique([tenantId, bookingNo])
@@ -486,10 +510,43 @@ model BookingItem {
   employeeCount Int      @default(1)
   hours         Float
   totalAmount   Decimal @db.Decimal(14, 2)
+  includesMaterials Boolean @default(false)
   createdAt     DateTime @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id])
+}
+
+model ServiceMaterial {
+  id              String   @id @default(cuid())
+  serviceId       String
+  inventoryItemId String
+  quantityPerCleanerHour Float
+  unit            String   @default("pcs")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  service       Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  @@unique([serviceId, inventoryItemId])
+}
+
+model BookingMaterialReservation {
+  id              String   @id @default(cuid())
+  bookingId       String
+  inventoryItemId String
+  requiredQuantity Float
+  unitCost        Decimal  @default(0) @db.Decimal(14, 2)
+  status          String   @default("reserved")
+  consumedAt      DateTime?
+  releasedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  @@unique([bookingId, inventoryItemId])
+  @@index([inventoryItemId, status])
 }
 
 model BookingMaterial {
@@ -558,14 +615,20 @@ model Trip {
 model TripStop {
   id           String    @id @default(cuid())
   tripId       String
+  bookingId    String?   @unique
   type         String
   address      String?
   contactPhone String?
   status       String    @default("pending")
   completedAt  DateTime?
+  sortOrder    Int       @default(0)
   createdAt    DateTime  @default(now())
 
-  trip Trip @relation(fields: [tripId], references: [id])
+  trip    Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, status])
+  @@index([tripId, sortOrder])
 }
 
 model DriverExpense {
@@ -725,7 +788,6 @@ model InventoryItem {
   currentStock Float    @default(0)
   minStock     Float    @default(0)
   costPrice    Decimal  @default(0) @db.Decimal(14, 2)
-  sellPrice    Decimal  @default(0) @db.Decimal(14, 2)
   status       String   @default("active")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -734,6 +796,8 @@ model InventoryItem {
   movements        StockMovement[]
   vendorItems      VendorItem[]
   bookingMaterials BookingMaterial[]
+  serviceMaterials ServiceMaterial[]
+  materialReservations BookingMaterialReservation[]
 }
 
 model Vendor {
@@ -863,10 +927,23 @@ model Notification {
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   statusHistory BookingStatusHistory? @relation(fields: [statusHistoryId], references: [id], onDelete: Cascade)
   pickupAlert   BookingPickupAlert?   @relation(fields: [pickupAlertId], references: [id], onDelete: Cascade)
+  receipts      NotificationReceipt[]
 
   @@unique([statusHistoryId, userId, channel])
   @@unique([pickupAlertId, userId, channel])
   @@unique([deliveryKey, userId, channel])
+}
+
+model NotificationReceipt {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([notificationId, userId])
 }
 
 model PushSubscription {

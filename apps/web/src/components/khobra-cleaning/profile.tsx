@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table'
 import { downloadBlob } from '@/lib/csv-export'
 import { apiRequest } from '@/lib/api-client'
+import { LocationChoice } from './location-choice'
 
 export interface CustomerAddress {
   id: string
@@ -36,6 +37,8 @@ export interface CustomerAddress {
   apt: string
   city: string
   area: string
+  latitude?: number
+  longitude?: number
   isDefault: boolean
 }
 
@@ -51,6 +54,7 @@ export function CustomerProfile() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingAddress, setSavingAddress] = useState(false)
   const [savingSecurity, setSavingSecurity] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [addressError, setAddressError] = useState<string | null>(null)
   const [securityError, setSecurityError] = useState<string | null>(null)
@@ -79,6 +83,8 @@ export function CustomerProfile() {
     apt: '',
     city: 'Dubai',
     area: '',
+    latitude: undefined,
+    longitude: undefined,
     isDefault: false,
   })
 
@@ -94,9 +100,11 @@ export function CustomerProfile() {
     address: [addrForm.building, addrForm.apt, addrForm.street].filter(Boolean).join(', '),
     city: addrForm.city,
     area: addrForm.area,
+    latitude: addrForm.latitude,
+    longitude: addrForm.longitude,
   }
   const addressValidation = CustomerAddressSchema.safeParse(pendingAddress)
-  const addressContextError = !addrForm.area?.trim() ? 'Area is required' : ''
+  const addressContextError = addrForm.latitude === undefined && !addrForm.area?.trim() ? 'Area is required for a manually entered address' : ''
   const passwordValidation = ChangePasswordSchema.safeParse({ currentPassword: secForm.currentPassword, newPassword: secForm.newPassword })
   const passwordMatchError = secForm.confirmPassword && secForm.newPassword !== secForm.confirmPassword ? 'New passwords do not match' : ''
 
@@ -128,7 +136,7 @@ export function CustomerProfile() {
       : customerProfile.address
         ? [{ label: 'Primary', address: customerProfile.address, city: customerProfile.city, area: customerProfile.area }]
         : []
-    setAddresses(saved.map((address: any, index: number) => ({ id: `addr-${index}`, label: address.label || (index ? `Address ${index + 1}` : 'Primary'), street: address.address, building: '', apt: '', city: address.city || '', area: address.area || '', isDefault: index === 0 })))
+    setAddresses(saved.map((address: any, index: number) => ({ id: `addr-${index}`, label: address.label || (index ? `Address ${index + 1}` : 'Primary'), street: address.address === 'Pinned GPS location' ? '' : address.address, building: '', apt: '', city: address.city || '', area: address.area || '', latitude: typeof address.latitude === 'number' ? address.latitude : undefined, longitude: typeof address.longitude === 'number' ? address.longitude : undefined, isDefault: index === 0 })))
     setProfileForm(current => ({ ...current, name: customerProfile.user?.name || current.name, email: customerProfile.user?.email || current.email, phone: customerProfile.phone || current.phone }))
   }, [customerProfile])
   const { data: settings } = useQuery({
@@ -196,7 +204,7 @@ export function CustomerProfile() {
     try {
       if (userRole === 'customer') {
         if (!customerProfile) throw new Error('Customer profile could not be loaded')
-        const savedAddresses = addresses.map(item => ({ label: item.label, address: [item.building, item.apt, item.street].filter(Boolean).join(', '), city: item.city, area: item.area }))
+        const savedAddresses = addresses.map(item => ({ label: item.label, address: [item.building, item.apt, item.street].filter(Boolean).join(', ') || 'Pinned GPS location', city: item.city, area: item.area, latitude: item.latitude, longitude: item.longitude }))
         await apiRequest('/api/khobra-cleaning/customers', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -236,6 +244,8 @@ export function CustomerProfile() {
       apt: addrForm.apt || '',
       city: addrForm.city || 'Dubai',
       area: addrForm.area || '',
+      latitude: addrForm.latitude,
+      longitude: addrForm.longitude,
       isDefault: addrForm.isDefault || addresses.length === 0,
     }
     if (!customerProfile) {
@@ -244,9 +254,11 @@ export function CustomerProfile() {
     }
     const nextAddresses = [...addresses, newAddr].map((item, index) => ({
       label: item.label || (index ? `Address ${index + 1}` : 'Primary'),
-      address: [item.building, item.apt, item.street].filter(Boolean).join(', '),
+      address: [item.building, item.apt, item.street].filter(Boolean).join(', ') || 'Pinned GPS location',
       city: item.city,
       area: item.area,
+      latitude: item.latitude,
+      longitude: item.longitude,
     }))
     setSavingAddress(true)
     try {
@@ -257,7 +269,7 @@ export function CustomerProfile() {
       })
       setAddresses([...addresses, newAddr].map((item, index) => ({ ...item, isDefault: index === 0 })))
       setNewAddrOpen(false)
-      setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', isDefault: false })
+      setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', latitude: undefined, longitude: undefined, isDefault: false })
       qc.invalidateQueries({ queryKey: ['customers'] })
       toast.success(addresses.length ? 'New address added!' : 'Primary address added!')
     } catch (error) {
@@ -293,6 +305,16 @@ export function CustomerProfile() {
     } finally {
       setSavingSecurity(false)
     }
+  }
+
+  const deleteAccount = async () => {
+    if (!window.confirm('Delete your account? You will lose access immediately. Completed operational records will be retained only in anonymized form.')) return
+    setDeletingAccount(true)
+    try {
+      await apiRequest('/api/khobra-cleaning/auth/me', { method: 'DELETE' })
+      toast.success('Account deleted')
+      window.location.assign('/home')
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not delete account') } finally { setDeletingAccount(false) }
   }
 
   const roleColors: Record<string, string> = {
@@ -507,7 +529,7 @@ export function CustomerProfile() {
                     <Plus className="h-4 w-4" />Add New Address
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>Add New Address</DialogTitle>
                   </DialogHeader>
@@ -526,6 +548,8 @@ export function CustomerProfile() {
                       </Select>
                     </div>
 
+                    <LocationChoice value={{ latitude: addrForm.latitude, longitude: addrForm.longitude }} onChange={coordinates => setAddrForm(current => ({ ...current, latitude: coordinates.latitude, longitude: coordinates.longitude }))} />
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1.5">
                         <Label className="text-xs">City</Label>
@@ -540,14 +564,14 @@ export function CustomerProfile() {
                       </div>
 
                       <div className="grid gap-1.5">
-                        <Label className="text-xs">Area / District *</Label>
-                        <Input value={addrForm.area} onChange={e => setAddrForm({ ...addrForm, area: e.target.value })} placeholder="e.g. Dubai Marina" className="h-9" required />
+                        <Label className="text-xs">Area / District {addrForm.latitude === undefined ? '*' : '(optional)'}</Label>
+                        <Input value={addrForm.area} onChange={e => setAddrForm({ ...addrForm, area: e.target.value })} placeholder="e.g. Dubai Marina" className="h-11" required={addrForm.latitude === undefined} />
                       </div>
                     </div>
 
                     <div className="grid gap-1.5">
-                      <Label className="text-xs">Street Name / Number *</Label>
-                      <Input value={addrForm.street} onChange={e => setAddrForm({ ...addrForm, street: e.target.value })} placeholder="e.g. Al Wasl Road" className="h-9" required />
+                      <Label className="text-xs">{addrForm.latitude === undefined ? 'Street Name / Number *' : 'Building or access details (optional)'}</Label>
+                      <Input value={addrForm.street} onChange={e => setAddrForm({ ...addrForm, street: e.target.value })} placeholder={addrForm.latitude === undefined ? 'e.g. Al Wasl Road' : 'Villa, apartment, floor, or access notes'} className="h-11" required={addrForm.latitude === undefined} />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -592,6 +616,7 @@ export function CustomerProfile() {
                       <p className="font-semibold text-foreground text-sm">{addr.building ? `${addr.building}, ` : ''}{addr.apt}</p>
                       <p>{addr.street}</p>
                       <p>{addr.area}, {addr.city}, UAE</p>
+                      {addr.latitude !== undefined && addr.longitude !== undefined && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${addr.latitude},${addr.longitude}`)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 font-bold text-emerald-700"><MapPin className="h-4 w-4" />View GPS pin in Maps</a>}
                     </div>
                   </CardContent>
                 </Card>
@@ -806,6 +831,7 @@ export function CustomerProfile() {
                 <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2 text-xs" disabled={Boolean(passwordMatchError) || !passwordValidation.success || savingSecurity}>
                   <Lock className="h-3.5 w-3.5" />{savingSecurity ? 'Updating...' : 'Update Password'}
                 </Button>
+                {userRole === 'customer' && <div className="mt-8 border-t pt-5"><p className="text-sm font-semibold text-destructive">Delete account</p><p className="mt-1 text-xs text-muted-foreground">Personal profile data and access are removed; legally retained booking and financial records are anonymized.</p><Button type="button" variant="destructive" className="mt-3 min-h-11" onClick={deleteAccount} disabled={deletingAccount}>{deletingAccount ? 'Deleting…' : 'Delete my account'}</Button></div>}
               </form>
             </CardContent>
           </Card>

@@ -175,6 +175,7 @@ async function main() {
           tenantId: tenant.id,
           name: s.name,
           baseRate: s.baseRate,
+          withMaterialsRate: s.baseRate,
           category: s.category,
           description: s.description,
           heroImages,

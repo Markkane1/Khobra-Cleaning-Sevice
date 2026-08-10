@@ -7,7 +7,7 @@ import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, 
 
 type BankAccount = { id: string; accountTitle: string; bankName: string; accountNumber: string; iban: string; branchName: string; branchCode: string; currency: string; isActive: boolean; isDefault: boolean; displayOrder: number }
 
-export function BankAccountsScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
+export function BankAccountsScreen({ session, onBack, embedded = false }: { session: Session; onBack?: () => void; embedded?: boolean }) {
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -71,10 +71,15 @@ export function BankAccountsScreen({ session, onBack }: { session: Session; onBa
   }
 
   return <View style={styles.screen}>
-    <View style={styles.header}>
+    {!embedded && <View style={styles.header}>
       {onBack && <Pressable onPress={onBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.ink} /></Pressable>}
       <PageHeading title="Bank Accounts" subtitle="Corporate bank accounts" action={<Pressable onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
-    </View>
+    </View>}
+
+    {embedded && <View style={styles.embeddedActions}>
+      <Text style={styles.embeddedTitle}>Company Bank Accounts</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Add bank account" onPress={openNew} style={({ pressed }) => [styles.addButton, pressed && styles.buttonPressed]}><Ionicons name="add" size={24} color="#fff" /></Pressable>
+    </View>}
 
     {loading ? <LoadingState label="Loading accounts..." /> : <FlatList
       contentContainerStyle={styles.list}
@@ -148,8 +153,11 @@ export function BankAccountsScreen({ session, onBack }: { session: Session; onBa
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.background },
   header: { padding: 20, paddingBottom: 10 },
+  embeddedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14 },
+  embeddedTitle: { fontSize: 17, fontWeight: '700', color: palette.ink },
   backButton: { marginBottom: 10 },
   addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.primary, alignItems: 'center', justifyContent: 'center', shadowColor: palette.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  buttonPressed: { opacity: 0.75 },
   list: { padding: 20, gap: 12, paddingBottom: 100 },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: palette.surface, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow, gap: 12 },
   iconBox: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.primarySoft, alignItems: 'center', justifyContent: 'center' },

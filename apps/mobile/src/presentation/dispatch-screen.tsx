@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
 import { apiBaseUrl } from '../infrastructure/http/api-client'
@@ -7,21 +7,25 @@ import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './
 
 type Driver = { id: string; driverCode: string; status: string; user: { name: string; email: string }; phone: string; vehicleInfo: string }
 type Trip = { id: string; date: string; status: string; driver: Driver; stops: any[] }
+type Booking = { id: string; bookingNo: string; startTime: string; status: string; driverId?: string; customer?: { user?: { name?: string } } }
 
 export function DispatchScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = () => {
     setLoading(true)
     Promise.all([
       fetch(`${apiBaseUrl}/api/khobra-cleaning/drivers`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json()),
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/trips`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json())
+      fetch(`${apiBaseUrl}/api/khobra-cleaning/trips`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json()),
+      fetch(`${apiBaseUrl}/api/khobra-cleaning/bookings`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json())
     ])
-      .then(([d, t]) => {
+      .then(([d, t, b]) => {
         setDrivers(d)
         setTrips(t)
+        setBookings(b)
       })
       .catch(() => Alert.alert('Error', 'Could not load dispatch data.'))
       .finally(() => setLoading(false))
@@ -42,6 +46,7 @@ export function DispatchScreen({ session, onBack }: { session: Session; onBack?:
       Alert.alert('Error', e.message)
     }
   }
+  const assignDriver = async (bookingId: string, driverId: string) => { try { const response = await fetch(`${apiBaseUrl}/api/khobra-cleaning/bookings`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` }, body: JSON.stringify({ id: bookingId, driverId }) }); if (!response.ok) throw new Error((await response.json()).error || 'Driver is unavailable'); load() } catch (error: any) { Alert.alert('Assignment unavailable', error.message) } }
 
   return <View style={styles.screen}>
     <View style={styles.header}>
@@ -53,7 +58,7 @@ export function DispatchScreen({ session, onBack }: { session: Session; onBack?:
       contentContainerStyle={styles.list}
       data={trips}
       keyExtractor={item => item.id}
-      ListHeaderComponent={() => (
+      ListHeaderComponent={() => (<>
         <View style={styles.driversRow}>
           <Text style={styles.sectionTitle}>Available Drivers ({drivers.filter(d => d.status === 'active').length})</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.driverScroll}>
@@ -65,7 +70,8 @@ export function DispatchScreen({ session, onBack }: { session: Session; onBack?:
             ))}
           </ScrollView>
         </View>
-      )}
+        {session.user.role === 'admin' && <View style={styles.queue}><Text style={styles.sectionTitle}>Driver assignment queue</Text>{bookings.filter(b => !b.driverId && ['pending_assignment', 'assigned', 'scheduled'].includes(b.status)).map(b => <View key={b.id} style={styles.queueRow}><Text style={styles.queueText}>{b.bookingNo} · {b.startTime}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.driverScroll}>{drivers.filter(driver => driver.status === 'active').map(driver => <Pressable key={driver.id} style={styles.assign} onPress={() => assignDriver(b.id, driver.id)}><Text style={styles.assignText}>{driver.user?.name}</Text></Pressable>)}</ScrollView></View>)}</View>}
+      </>)}
       ListEmptyComponent={<MessageState icon="bus-outline" title="No Trips" detail="No active trips found." />}
       renderItem={({ item: t }) => (
         <View style={styles.card}>
@@ -83,6 +89,9 @@ export function DispatchScreen({ session, onBack }: { session: Session; onBack?:
           
           <View style={styles.stopsArea}>
             <Text style={styles.stopsLabel}>Stops ({t.stops?.length || 0})</Text>
+            {t.stops?.map((stop: any, index: number) => <Pressable key={stop.id || index} style={styles.stop} onPress={() => stop.latitude && stop.longitude ? Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}`) : stop.address ? Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.address)}`) : undefined}>
+              <Ionicons name={stop.completedAt ? 'checkmark-circle' : 'location-outline'} size={18} color={stop.completedAt ? palette.primary : palette.muted} /><View style={{ flex: 1 }}><Text style={styles.stopTitle}>{index + 1}. {stop.type || 'Service stop'}{stop.completedAt ? ' · Arrived' : ''}</Text><Text style={styles.stopAddress}>{stop.address || 'Address unavailable'}</Text></View><Ionicons name="navigate-outline" size={18} color={palette.primary} />
+            </Pressable>)}
           </View>
 
           <View style={styles.actionsRow}>
@@ -109,6 +118,7 @@ const styles = StyleSheet.create({
   list: { padding: 20, gap: 16, paddingBottom: 100 },
   
   driversRow: { marginBottom: 10 },
+  queue: { marginBottom: 14, gap: 8 }, queueRow: { backgroundColor: palette.surface, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: palette.border }, queueText: { fontSize: 13, fontWeight: '700', color: palette.ink, marginBottom: 7 }, assign: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 10, backgroundColor: palette.primarySoft }, assignText: { fontSize: 12, fontWeight: '700', color: palette.primaryDark },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: palette.ink, marginBottom: 10 },
   driverScroll: { gap: 8 },
   driverChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: palette.surface, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: palette.border },
@@ -124,6 +134,9 @@ const styles = StyleSheet.create({
   
   stopsArea: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 10, marginBottom: 14 },
   stopsLabel: { fontSize: 12, color: palette.muted, fontWeight: '600' },
+  stop: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, borderTopColor: palette.border, marginTop: 8, paddingTop: 8 },
+  stopTitle: { fontSize: 13, color: palette.ink, fontWeight: '700' },
+  stopAddress: { fontSize: 12, color: palette.muted, marginTop: 2 },
   
   actionsRow: { flexDirection: 'row', gap: 10 },
   btn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },

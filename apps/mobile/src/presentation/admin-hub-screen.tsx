@@ -4,16 +4,15 @@ import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
 import { cardShadow, PageHeading, palette } from './mobile-ui'
 
-type AdminModule = 'dispatch' | 'payroll' | 'bank-accounts' | 'branches' | 'rbac' | 'settings' | 'reports' | 'profile'
+type AdminModule = 'dispatch' | 'payroll' | 'branches' | 'rbac' | 'settings' | 'reports' | 'profile'
 
 const adminModules: ReadonlyArray<{ id: AdminModule; label: string; icon: ComponentProps<typeof Ionicons>['name']; description: string }> = [
   { id: 'dispatch', label: 'Dispatch', icon: 'map-outline', description: 'Driver and job routing' },
   { id: 'payroll', label: 'Payroll', icon: 'cash-outline', description: 'Employee salaries & advances' },
-  { id: 'bank-accounts', label: 'Bank Accounts', icon: 'business-outline', description: 'Corporate accounts' },
   { id: 'branches', label: 'Branches', icon: 'location-outline', description: 'Location management' },
   { id: 'rbac', label: 'Access Control', icon: 'shield-checkmark-outline', description: 'Roles and permissions' },
   { id: 'reports', label: 'Reports', icon: 'bar-chart-outline', description: 'Operational analytics' },
-  { id: 'settings', label: 'Settings', icon: 'settings-outline', description: 'System configuration' },
+  { id: 'settings', label: 'Company', icon: 'business-outline', description: 'Information, bank accounts, and configuration' },
   { id: 'profile', label: 'My Profile', icon: 'person-outline', description: 'Account settings' },
 ]
 

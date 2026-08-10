@@ -5,9 +5,10 @@ import type { Session } from '../domain/auth/types'
 import { apiBaseUrl } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
-type Service = { id: string; name: string; description: string; baseRate: number; minDuration: number; category: string; requiresMaterials: boolean; skills: string; status: string; galleryImages?: string[]; heroImages?: string[] }
+type Material = { inventoryItemId: string; quantityPerCleanerHour: string; unit: string }
+type Service = { id: string; name: string; description: string; baseRate: number; withMaterialsRate: number; minDuration: number; category: string; skills: string; status: string; materials?: Material[]; galleryImages?: string[]; heroImages?: string[] }
 
-const emptyForm = { name: '', description: '', baseRate: '150', minDuration: '2', category: 'Cleaning', skills: '' }
+const emptyForm = { name: '', description: '', baseRate: '150', withMaterialsRate: '180', minDuration: '2', category: 'Cleaning', skills: '', materials: [] as Material[] }
 
 export function ServicesScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
   const [services, setServices] = useState<Service[]>([])
@@ -29,10 +30,10 @@ export function ServicesScreen({ session, onBack }: { session: Session; onBack?:
   useEffect(load, [session.token])
 
   const save = async () => {
-    if (!form.name || !form.baseRate) return Alert.alert('Validation', 'Please fill all required fields.')
+    if (!form.name || !form.baseRate || !form.withMaterialsRate) return Alert.alert('Validation', 'Please fill both service prices.')
     setSaving(true)
     try {
-      const payload = { ...form, baseRate: Number(form.baseRate), minDuration: Number(form.minDuration), requiresMaterials: false, galleryImages: [], heroImages: [], materials: [] }
+      const payload = { ...form, materials: form.materials.filter(item => item.inventoryItemId && Number(item.quantityPerCleanerHour) > 0).map(item => ({ ...item, quantityPerCleanerHour: Number(item.quantityPerCleanerHour) })), baseRate: Number(form.baseRate), withMaterialsRate: Number(form.withMaterialsRate), minDuration: Number(form.minDuration), galleryImages: [], heroImages: [] }
       const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/services`, {
         method: editId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
@@ -64,7 +65,7 @@ export function ServicesScreen({ session, onBack }: { session: Session; onBack?:
 
   const openEdit = (s: Service) => {
     setEditId(s.id)
-    setForm({ name: s.name, description: s.description || '', baseRate: String(s.baseRate), minDuration: String(s.minDuration), category: s.category || 'Cleaning', skills: s.skills || '' })
+    setForm({ name: s.name, description: s.description || '', baseRate: String(s.baseRate), withMaterialsRate: String(s.withMaterialsRate), minDuration: String(s.minDuration), category: s.category || 'Cleaning', skills: s.skills || '', materials: s.materials || [] })
     setFormOpen(true)
   }
 
@@ -91,7 +92,7 @@ export function ServicesScreen({ session, onBack }: { session: Session; onBack?:
             <Text style={styles.cardTitle}>{s.name}</Text>
             <View style={styles.badge}><Text style={styles.badgeText}>{s.category}</Text></View>
           </View>
-          <Text style={styles.price}>AED {s.baseRate}<Text style={styles.priceUnit}>/hr</Text></Text>
+          <View><Text style={styles.price}>AED {s.baseRate}<Text style={styles.priceUnit}>/hr without</Text></Text><Text style={styles.price}>AED {s.withMaterialsRate}<Text style={styles.priceUnit}>/hr with materials</Text></Text></View>
         </View>
         {s.description ? <Text style={styles.description} numberOfLines={2}>{s.description}</Text> : null}
         <View style={styles.actions}>
@@ -113,12 +114,12 @@ export function ServicesScreen({ session, onBack }: { session: Session; onBack?:
         <ScrollView contentContainerStyle={styles.formBody}>
           <View style={styles.formGroup}><FormLabel label="Service Name *" /><Input value={form.name} onChangeText={t => setForm({ ...form, name: t })} placeholder="e.g. Deep Cleaning" /></View>
           <View style={styles.formGroup}><FormLabel label="Description" /><Input value={form.description} onChangeText={t => setForm({ ...form, description: t })} placeholder="Service scope and details..." multiline /></View>
-          <View style={styles.row}>
-            <View style={[styles.formGroup, { flex: 1 }]}><FormLabel label="Hourly Rate (AED) *" /><Input value={form.baseRate} onChangeText={t => setForm({ ...form, baseRate: t })} keyboardType="numeric" /></View>
-            <View style={[styles.formGroup, { flex: 1 }]}><FormLabel label="Min Duration (hrs) *" /><Input value={form.minDuration} onChangeText={t => setForm({ ...form, minDuration: t })} keyboardType="numeric" /></View>
-          </View>
+          <View style={styles.formGroup}><FormLabel label="Without Materials (AED/hr) *" /><Input value={form.baseRate} onChangeText={t => setForm({ ...form, baseRate: t })} keyboardType="numeric" /></View>
+          <View style={styles.formGroup}><FormLabel label="With Materials (AED/hr) *" /><Input value={form.withMaterialsRate} onChangeText={t => setForm({ ...form, withMaterialsRate: t })} keyboardType="numeric" /></View>
+          <View style={styles.formGroup}><FormLabel label="Min Duration (hrs) *" /><Input value={form.minDuration} onChangeText={t => setForm({ ...form, minDuration: t })} keyboardType="numeric" /></View>
           <View style={styles.formGroup}><FormLabel label="Category *" /><Input value={form.category} onChangeText={t => setForm({ ...form, category: t })} placeholder="e.g. Cleaning, Specialized" /></View>
-          <View style={styles.formGroup}><FormLabel label="Required Skills (comma-separated)" /><Input value={form.skills} onChangeText={t => setForm({ ...form, skills: t })} placeholder="e.g. deep_cleaning, bathroom" /></View>
+          <View style={styles.formGroup}><FormLabel label="Skill Tags (informational only)" /><Input value={form.skills} onChangeText={t => setForm({ ...form, skills: t })} placeholder="e.g. deep_cleaning, bathroom" /></View>
+          <View style={styles.formGroup}><FormLabel label="BOM materials (internal, per cleaner-hour)" />{form.materials.map((item, index) => <View key={index} style={styles.materialRow}><Input value={item.inventoryItemId} onChangeText={value => setForm({ ...form, materials: form.materials.map((current, i) => i === index ? { ...current, inventoryItemId: value } : current) })} placeholder="Inventory item ID" /><Input value={item.quantityPerCleanerHour} onChangeText={value => setForm({ ...form, materials: form.materials.map((current, i) => i === index ? { ...current, quantityPerCleanerHour: value } : current) })} placeholder="Qty" keyboardType="numeric" /><Pressable onPress={() => setForm({ ...form, materials: form.materials.filter((_, i) => i !== index) })}><Ionicons name="trash-outline" size={22} color={palette.danger}/></Pressable></View>)}<Pressable style={styles.addMaterial} onPress={() => setForm({ ...form, materials: [...form.materials, { inventoryItemId: '', quantityPerCleanerHour: '1', unit: 'pcs' }] })}><Text style={styles.addMaterialText}>Add material</Text></Pressable></View>
         </ScrollView>
         <View style={styles.modalFooter}>
           <PrimaryButton label={editId ? 'Save Changes' : 'Create Service'} onPress={save} loading={saving} />
@@ -147,6 +148,7 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: palette.muted, fontWeight: '600' },
   actionRow: { flexDirection: 'row', gap: 8 },
   iconButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: palette.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  materialRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }, addMaterial: { minHeight: 44, justifyContent: 'center', marginTop: 8 }, addMaterialText: { color: palette.primaryDark, fontWeight: '700' },
   
   modalScreen: { flex: 1, backgroundColor: palette.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border, backgroundColor: palette.surface },

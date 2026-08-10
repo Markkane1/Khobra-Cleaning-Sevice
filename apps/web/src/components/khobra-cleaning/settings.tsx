@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { apiRequest } from '@/lib/api-client'
 import { UpdateSettingsSchema } from '@repo/core'
+import { CompanyBankAccounts } from './company-bank-accounts'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -35,7 +37,8 @@ const fadeUp = {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState('company')
+  const pathname = usePathname()
+  const [activeTab, setActiveTab] = useState(pathname === '/company-bank-accounts' ? 'bank_accounts' : 'company')
 
   // Company editable state
   const [companyName, setCompanyName] = useState('Khobra Cleaning Service')
@@ -176,27 +179,31 @@ export function Settings() {
     <div className="space-y-6">
       {/* Header */}
       <motion.div {...fadeUp}>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Platform configuration and company settings</p>
+        <h1 className="text-2xl font-bold tracking-tight">Company</h1>
+        <p className="text-sm text-muted-foreground">Company information, bank accounts, and configuration</p>
       </motion.div>
 
       {/* Tabbed Layout */}
       <motion.div {...fadeUp}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
-            <TabsTrigger value="company" className="text-xs sm:text-sm">
+          <TabsList className="flex h-auto w-full max-w-3xl flex-wrap justify-start gap-1">
+            <TabsTrigger value="company" className="min-h-11 text-xs sm:text-sm">
               <Building2 className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              Company
+              Company Information
             </TabsTrigger>
-            <TabsTrigger value="booking_hours" className="text-xs sm:text-sm">
+            <TabsTrigger value="bank_accounts" className="min-h-11 text-xs sm:text-sm">
+              <Building2 className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              Bank Accounts
+            </TabsTrigger>
+            <TabsTrigger value="booking_hours" className="min-h-11 text-xs sm:text-sm">
               <Clock className="h-4 w-4 mr-1.5 hidden sm:inline" />
               Booking Hours
             </TabsTrigger>
-            <TabsTrigger value="system" className="text-xs sm:text-sm">
+            <TabsTrigger value="system" className="min-h-11 text-xs sm:text-sm">
               <Server className="h-4 w-4 mr-1.5 hidden sm:inline" />
               System
             </TabsTrigger>
-            <TabsTrigger value="appearance" className="text-xs sm:text-sm">
+            <TabsTrigger value="appearance" className="min-h-11 text-xs sm:text-sm">
               <Paintbrush className="h-4 w-4 mr-1.5 hidden sm:inline" />
               Appearance
             </TabsTrigger>
@@ -266,6 +273,10 @@ export function Settings() {
               </CardContent>
             </Card>
             </motion.div>
+          </TabsContent>
+
+          <TabsContent value="bank_accounts">
+            <CompanyBankAccounts />
           </TabsContent>
 
           {/* Booking Hours Tab (Prompt 18) */}

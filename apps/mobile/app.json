@@ -28,6 +28,15 @@
       "expo-secure-store",
       "expo-notifications",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Khobra Cleaning to use your location only when you choose phone GPS for a service address.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ],
+      [
         "@preeternal/react-native-cookie-manager",
         {
           "androidWebkitVersion": "1.16.0"

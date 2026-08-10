@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes'
 import { useAppStore, type ViewId, type RoleId } from '@/store/app-store'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  LayoutDashboard, Sparkles, Users, UserCheck, CalendarDays, Wallet, Truck, Package, BarChart3, MessageSquareWarning, Clock, Settings, Menu, Sun, Moon, ChevronDown, X, Shield, Bell, CalendarCheck, DollarSign, UsersRound, Banknote, Search, Command, Zap, UserPlus, FileText, Plus, Building2, LogIn, ShieldCheck, User, ReceiptText,
+  LayoutDashboard, Sparkles, Users, UserCheck, CalendarDays, Wallet, Truck, Package, BarChart3, MessageSquareWarning, Clock, Menu, Sun, Moon, ChevronDown, X, Shield, Bell, CalendarCheck, DollarSign, UsersRound, Banknote, Search, Command, Zap, UserPlus, FileText, Plus, Building2, LogIn, ShieldCheck, User, ReceiptText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,6 +27,8 @@ import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { useRealtime } from '@/hooks/use-realtime'
 import { NativePushBridge, PushToggle } from '@/components/push-toggle'
+import { notificationTarget } from '@/lib/notification-target'
+import { Capacitor } from '@capacitor/core'
 
 const Dashboard = dynamic(() => import('@/components/khobra-cleaning/dashboard').then(m => ({ default: m.Dashboard })), { loading: () => <PageSkeleton />, ssr: false })
 const Services = dynamic(() => import('@/components/khobra-cleaning/services').then(m => ({ default: m.Services })), { loading: () => <PageSkeleton />, ssr: false })
@@ -46,7 +48,6 @@ const RBACManagement = dynamic(() => import('@/components/khobra-cleaning/rbac')
 const CustomerProfile = dynamic(() => import('@/components/khobra-cleaning/profile').then(m => ({ default: m.CustomerProfile })), { loading: () => <PageSkeleton />, ssr: false })
 const NotificationManagement = dynamic(() => import('@/components/khobra-cleaning/notifications-management').then(m => ({ default: m.NotificationManagement })), { loading: () => <PageSkeleton />, ssr: false })
 const SettingsPage = dynamic(() => import('@/components/khobra-cleaning/settings').then(m => ({ default: m.Settings })), { loading: () => <PageSkeleton />, ssr: false })
-const CompanyBankAccountsPage = dynamic(() => import('@/components/khobra-cleaning/company-bank-accounts').then(m => ({ default: m.CompanyBankAccounts })), { loading: () => <PageSkeleton />, ssr: false })
 const DriverExpenses = dynamic(() => import('@/components/khobra-cleaning/driver-expenses').then(m => ({ default: m.DriverExpenses })), { loading: () => <PageSkeleton />, ssr: false })
 
 function PageSkeleton() {
@@ -75,10 +76,9 @@ const navItems: { id: ViewId; label: string; icon: React.ElementType; roles: Rol
   { id: 'customers', label: 'Customers', icon: Users, roles: ['admin'], description: 'Customer directory' },
   { id: 'employees', label: 'Cleaners', icon: UserCheck, roles: ['admin'], description: 'Cleaner management' },
   { id: 'bookings', label: 'Bookings', icon: CalendarDays, roles: ['admin', 'customer', 'cleaner', 'driver'], description: 'Booking management and scheduling' },
-  { id: 'finance', label: 'Finance', icon: Wallet, roles: ['admin'], description: 'Invoices and payments' },
-  { id: 'company_bank_accounts', label: 'Company Bank Accounts', icon: Building2, roles: ['admin'], description: 'Manage company bank accounts for customer transfers' },
+  { id: 'finance', label: 'Finance', icon: Wallet, roles: ['admin'], description: 'Income, expenses, and reconciliation' },
   { id: 'dispatch', label: 'Dispatch', icon: Truck, roles: ['admin', 'driver'], description: 'Driver and trip management' },
-  { id: 'driver_expenses', label: 'Expenses', icon: ReceiptText, roles: ['admin', 'driver'], description: 'Business and driver expenses' },
+  { id: 'driver_expenses', label: 'Expenses', icon: ReceiptText, roles: ['driver'], description: 'Submit driver expenses' },
   { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin'], description: 'Stock and vendor management' },
   { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin'], description: 'Analytics and insights' },
   { id: 'complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'customer', 'cleaner'], description: 'Issue tracking' },
@@ -87,7 +87,7 @@ const navItems: { id: ViewId; label: string; icon: React.ElementType; roles: Rol
   { id: 'branches', label: 'Branches', icon: Building2, roles: ['admin'], description: 'Location and branch management' },
   { id: 'notifications', label: 'Notifications', icon: Bell, roles: ['admin'], description: 'Broadcast system alerts & notifications' },
   { id: 'rbac', label: 'Access Control', icon: ShieldCheck, roles: ['admin'], description: 'Custom roles & dynamic permissions' },
-  { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'], description: 'Platform configuration' },
+  { id: 'settings', label: 'Company', icon: Building2, roles: ['admin'], description: 'Company information, bank accounts, and configuration' },
 ]
 
 const viewPathMap: Record<ViewId, string> = {
@@ -136,7 +136,7 @@ const viewTitles: Record<ViewId, string> = {
   bookings: 'Bookings',
   finance: 'Finance',
   driver_expenses: 'Expenses',
-  company_bank_accounts: 'Company Bank Accounts',
+  company_bank_accounts: 'Company',
   dispatch: 'Dispatch',
   inventory: 'Inventory',
   reports: 'Reports',
@@ -145,7 +145,7 @@ const viewTitles: Record<ViewId, string> = {
   payroll: 'Payroll',
   branches: 'Branches',
   rbac: 'Access Control (RBAC)',
-  settings: 'Settings',
+  settings: 'Company',
   login: 'Login',
   signup: 'Customer Signup',
   profile: 'My Customer Profile',
@@ -334,22 +334,22 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
   )
 }
 
-function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function NotificationPanel({ open, onOpenChange, onNavigate }: { open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (view: ViewId) => void }) {
   const qc = useQueryClient()
   const { subscribe, onEvent } = useRealtime()
   useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['notifications'] })) }, [onEvent, qc, subscribe])
   const { data: notifications = [] } = useQuery<any[]>({
-    queryKey: ['notifications', 'in_app'],
-    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app').then(r => r.json()),
+    queryKey: ['notifications', 'in_app', 'mine'],
+    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app&scope=mine').then(r => r.json()),
   })
 
   const markReadMut = useMutation({
-    mutationFn: (id: string) => fetch('/api/khobra-cleaning/notifications', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then(r => r.json()),
+    mutationFn: (id: string) => fetch('/api/khobra-cleaning/notifications?scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   const markAllReadMut = useMutation({
-    mutationFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }).then(r => r.json()),
+    mutationFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app&scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
@@ -382,7 +382,11 @@ function NotificationPanel({ open, onOpenChange }: { open: boolean; onOpenChange
             notifications.map(n => (
               <button
                 key={n.id}
-                onClick={() => { markReadMut.mutate(n.id); onOpenChange(false) }}
+                onClick={() => {
+                  markReadMut.mutate(n.id)
+                  onOpenChange(false)
+                  onNavigate(notificationTarget(n.type))
+                }}
                 className={`w-full text-left px-4 py-3 border-b last:border-0 hover:bg-muted/50 transition-colors ${!n.read ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}
               >
                 <div className="flex items-start gap-3">
@@ -448,7 +452,7 @@ function ViewRenderer({ view, currentRole, allowedPages }: { view: ViewId; curre
       case 'rbac': return RBACManagement
       case 'profile': return CustomerProfile
       case 'notifications': return NotificationManagement
-      case 'company_bank_accounts': return CompanyBankAccountsPage
+      case 'company_bank_accounts': return SettingsPage
       case 'settings': return SettingsPage
       default: return Dashboard
     }
@@ -499,7 +503,18 @@ export default function HomePage() {
   useEffect(() => {
     fetch('/api/khobra-cleaning/auth/me')
       .then((response) => response.json())
-      .then((data) => { if (data.user) setUser(data.user) })
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+          return
+        }
+        // Browser visitors may use the public site, while the native wrapper is an app shell.
+        // An unauthenticated shell must always open the login experience first.
+        if (Capacitor.isNativePlatform() && window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
+          setView('login')
+          window.history.replaceState(null, '', '/login')
+        }
+      })
       .catch(() => {
         logout()
         if (window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
@@ -698,7 +713,7 @@ export default function HomePage() {
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
 
       {/* Notification Panel */}
-      <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
+      <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} onNavigate={navigateTo} />
 
       {/* Main Content */}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-64">
@@ -871,6 +886,7 @@ export default function HomePage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <a href="/privacy-policy" className="text-[11px] font-medium text-primary hover:underline">Privacy</a>
               <p className="text-[11px] text-muted-foreground/70 font-medium">
                 Powered by Khobra Cleaning v2.0
               </p>
