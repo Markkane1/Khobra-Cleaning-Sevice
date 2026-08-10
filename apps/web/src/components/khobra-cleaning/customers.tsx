@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CreateCustomerSchema, UpdateCustomerSchema } from '@repo/core'
 import {
   Plus, Pencil, Trash2, Search, Download, LayoutGrid, List,
   Users, UserCheck, MapPin, Phone, CalendarDays, DollarSign, BarChart3,
@@ -32,6 +33,7 @@ import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { exportToCSV } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 import { useSortable } from '@/hooks/use-sort'
 import { format } from 'date-fns'
 
@@ -75,6 +77,17 @@ const emptyForm = {
   temporaryPassword: '',
 }
 
+async function saveCustomer(method: 'POST' | 'PUT', data: unknown) {
+  const response = await fetch('/api/khobra-cleaning/customers', {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const result = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(result?.error || 'Failed to save customer')
+  return result
+}
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -85,6 +98,7 @@ export function Customers() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null)
   const [form, setForm] = useState(emptyForm)
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [editId, setEditId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -95,12 +109,12 @@ export function Customers() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => fetch('/api/khobra-cleaning/customers').then((r) => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/customers'),
   })
 
   const { data: allBookings = [] } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then((r) => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
   })
 
   const recentBookings = useMemo(() => {
@@ -114,28 +128,18 @@ export function Customers() {
   /* ---- Mutations ---- */
 
   const createMut = useMutation({
-    mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/customers', {
-        method: 'POST',
-        headers : { 'Content-Type': 'application/json' },
-        body: JSON.stringify(d),
-      }).then((r) => r.json()),
+    mutationFn: (d: unknown) => saveCustomer('POST', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       toast.success('Customer added')
       setOpen(false)
       setForm(emptyForm)
     },
-    onError: () => toast.error('Failed to add customer'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to add customer'),
   })
 
   const updateMut = useMutation({
-    mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/customers', {
-        method: 'PUT',
-        headers : { 'Content-Type': 'application/json' },
-        body: JSON.stringify(d),
-      }).then((r) => r.json()),
+    mutationFn: (d: unknown) => saveCustomer('PUT', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       toast.success('Customer updated')
@@ -143,7 +147,7 @@ export function Customers() {
       setForm(emptyForm)
       setEditId(null)
     },
-    onError: () => toast.error('Failed to update customer'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update customer'),
   })
 
   const deleteMut = useMutation({
@@ -182,11 +186,18 @@ export function Customers() {
     setDetailOpen(true)
   }
 
-  const handleSubmit = () => {
-    if (!form.name.trim()) return
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
     const addresses = [{ label: 'Primary', address: form.address, city: form.city, area: form.area }, ...form.addresses].filter(address => address.address.trim())
-    if (editId) updateMut.mutate({ id: editId, ...form, addresses })
-    else createMut.mutate({ ...form, addresses })
+    const payload = editId ? { id: editId, ...form, addresses } : { ...form, addresses }
+    const validation = (editId ? UpdateCustomerSchema : CreateCustomerSchema).safeParse(payload)
+    if (!validation.success) {
+      setFormErrors(Object.fromEntries(validation.error.issues.map(issue => [String(issue.path[0]), issue.message])))
+      return
+    }
+    setFormErrors({})
+    if (editId) updateMut.mutate(validation.data)
+    else createMut.mutate(validation.data)
   }
 
   const handleExportCSV = () => {
@@ -277,6 +288,7 @@ export function Customers() {
               setOpen(v)
               if (!v) {
                 setForm(emptyForm)
+                setFormErrors({})
                 setEditId(null)
               }
             }}
@@ -293,29 +305,37 @@ export function Customers() {
                   {editId ? 'Edit Customer' : 'Add New Customer'}
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <form className="grid gap-4 py-4" onSubmit={handleSubmit} noValidate>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label>Full Name</Label>
+                    <Label htmlFor="customer-name">Full Name</Label>
                     <Input
+                      id="customer-name"
+                      required
+                      aria-invalid={Boolean(formErrors.name)}
                       value={form.name}
                       onChange={(e) =>
-                        setForm({ ...form, name: e.target.value })
+                        { setForm({ ...form, name: e.target.value }); setFormErrors({ ...formErrors, name: '' }) }
                       }
                     />
+                    {formErrors.name && <p className="text-sm text-destructive" role="alert">{formErrors.name}</p>}
                   </div>
                   <div className="grid gap-2">
-                    <Label>Email</Label>
+                    <Label htmlFor="customer-email">Email</Label>
                     <Input
+                      id="customer-email"
                       type="email"
+                      required
+                      aria-invalid={Boolean(formErrors.email)}
                       value={form.email}
                       onChange={(e) =>
-                        setForm({ ...form, email: e.target.value })
+                        { setForm({ ...form, email: e.target.value }); setFormErrors({ ...formErrors, email: '' }) }
                       }
                     />
+                    {formErrors.email && <p className="text-sm text-destructive" role="alert">{formErrors.email}</p>}
                   </div>
                 </div>
-                {!editId && <div className="grid gap-2"><Label>Temporary Password</Label><Input type="password" minLength={8} autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })} /></div>}
+                {!editId && <div className="grid gap-2"><Label htmlFor="customer-password">Temporary Password</Label><Input id="customer-password" type="password" required minLength={8} autoComplete="new-password" aria-invalid={Boolean(formErrors.temporaryPassword)} value={form.temporaryPassword} onChange={(e) => { setForm({ ...form, temporaryPassword: e.target.value }); setFormErrors({ ...formErrors, temporaryPassword: '' }) }} />{formErrors.temporaryPassword && <p className="text-sm text-destructive" role="alert">{formErrors.temporaryPassword}</p>}</div>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Phone</Label>
@@ -384,19 +404,19 @@ export function Customers() {
                     }
                   />
                 </div>
-              </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
                 <Button
+                  type="submit"
                   className="bg-emerald-600 hover:bg-emerald-700"
-                  onClick={handleSubmit}
-                  disabled={!form.name.trim()}
+                  disabled={createMut.isPending || updateMut.isPending}
                 >
-                  {editId ? 'Update' : 'Create'}
+                  {createMut.isPending || updateMut.isPending ? 'Saving…' : editId ? 'Update' : 'Create'}
                 </Button>
               </DialogFooter>
+              </form>
             </DialogContent>
           </Dialog>
         </div>

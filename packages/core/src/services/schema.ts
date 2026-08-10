@@ -6,10 +6,10 @@ const CloudinaryImageSchema = z.string().url().refine(
 );
 
 export const CreateServiceSchema = z.object({
-  name: z.string(),
+  name: z.string().trim().min(1, 'Service name is required'),
   description: z.string().optional(),
-  baseRate: z.number().or(z.string().transform(Number)),
-  minDuration: z.number().or(z.string().transform(Number)).optional(),
+  baseRate: z.coerce.number().positive('Base rate must be greater than zero'),
+  minDuration: z.coerce.number().positive('Minimum duration must be greater than zero').optional(),
   category: z.string().optional(),
   status: z.string().optional(),
   requiresMaterials: z.boolean().optional(),
@@ -19,7 +19,7 @@ export const CreateServiceSchema = z.object({
 });
 
 export const UpdateServiceSchema = CreateServiceSchema.partial().extend({
-  id: z.string(),
+  id: z.string().min(1, 'Service ID is required'),
 });
 
 export type CreateServiceDTO = z.infer<typeof CreateServiceSchema>;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaVendorItemRepository } from '@repo/db'
 import { CreateVendorItemSchema, UpdateVendorItemSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const vendorItemRepository = new PrismaVendorItemRepository(db)
 
@@ -15,9 +16,8 @@ export async function GET(req: NextRequest) {
     
     const items = await vendorItemRepository.findMany(auth.session.tenantId, vendorId)
     return NextResponse.json(items)
-  } catch (error: any) {
-    console.error('Fetch vendor items failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch vendor items' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch vendor items' })
   }
 }
 
@@ -31,9 +31,8 @@ export async function POST(req: NextRequest) {
     
     const vendorItem = await vendorItemRepository.create(auth.session.tenantId, validatedData)
     return NextResponse.json(vendorItem, { status: 201 })
-  } catch (error: any) {
-    console.error('Link vendor item failed:', error)
-    return NextResponse.json({ error: 'Failed to link vendor item' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to link vendor item', conflict: 'This vendor is already linked to the inventory item', relatedRecord: 'The selected vendor or inventory item no longer exists' })
   }
 }
 
@@ -47,9 +46,8 @@ export async function PUT(req: NextRequest) {
     
     const updated = await vendorItemRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     return NextResponse.json(updated)
-  } catch (error: any) {
-    console.error('Update vendor item failed:', error)
-    return NextResponse.json({ error: 'Failed to update vendor item' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update vendor item', missing: 'Vendor item link not found', conflict: 'This vendor is already linked to the inventory item' })
   }
 }
 
@@ -65,9 +63,8 @@ export async function DELETE(req: NextRequest) {
     
     await vendorItemRepository.delete(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error('Delete vendor item failed:', error)
-    return NextResponse.json({ error: 'Failed to delete vendor item' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete vendor item', missing: 'Vendor item link not found' })
   }
 }
 

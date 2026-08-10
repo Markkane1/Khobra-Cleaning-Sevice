@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { IBookingRepository, Booking, BookingActor } from '@repo/application';
-import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, employeeHasRequiredSkills, getRequiredSkills, calendarDayRange } from '@repo/core';
+import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, calendarDayRange } from '@repo/core';
 import { deliverPushNotifications } from '../push-notifications';
 import { nextReference } from '../reference-sequence';
 
@@ -101,7 +101,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     }) as unknown as Booking | null;
   }
 
-  async create(tenantId: string, data: CreateBookingDTO): Promise<Booking> {
+  async create(tenantId: string, data: CreateBookingDTO, actor?: BookingActor): Promise<Booking> {
     // Prompt 16: Final Booking Confirmation Validation Pipeline
     const valResult = validateBookingConfirmationDTO(data);
     if (!valResult.isValid) {
@@ -223,9 +223,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       let isPreferredAssignedForThisDate = false;
       if (preferredEmployeeIds.length) {
         const preferredEmployees = await this.db.employee.findMany({ where: { id: { in: preferredEmployeeIds }, tenantId, status: 'active' } });
-        if (preferredEmployees.length !== preferredEmployeeIds.length || preferredEmployees.some(employee => !employeeHasRequiredSkills(employee.skills, services))) {
-          throw new Error('Selected cleaners are unavailable for the requested services');
-        }
+        if (preferredEmployees.length !== preferredEmployeeIds.length) throw new Error('Selected cleaner is inactive or unavailable');
         const onLeave = await this.db.leaveRecord.findFirst({ where: { employeeId: { in: preferredEmployeeIds }, status: 'approved', startDate: { lt: dateEnd }, endDate: { gte: dateStart } } });
         if (onLeave) throw new Error('Selected cleaner is unavailable for the requested slot');
         const assignments = await this.db.assignment.findMany({
@@ -244,7 +242,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           where: { id: data.preferredEmployeeId },
         });
 
-        if (preferredEmp && preferredEmp.tenantId === tenantId && preferredEmp.status === 'active' && employeeHasRequiredSkills(preferredEmp.skills, services)) {
+        if (preferredEmp && preferredEmp.tenantId === tenantId && preferredEmp.status === 'active') {
           // Check approved leave for this specific date
           const onLeave = await this.db.leaveRecord.findFirst({
             where: {
@@ -334,6 +332,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           recurringGroupId,
           status: initialStatus,
           ...rest,
+          createdBy: actor?.userId,
           scheduledDate,
           items: {
             create: pricing.items.map(it => ({
@@ -375,7 +374,9 @@ export class PrismaBookingRepository implements IBookingRepository {
           bookingId: created.id,
           previousStatus: 'none',
           newStatus: initialStatus,
-          changedBy: data.createdBy || 'customer',
+          changedBy: actor?.name || 'Customer',
+          changedByUserId: actor?.userId,
+          changedByRole: actor?.role || 'customer',
           reason: 'Initial booking creation',
         },
         });
@@ -407,6 +408,7 @@ export class PrismaBookingRepository implements IBookingRepository {
 
     const { id: _id, ...rest } = data;
     const updateData: any = { ...rest };
+    if (rest.status === 'cancelled') updateData.cancelledBy = actor?.userId;
     let transition: StatusTransition | undefined;
 
     if (rest.status && rest.status !== existing.status) {
@@ -462,7 +464,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           bookingId: id,
           previousStatus: existing.status,
           newStatus: rest.status,
-          changedBy: actor ? `${actor.role}: ${actor.name}` : rest.cancelledBy || rest.noShowParty || 'system',
+          changedBy: actor ? `${actor.role}: ${actor.name}` : rest.noShowParty || 'system',
           changedByUserId: actor?.userId,
           changedByRole: actor?.role || 'system',
           reason: rest.cancellationReason || rest.noShowReason || (rest.status === 'in_progress' ? 'Work started' : 'Status update'),
@@ -580,23 +582,6 @@ export class PrismaBookingRepository implements IBookingRepository {
         throw new Error('Selected service(s) are unavailable');
       }
 
-      // Service Skill Eligibility Revalidation (Prompt 15 Requirement 3)
-      if ((rest.serviceIds || rest.serviceId) && existing.assignments && existing.assignments.length > 0) {
-        const requiredSkillsList = getRequiredSkills(services);
-        if (requiredSkillsList.length > 0) {
-          for (const assign of existing.assignments) {
-            const emp = await db.employee.findFirst({
-              where: { id: assign.employeeId, tenantId: existing.tenantId },
-              include: { user: { select: { name: true } } },
-            });
-
-            if (!employeeHasRequiredSkills(emp?.skills, services)) {
-              throw new Error(`Assigned cleaner ${emp?.user?.name || emp?.employeeCode || assign.employeeId} is not qualified for updated services (required: ${requiredSkillsList.join(', ')})`);
-            }
-          }
-        }
-      }
-
       const employeeCount = rest.employeeCount !== undefined ? rest.employeeCount : existing.employeeCount;
       const materialsInput = existing.materials.map((material: { inventoryItemId: string | null; name: string; unit: string; quantity: number; unitPrice: Prisma.Decimal }) => ({
         inventoryItemId: material.inventoryItemId || undefined,
@@ -691,14 +676,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     let targetEmpIds: string[] = [];
 
     if (autoAssign) {
-      // 1. Resolve required service skills
-      const serviceList = existing.items && existing.items.length > 0
-        ? existing.items.map(i => i.service)
-        : existing.service ? [existing.service] : [];
-
-      const requiredSkillsList = getRequiredSkills(serviceList);
-
-      // 2. Fetch active employees with metrics
+      // 1. Fetch active employees with metrics
       const employees = await this.db.employee.findMany({
         where: { tenantId: existing.tenantId, status: 'active' },
         include: {
@@ -714,7 +692,7 @@ export class PrismaBookingRepository implements IBookingRepository {
         },
       });
 
-      // 3. Exclude staff on approved leave
+      // 2. Exclude staff on approved leave
       const leaves = await this.db.leaveRecord.findMany({
         where: {
           tenantId: existing.tenantId,
@@ -725,7 +703,7 @@ export class PrismaBookingRepository implements IBookingRepository {
       });
       const leaveEmpIds = new Set(leaves.map(l => l.employeeId));
 
-      // 4. Exclude staff with overlapping bookings
+      // 3. Exclude staff with overlapping bookings
       const dayBookings = await this.db.booking.findMany({
         where: {
           tenantId: existing.tenantId,
@@ -745,9 +723,9 @@ export class PrismaBookingRepository implements IBookingRepository {
         }
       });
 
-      // 5. Compute candidate score & multi-tiered sort
+      // 4. Compute candidate score & multi-tiered sort
       const availableCandidates = employees
-        .filter(emp => !leaveEmpIds.has(emp.id) && !busyEmpIds.has(emp.id) && employeeHasRequiredSkills(emp.skills, serviceList))
+        .filter(emp => !leaveEmpIds.has(emp.id) && !busyEmpIds.has(emp.id))
         .map(emp => {
           const ratings = emp.assignments.map(a => a.customerRating).filter((r): r is number => typeof r === 'number' && r > 0);
           const averageRating = ratings.length > 0 ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10 : 4.8;
@@ -792,10 +770,6 @@ export class PrismaBookingRepository implements IBookingRepository {
         if (!emp || emp.tenantId !== existing.tenantId || emp.status !== 'active') {
           throw new Error(`Employee ${emp?.user?.name || empId} is inactive or unavailable`);
         }
-        if (!employeeHasRequiredSkills(emp.skills, existing.items.length > 0 ? existing.items.map(item => item.service as any) : existing.service ? [existing.service] : [])) {
-          throw new Error(`Cleaner ${emp.user?.name || emp.employeeCode} is not qualified for this booking's services`);
-        }
-
         const onLeave = await this.db.leaveRecord.findFirst({
           where: {
             employeeId: empId,

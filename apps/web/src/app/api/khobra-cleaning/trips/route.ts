@@ -3,6 +3,7 @@ import { broadcast } from '@/lib/broadcast'
 import { db, PrismaTripRepository } from '@repo/db'
 import { CreateTripSchema, UpdateTripSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const tripRepository = new PrismaTripRepository(db as any)
 
@@ -15,8 +16,8 @@ export async function GET(req: NextRequest) {
     if (auth.session.role === 'admin') return NextResponse.json(trips)
     const driver = await db.driver.findFirst({ where: { tenantId: auth.session.tenantId, userId: auth.session.userId } })
     return NextResponse.json(trips.filter(trip => trip.driverId === driver?.id))
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch trips' })
   }
 }
 
@@ -34,8 +35,7 @@ export async function POST(req: NextRequest) {
     broadcast('dispatch:assigned', { tripId: trip.id, driverId: validatedData.driverId }, auth.session.tenantId)
     return NextResponse.json(trip, { status: 201 })
   } catch (error) {
-    console.error('Create trip error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to create trip', relatedRecord: 'The selected driver or booking no longer exists' })
   }
 }
 
@@ -63,8 +63,7 @@ export async function PUT(req: NextRequest) {
     broadcast('dispatch:updated', { tripId: updated.id, status: validatedData.status }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Update trip error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to update trip', missing: 'Trip not found', relatedRecord: 'A selected trip stop or driver no longer exists' })
   }
 }
 
@@ -80,7 +79,7 @@ export async function DELETE(req: NextRequest) {
     await tripRepository.delete(auth.session.tenantId, id)
     broadcast('dispatch:updated', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete trip', missing: 'Trip not found', relatedRecord: 'This trip is still in use and cannot be deleted' })
   }
 }

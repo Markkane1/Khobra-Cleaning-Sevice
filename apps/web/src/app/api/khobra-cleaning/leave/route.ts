@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ZodError } from 'zod'
 import { db, PrismaLeaveRepository } from '@repo/db'
 import { CreateLeaveSchema, UpdateLeaveSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const leaveRepository = new PrismaLeaveRepository(db)
-const fail = (error: unknown) => NextResponse.json({ error: error instanceof ZodError ? error.issues[0]?.message : error instanceof Error ? error.message : 'Leave request failed' }, { status: error instanceof ZodError ? 400 : 500 })
+const fail = (error: unknown) => apiErrorResponse(error, { fallback: 'Leave request failed', missing: 'Leave record not found' })
 
 export async function GET(req: NextRequest) {
   try {
@@ -41,7 +41,7 @@ export async function PUT(req: NextRequest) {
     if ('response' in auth) return auth.response
     const validated = UpdateLeaveSchema.parse(await req.json())
     if (!await db.leaveRecord.findFirst({ where: { id: validated.id, tenantId: auth.session.tenantId } })) return NextResponse.json({ error: 'Leave record not found' }, { status: 404 })
-    return NextResponse.json(await leaveRepository.update(auth.session.tenantId, validated.id, validated))
+    return NextResponse.json(await leaveRepository.update(auth.session.tenantId, validated.id, validated, auth.session.userId))
   } catch (error) {
     return fail(error)
   }

@@ -30,7 +30,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       }
 
       const body = await response.clone().json().catch(() => null)
-      throw new Error(body?.error || `Request failed (${response.status})`)
+      const issueMessage = body?.issues?.map((issue: { message?: string }) => issue.message).filter(Boolean).join(' ')
+      throw new Error(issueMessage || body?.error || `Request failed (${response.status})`)
     }) as typeof window.fetch
     window.fetch = Object.assign(checkedFetch, nativeFetch)
 

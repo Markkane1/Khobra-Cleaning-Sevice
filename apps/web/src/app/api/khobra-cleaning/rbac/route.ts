@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
-import { isRoleId, requireAuth } from '@/lib/auth'
+import { requireAuth } from '@/lib/auth'
+import { AssignRoleSchema, ResetUserPasswordSchema } from '@repo/core'
 import { hashPassword } from '@repo/db/password'
 import { randomBytes } from 'crypto'
 import { broadcast } from '@/lib/broadcast'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const roles = [
   { id: 'admin', name: 'Administrator', isSystem: true, description: 'Full system administration' },
@@ -31,40 +33,46 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const auth = await requireAuth(req, ['admin'])
-  if ('response' in auth) return auth.response
-  const { userId, role } = await req.json()
-  if (typeof userId !== 'string' || typeof role !== 'string' || !isRoleId(role)) return NextResponse.json({ error: 'A user and one of the four supported roles are required.' }, { status: 400 })
-  const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
-  if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  const [user] = await db.$transaction([
-    db.user.update({
-      where: { id: target.id },
-      data: { role, sessionVersion: { increment: 1 } },
-      select: { id: true, name: true, email: true, role: true, status: true },
-    }),
-    db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
-    db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
-  ])
-  broadcast('session:revoked', {}, auth.session.tenantId, target.id)
-  return NextResponse.json({ success: true, user })
+  try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
+    const { userId, role } = AssignRoleSchema.parse(await req.json())
+    const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
+    if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    const [user] = await db.$transaction([
+      db.user.update({
+        where: { id: target.id },
+        data: { role, sessionVersion: { increment: 1 } },
+        select: { id: true, name: true, email: true, role: true, status: true },
+      }),
+      db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
+      db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
+    ])
+    broadcast('session:revoked', {}, auth.session.tenantId, target.id)
+    return NextResponse.json({ success: true, user })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Role update failed' })
+  }
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireAuth(req, ['admin'])
-  if ('response' in auth) return auth.response
-  const { userId } = await req.json()
-  if (typeof userId !== 'string') return NextResponse.json({ error: 'User is required.' }, { status: 400 })
-  const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
-  if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  const temporaryPassword = randomBytes(12).toString('base64url')
-  await db.$transaction([
-    db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), status: 'active', sessionVersion: { increment: 1 } } }),
-    db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
-    db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
-  ])
-  broadcast('session:revoked', {}, auth.session.tenantId, target.id)
-  return NextResponse.json({ temporaryPassword })
+  try {
+    const auth = await requireAuth(req, ['admin'])
+    if ('response' in auth) return auth.response
+    const { userId } = ResetUserPasswordSchema.parse(await req.json())
+    const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
+    if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    const temporaryPassword = randomBytes(12).toString('base64url')
+    await db.$transaction([
+      db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), status: 'active', sessionVersion: { increment: 1 } } }),
+      db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
+      db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
+    ])
+    broadcast('session:revoked', {}, auth.session.tenantId, target.id)
+    return NextResponse.json({ temporaryPassword })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Password reset failed' })
+  }
 }
 
 export function POST() {

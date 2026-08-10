@@ -38,17 +38,6 @@ export function calculateDurationHours(fromTime: string, toTime: string): number
   return Math.round((diffMins / 60) * 100) / 100;
 }
 
-export function getRequiredSkills(services: Array<{ skills?: string | null }>): string[] {
-  return [...new Set(services.flatMap(service =>
-    (service.skills || '').split(',').map(skill => skill.trim().toLowerCase()).filter(Boolean)
-  ))];
-}
-
-export function employeeHasRequiredSkills(employeeSkills: string | null | undefined, services: Array<{ skills?: string | null }>): boolean {
-  const employeeSkillSet = new Set((employeeSkills || '').split(',').map(skill => skill.trim().toLowerCase()).filter(Boolean));
-  return getRequiredSkills(services).every(skill => employeeSkillSet.has(skill));
-}
-
 export function formatMinutesToTime(totalMinutes: number): string {
   const mins = ((totalMinutes % 1440) + 1440) % 1440;
   const hours = Math.floor(mins / 60);
@@ -330,7 +319,6 @@ export const CreateBookingSchema = z.object({
   isRecurring: z.boolean().optional().default(false),
   recurringRule: z.string().optional(),
   recurringGroupId: z.string().optional(),
-  createdBy: z.string().optional(),
   preferredPaymentMethod: z.enum(['cash', 'bank_transfer']).optional(),
 }).superRefine((data, ctx) => {
   const hasServiceId = Boolean(data.serviceId);
@@ -402,6 +390,22 @@ export const CreateBookingSchema = z.object({
   }
 });
 
+export const PublicBookingSchema = z.object({
+  serviceId: z.string().min(1, 'Choose a service'),
+  name: z.string().trim().min(2, 'Name must contain at least 2 characters').max(80),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  phone: z.string().trim().min(7, 'Enter a valid phone number').max(24),
+  scheduledDate: z.string().date('Choose a valid booking date'),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Choose a valid start time'),
+  duration: z.number().int().min(2).max(8),
+  employeeCount: z.number().int().min(1).max(10),
+  address: z.string().trim().min(5, 'Service address must contain at least 5 characters').max(250),
+  city: z.string().trim().min(2, 'City is required').max(80),
+  area: z.string().trim().max(80).optional(),
+  notes: z.string().trim().max(500).optional(),
+  preferredPaymentMethod: z.enum(['cash', 'bank_transfer']),
+}).strict();
+
 export const BOOKING_STATUS_KEYS = [
   'pending_assignment',
   'assigned',
@@ -463,24 +467,23 @@ export function isValidStatusTransition(currentStatus: string, targetStatus: str
 }
 
 export const UpdateBookingSchema = z.object({
-  id: z.string(),
-  customerId: z.string().optional(),
-  driverId: z.string().nullable().optional(),
-  serviceId: z.string().optional(),
-  serviceIds: z.array(z.string()).optional(),
-  preferredEmployeeId: z.string().optional(),
+  id: z.string().min(1, 'Booking ID is required'),
+  customerId: z.string().min(1, 'Customer ID is required').optional(),
+  driverId: z.string().min(1, 'Driver ID is required').nullable().optional(),
+  serviceId: z.string().min(1, 'Service ID is required').optional(),
+  serviceIds: z.array(z.string().min(1, 'Service ID is required')).optional(),
+  preferredEmployeeId: z.string().min(1, 'Cleaner ID is required').optional(),
   scheduledDate: BookingDateSchema.optional(),
   startTime: TimeSchema.optional(),
   endTime: TimeSchema.optional(),
-  duration: z.number().optional(),
+  duration: z.number().positive('Duration must be greater than zero').optional(),
   employeeCount: z.number().int().min(1).optional(),
   status: z.enum(BOOKING_STATUS_KEYS).optional(),
   cancellationReason: z.string().optional(),
-  cancelledBy: z.enum(['customer', 'admin', 'cleaner']).optional(),
   noShowReason: z.string().optional(),
   noShowParty: z.enum(['customer', 'cleaner']).optional(),
-  discount: z.number().optional(),
-  taxRate: z.number().min(0).optional(),
+  discount: z.number().nonnegative('Discount cannot be negative').optional(),
+  taxRate: z.number().min(0).max(1, 'Tax rate cannot exceed 100%').optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   area: z.string().optional(),

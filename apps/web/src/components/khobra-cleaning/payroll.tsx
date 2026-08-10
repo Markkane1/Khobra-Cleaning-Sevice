@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useSortable } from '@/hooks/use-sort'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import { exportToCSV } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 
 interface PayrollRecord {
   id: string
@@ -114,7 +115,7 @@ export function Payroll() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['payroll'],
-    queryFn: () => fetch('/api/khobra-cleaning/payroll').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/payroll'),
   })
 
   const records: PayrollRecord[] = data?.records || []
@@ -122,7 +123,7 @@ export function Payroll() {
 
   const approveMut = useMutation({
     mutationFn: (rec: any) =>
-      fetch('/api/khobra-cleaning/payroll', {
+      apiRequest('/api/khobra-cleaning/payroll', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,12 +134,12 @@ export function Payroll() {
           allowances: rec.overtimePay,
           netSalary: rec.netSalary,
         }),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payroll'] })
       toast.success('Payroll approved')
     },
-    onError: () => toast.error('Failed to approve'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to approve payroll'),
   })
 
   const handleBulkApprove = () => {

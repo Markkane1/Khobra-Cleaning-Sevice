@@ -8,9 +8,9 @@ export const CreateNotificationSchema = z.object({
 });
 
 export const UpdateNotificationSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().min(1, 'Notification ID is required').optional(),
   markAllRead: z.boolean().optional(),
-});
+}).refine(data => data.markAllRead || Boolean(data.id), { message: 'Notification ID is required', path: ['id'] });
 
 export type CreateNotificationDTO = z.infer<typeof CreateNotificationSchema>;
 export type UpdateNotificationDTO = z.infer<typeof UpdateNotificationSchema>;

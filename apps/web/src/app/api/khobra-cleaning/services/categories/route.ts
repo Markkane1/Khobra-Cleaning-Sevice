@@ -3,6 +3,7 @@ import { db } from '@repo/db'
 import { requireAuth } from '@/lib/auth'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const DEFAULT_CATEGORIES = [
   { id: 'cat-1', name: 'Cleaning', description: 'Residential and standard home cleaning services', color: 'emerald' },
@@ -57,9 +58,8 @@ export async function GET(req: NextRequest) {
     if ('response' in auth) return auth.response
 
     return NextResponse.json(await loadCategories(auth.session.tenantId))
-  } catch (error: any) {
-    console.error('Fetch categories error:', error)
-    return NextResponse.json({ error: 'Failed to fetch categories' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch categories' })
   }
 }
 
@@ -76,10 +76,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(newCat, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid category' }, { status: 400 })
-    console.error('Create category error:', error)
-    return NextResponse.json({ error: 'Failed to create category' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to create category', conflict: 'A category with these details already exists' })
   }
 }
 
@@ -96,10 +94,8 @@ export async function PUT(req: NextRequest) {
       return input
     })
     return updated ? NextResponse.json(updated) : NextResponse.json({ error: 'Category not found' }, { status: 404 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid category' }, { status: 400 })
-    console.error('Update category error:', error)
-    return NextResponse.json({ error: 'Failed to update category' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update category', missing: 'Category not found' })
   }
 }
 
@@ -119,8 +115,7 @@ export async function DELETE(req: NextRequest) {
       return true
     })
     return deleted ? NextResponse.json({ success: true }) : NextResponse.json({ error: 'Category not found' }, { status: 404 })
-  } catch (error: any) {
-    console.error('Delete category error:', error)
-    return NextResponse.json({ error: 'Failed to delete category' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete category', missing: 'Category not found' })
   }
 }

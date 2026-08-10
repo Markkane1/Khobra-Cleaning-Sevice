@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { PrismaDriverRepository } from '@repo/db/src/repositories/PrismaDriverRepository'
 import { CreateDriverSchema, UpdateDriverSchema } from '@repo/core/src/drivers/schema'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const driverRepository = new PrismaDriverRepository(db as any)
 
@@ -12,8 +13,8 @@ export async function GET(req: NextRequest) {
     if ('response' in auth) return auth.response
     const drivers = await driverRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(auth.session.role === 'driver' ? drivers.filter(driver => driver.userId === auth.session.userId) : drivers)
-  } catch {
-    return NextResponse.json({ error: 'Failed to fetch drivers' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch drivers' })
   }
 }
 
@@ -28,9 +29,8 @@ export async function POST(req: NextRequest) {
     const driver = await driverRepository.create(auth.session.tenantId, validatedData)
     
     return NextResponse.json(driver, { status: 201 })
-  } catch (error: any) {
-    console.error('Create driver failed:', error)
-    return NextResponse.json({ error: 'Failed to create driver' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to create driver', conflict: 'A driver with this email, licence, or vehicle already exists' })
   }
 }
 
@@ -45,9 +45,8 @@ export async function PUT(req: NextRequest) {
     const updated = await driverRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     
     return NextResponse.json(updated)
-  } catch (error: any) {
-    console.error('Update driver failed:', error)
-    return NextResponse.json({ error: 'Failed to update driver' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update driver', conflict: 'A driver with this email, licence, or vehicle already exists', missing: 'Driver not found' })
   }
 }
 
@@ -63,8 +62,7 @@ export async function DELETE(req: NextRequest) {
     await driverRepository.delete(auth.session.tenantId, id)
     
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error('Delete driver failed:', error)
-    return NextResponse.json({ error: 'Failed to delete driver' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete driver', missing: 'Driver not found', relatedRecord: 'This driver is assigned to another record and cannot be deleted' })
   }
 }

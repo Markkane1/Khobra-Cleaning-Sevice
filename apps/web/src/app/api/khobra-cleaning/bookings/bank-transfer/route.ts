@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { z } from 'zod'
 import { AdminBankTransferDecisionSchema, SubmitBankTransferSchema } from '@repo/core'
 import { createTransactionSnapshot, db } from '@repo/db'
 import { randomUUID } from 'crypto'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const getActiveBankAccount = async (tenantId: string, accountId: string) => {
   return db.companyBankAccount.findFirst({ where: { id: accountId, tenantId, isActive: true, isDeleted: false } })
@@ -95,9 +95,8 @@ export async function POST(req: NextRequest) {
     broadcast('payment:created', { paymentId: payment.id, status: payment.status, bookingId: data.bookingId }, auth.session.tenantId)
     broadcast('booking:updated', { bookingId: data.bookingId }, auth.session.tenantId)
     return NextResponse.json(payment, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid transfer details' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Bank transfer submission failed' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Bank transfer submission failed', missing: 'Booking, invoice, or bank account not found', conflict: 'A confirmed payment already exists for this booking', domainErrorStatus: 400 })
   }
 }
 
@@ -144,8 +143,7 @@ export async function PUT(req: NextRequest) {
     broadcast('payment:updated', { paymentId: result.payment.id, status: result.payment.status, bookingId: result.bookingId }, auth.session.tenantId)
     broadcast('booking:updated', { bookingId: result.bookingId }, auth.session.tenantId)
     return NextResponse.json(result.payment)
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid decision' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Bank transfer decision failed' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Bank transfer decision failed', missing: 'Payment not found', conflict: 'This payment has already been decided', domainErrorStatus: 400 })
   }
 }

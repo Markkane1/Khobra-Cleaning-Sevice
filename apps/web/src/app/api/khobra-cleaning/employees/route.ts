@@ -3,6 +3,7 @@ import { broadcast } from '@/lib/broadcast'
 import { db, PrismaEmployeeRepository } from '@repo/db'
 import { CreateEmployeeSchema, UpdateEmployeeSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const employeeRepository = new PrismaEmployeeRepository(db)
 
@@ -21,8 +22,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(employees)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch cleaners' })
   }
 }
 
@@ -39,8 +40,7 @@ export async function POST(req: NextRequest) {
     broadcast('employee:created', { employeeCode: employee.employeeCode, name: employee.user.name }, auth.session.tenantId)
     return NextResponse.json(employee, { status: 201 })
   } catch (error) {
-    console.error('Create employee error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to create cleaner', conflict: 'A cleaner with this email or employee code already exists' })
   }
 }
 
@@ -57,8 +57,7 @@ export async function PUT(req: NextRequest) {
     broadcast('employee:updated', { employeeCode: updated.employeeCode, name: updated.user.name }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Update employee error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to update cleaner', conflict: 'A cleaner with this email or employee code already exists', missing: 'Cleaner not found' })
   }
 }
 
@@ -76,7 +75,7 @@ export async function DELETE(req: NextRequest) {
     
     broadcast('employee:updated', { employeeCode: employee?.employeeCode, status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete cleaner', missing: 'Cleaner not found', relatedRecord: 'This cleaner has related records and cannot be deleted' })
   }
 }

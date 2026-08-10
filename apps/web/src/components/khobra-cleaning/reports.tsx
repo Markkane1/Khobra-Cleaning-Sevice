@@ -20,6 +20,7 @@ import {
   PieChart, Pie, Cell, Legend, AreaChart, Area,
 } from 'recharts'
 import { OperationalReports } from './operational-reports'
+import { apiRequest } from '@/lib/api-client'
 
 /* ------------------------------------------------------------------ */
 /*  Color Palette (emerald/teal only)                                  */
@@ -161,29 +162,29 @@ function ProgressMetric({ label, value, max, color, suffix }: {
 export function Reports() {
   const { data: dashboard, isLoading: dashLoading } = useQuery({
     queryKey: ['dashboard'],
-    queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/dashboard'),
   })
 
   const { data: bookings = [], isLoading: bookLoading } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
   })
 
   const { data: invoices = [], isLoading: invLoading } = useQuery({
     queryKey: ['invoices'],
-    queryFn: () => fetch('/api/khobra-cleaning/invoices').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/invoices'),
   })
 
   const { data: complaints = [] } = useQuery({
     queryKey: ['complaints'],
-    queryFn: () => fetch('/api/khobra-cleaning/complaints').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/complaints'),
   })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()) })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings') })
   const currency = settings?.tenant?.currency || 'AED'
 
   const { data: ratingSubmissions = [] } = useQuery({
     queryKey: ['booking-ratings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings/rate').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/bookings/rate'),
   })
 
   /* ── Loading skeleton ── */

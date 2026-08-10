@@ -1,20 +1,20 @@
 import { z } from 'zod';
 
 export const CreateInventoryItemSchema = z.object({
-  name: z.string(),
+  name: z.string().trim().min(1, 'Item name is required'),
   sku: z.string().optional().nullable(),
   category: z.string().optional().nullable(),
   unit: z.string().optional(),
-  currentStock: z.number().or(z.string().transform(Number)).optional(),
-  minStock: z.number().or(z.string().transform(Number)).optional(),
-  costPrice: z.number().or(z.string().transform(Number)).optional(),
-  sellPrice: z.number().or(z.string().transform(Number)).optional(),
+  currentStock: z.coerce.number().nonnegative('Current stock cannot be negative').optional(),
+  minStock: z.coerce.number().nonnegative('Minimum stock cannot be negative').optional(),
+  costPrice: z.coerce.number().nonnegative('Cost price cannot be negative').optional(),
+  sellPrice: z.coerce.number().nonnegative('Selling price cannot be negative').optional(),
   status: z.string().optional(),
 });
 
 export const UpdateInventoryItemSchema = CreateInventoryItemSchema.partial().extend({
-  id: z.string(),
-  adjustQuantity: z.number().or(z.string().transform(Number)).optional(),
+  id: z.string().min(1, 'Item ID is required'),
+  adjustQuantity: z.coerce.number().positive('Adjustment quantity must be greater than zero').optional(),
   adjustType: z.enum(['IN', 'OUT']).optional(),
   notes: z.string().optional(),
 });

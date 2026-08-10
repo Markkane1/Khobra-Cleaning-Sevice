@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EmailSchema } from '../email';
+import { EmailSchema } from '../email.ts';
 
 export const CustomerAddressSchema = z.object({
   label: z.string().trim().max(50).optional(),
@@ -8,9 +8,14 @@ export const CustomerAddressSchema = z.object({
   area: z.string().trim().optional(),
 });
 
+export function getPrimaryCustomerAddress(addresses: unknown, legacyAddress?: string | null) {
+  const parsed = z.array(CustomerAddressSchema).safeParse(addresses);
+  return parsed.success ? parsed.data[0]?.address || legacyAddress?.trim() || '' : legacyAddress?.trim() || '';
+}
+
 export const CreateCustomerSchema = z.object({
   email: EmailSchema,
-  name: z.string(),
+  name: z.string().trim().min(1, 'Full name is required'),
   phone: z.string().optional(),
   city: z.string().optional(),
   address: z.string().optional(),
@@ -22,7 +27,7 @@ export const CreateCustomerSchema = z.object({
 });
 
 export const UpdateCustomerSchema = CreateCustomerSchema.omit({ temporaryPassword: true }).extend({
-  id: z.string(),
+  id: z.string().min(1, 'Customer ID is required'),
 });
 
 export type CreateCustomerDTO = z.infer<typeof CreateCustomerSchema>;

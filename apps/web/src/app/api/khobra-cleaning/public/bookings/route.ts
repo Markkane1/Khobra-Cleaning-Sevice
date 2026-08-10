@@ -1,30 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { CreateBookingSchema, parseTimeToMinutes, zonedDateTimeToUtc } from '@repo/core'
+import { CreateBookingSchema, parseTimeToMinutes, PublicBookingSchema, zonedDateTimeToUtc } from '@repo/core'
 import { broadcast } from '@/lib/broadcast'
 import { getAuthSession } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getClientIp } from '@/lib/client-ip'
+import { apiErrorResponse } from '@/lib/api-error'
 
 
 const bookingRepository = new PrismaBookingRepository(db)
-const PublicBookingSchema = z.object({
-  serviceId: z.string().min(1),
-  name: z.string().trim().min(2).max(80),
-  email: z.string().trim().toLowerCase().email(),
-  phone: z.string().trim().min(7).max(24),
-  scheduledDate: z.string().date(),
-  startTime: z.string().regex(/^\d{2}:\d{2}$/),
-  duration: z.number().int().min(2).max(8),
-  employeeCount: z.number().int().min(1).max(10),
-  address: z.string().trim().min(5).max(250),
-  city: z.string().trim().min(2).max(80),
-  area: z.string().trim().max(80).optional(),
-  notes: z.string().trim().max(500).optional(),
-  preferredPaymentMethod: z.enum(['cash', 'bank_transfer']),
-})
-
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
@@ -69,15 +53,16 @@ export async function POST(req: NextRequest) {
       city: input.city,
       area: input.area,
       notes: input.notes,
-      createdBy: authSession.userId,
       preferredPaymentMethod: input.preferredPaymentMethod,
     })
-    const booking = await bookingRepository.create(tenant.id, bookingData)
+    const booking = await bookingRepository.create(tenant.id, bookingData, {
+      userId: authSession.userId,
+      role: 'customer',
+      name: authSession.name,
+    })
     broadcast('booking:created', { bookingNo: booking.bookingNo, status: booking.status, service: service.name }, tenant.id)
     return NextResponse.json({ bookingNo: booking.bookingNo, total: booking.netAmount, service: service.name }, { status: 201 })
   } catch (error) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Check your booking details' }, { status: 400 })
-    console.error('Public booking error:', error)
-    return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Booking failed', domainErrorStatus: 400 })
   }
 }

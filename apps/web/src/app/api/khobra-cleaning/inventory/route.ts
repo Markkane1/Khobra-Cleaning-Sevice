@@ -3,6 +3,7 @@ import { broadcast } from '@/lib/broadcast'
 import { db, PrismaInventoryItemRepository } from '@repo/db'
 import { CreateInventoryItemSchema, UpdateInventoryItemSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const inventoryItemRepository = new PrismaInventoryItemRepository(db)
 
@@ -13,8 +14,8 @@ export async function GET(req: NextRequest) {
 
     const items = await inventoryItemRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(items)
-  } catch {
-    return NextResponse.json({ error: 'Failed to fetch inventory items' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch inventory items' })
   }
 }
 
@@ -31,8 +32,7 @@ export async function POST(req: NextRequest) {
     broadcast('inventory:updated', { name: item.name, action: 'created' }, auth.session.tenantId)
     return NextResponse.json(item, { status: 201 })
   } catch (error) {
-    console.error('Create inventory item error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to create inventory item', conflict: 'An inventory item with these details already exists' })
   }
 }
 
@@ -49,8 +49,7 @@ export async function PUT(req: NextRequest) {
     broadcast('inventory:updated', { name: updated.name, action: 'updated' }, auth.session.tenantId)
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Update inventory item error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to update inventory item', conflict: 'An inventory item with these details already exists', missing: 'Inventory item not found' })
   }
 }
 
@@ -67,8 +66,8 @@ export async function DELETE(req: NextRequest) {
     
     broadcast('inventory:updated', { action: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete inventory item', missing: 'Inventory item not found', relatedRecord: 'This inventory item is still in use and cannot be deleted' })
   }
 }
 

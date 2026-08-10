@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO, subDays, isAfter, isBefore, differenceInDays } from 'date-fns'
 import { Plus, Search, DollarSign, Receipt, CreditCard, TrendingUp, TrendingDown, Banknote, Building2, AlertTriangle, CheckCircle2, Download, FileText, Upload, X, Image as ImageIcon, Eye } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateInvoiceSchema, CreatePaymentSchema } from '@repo/core'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { downloadBlob, exportToCSV } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 import { useSortable } from '@/hooks/use-sort'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -107,23 +109,23 @@ export function Finance() {
 
   const { data: invoices = [], isLoading: invLoading } = useQuery({
     queryKey: ['invoices'],
-    queryFn: () => fetch('/api/khobra-cleaning/invoices').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/invoices'),
   })
 
   const { data: payments = [], isLoading: payLoading } = useQuery({
     queryKey: ['payments'],
-    queryFn: () => fetch('/api/khobra-cleaning/payments').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/payments'),
   })
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => fetch('/api/khobra-cleaning/customers').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/customers'),
   })
 
   const createInvoiceMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Failed to create invoice'); return data }),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Invoice created'); setCreateInvOpen(false); setInvForm({ customerId: '', totalAmount: 500, status: 'issued', notes: '' }) },
-    onError: () => toast.error('Failed to create invoice'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create invoice'),
   })
 
   const payMut = useMutation({
@@ -133,23 +135,20 @@ export function Finance() {
         try {
           const fd = new FormData()
           fd.append('file', proofFile)
-          const uploadRes = await fetch('/api/khobra-cleaning/upload', { method: 'POST', body: fd }).then(r => r.json())
+          const uploadRes = await apiRequest<any>('/api/khobra-cleaning/upload', { method: 'POST', body: fd })
           if (uploadRes.url) proofUrl = uploadRes.url
         } catch {
           toast.error('Failed to upload proof file')
         }
       }
       const payload = { ...d, ...(proofUrl ? { proofUrl } : {}) }
-      const response = await fetch('/api/khobra-cleaning/payments', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to record payment')
-      return result
+      return apiRequest('/api/khobra-cleaning/payments', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['invoices'] }); qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Payment recorded successfully'); setPayOpen(false); setPayForm(emptyPayment); setProofFile(null); setProofPreview(null) },
-    onError: () => toast.error('Failed to record payment'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to record payment'),
   })
-  const { data: dashboard } = useQuery({ queryKey: ['dashboard'], queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()) })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()) })
+  const { data: dashboard } = useQuery({ queryKey: ['dashboard'], queryFn: () => apiRequest<any>('/api/khobra-cleaning/dashboard') })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings') })
   const currency = settings?.tenant?.currency || 'AED'
   const cashOutflow = Number(dashboard?.stats?.cashOutflow || 0)
   const netCashFlow = Number(dashboard?.stats?.netCashFlow || 0)
@@ -250,6 +249,10 @@ export function Finance() {
 
   const selectedInvoice = invoices.find((i: any) => i.id === payForm.invoiceId)
   const invoiceBalance = selectedInvoice ? (selectedInvoice.totalAmount - (selectedInvoice.paidAmount || 0)) : 0
+  const invoiceValidation = CreateInvoiceSchema.safeParse(invForm)
+  const paymentValidation = CreatePaymentSchema.safeParse(payForm)
+  const showInvoiceValidation = Boolean(invForm.customerId || invForm.notes || invForm.totalAmount !== 500)
+  const showPaymentValidation = Boolean(payForm.invoiceId || payForm.amount || payForm.referenceNo || payForm.notes)
 
   const filteredInv = useMemo(() => invoices.filter((i: any) => {
     if (invStatusFilter === 'pending' && ['paid', 'cancelled'].includes(i.status)) return false
@@ -321,8 +324,13 @@ export function Finance() {
                 </div>
               </div>
               <DialogFooter>
+                {(createInvoiceMut.error || (showInvoiceValidation && !invoiceValidation.success)) && (
+                  <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                    {createInvoiceMut.error instanceof Error ? createInvoiceMut.error.message : !invoiceValidation.success ? invoiceValidation.error.issues[0]?.message : ''}
+                  </p>
+                )}
                 <Button variant="outline" onClick={() => setCreateInvOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => createInvoiceMut.mutate(invForm)} disabled={!invForm.customerId || invForm.totalAmount <= 0}>Generate Invoice</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (invoiceValidation.success) createInvoiceMut.mutate(invoiceValidation.data) }} disabled={!invoiceValidation.success || createInvoiceMut.isPending}>{createInvoiceMut.isPending ? 'Generating...' : 'Generate Invoice'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -455,8 +463,13 @@ export function Finance() {
               </div>
             </div>
             <DialogFooter>
+              {(payMut.error || (showPaymentValidation && !paymentValidation.success)) && (
+                <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                  {payMut.error instanceof Error ? payMut.error.message : !paymentValidation.success ? paymentValidation.error.issues[0]?.message : ''}
+                </p>
+              )}
               <Button variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => payMut.mutate(payForm)} disabled={!payForm.invoiceId || payForm.amount <= 0 || !payForm.referenceNo.trim()}>Record Payment</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (paymentValidation.success) payMut.mutate(paymentValidation.data) }} disabled={!paymentValidation.success || payMut.isPending}>{payMut.isPending ? 'Recording...' : 'Record Payment'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

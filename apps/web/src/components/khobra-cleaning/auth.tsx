@@ -4,10 +4,12 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
-  LogIn, UserPlus, Lock, Mail, Phone, MapPin, Building, User, Sparkles, ArrowRight,
+  LogIn, UserPlus, Lock, Mail, Phone, User, ArrowRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoginSchema, SignupSchema } from '@repo/core'
 import { useAppStore } from '@/store/app-store'
+import { apiRequest } from '@/lib/api-client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,9 +17,6 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Logo } from '@/components/ui/logo'
 import { Turnstile } from './turnstile'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 
 export function AuthPage() {
   const { currentView, setView, setUser } = useAppStore()
@@ -48,22 +47,16 @@ export function AuthPage() {
     name: '',
     email: '',
     phone: '',
-    city: 'Dubai',
-    area: '',
-    address: '',
     password: '',
+    confirmPassword: '',
   })
 
   const registerCustomerMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/auth/signup', {
+      apiRequest<any>('/api/khobra-cleaning/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(async (r) => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Registration failed')
-        return res
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['customers'] })
@@ -81,14 +74,10 @@ export function AuthPage() {
 
   const loginMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/auth/login', {
+      apiRequest<any>('/api/khobra-cleaning/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(async (r) => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Login failed')
-        return res
       }),
     onSuccess: (data) => {
       if (data.user) setUser({ ...data.user, expiresAt: data.expiresAt })
@@ -102,33 +91,19 @@ export function AuthPage() {
     },
   })
 
+  const loginValidation = LoginSchema.safeParse({ email: loginEmail, password: loginPassword, turnstileToken: loginCaptcha })
+  const signupValidation = SignupSchema.safeParse({ ...signupForm, turnstileToken: signupCaptcha })
+  const showLoginValidation = Boolean(loginEmail || loginPassword)
+  const showSignupValidation = Object.values(signupForm).some(Boolean)
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!loginEmail) {
-      toast.error('Please enter an email')
-      return
-    }
-    if (!loginCaptcha) return toast.error('Please complete the security check')
-    loginMut.mutate({ email: loginEmail.trim().toLowerCase(), password: loginPassword, turnstileToken: loginCaptcha })
+    if (loginValidation.success) loginMut.mutate(loginValidation.data)
   }
 
   const handleSignup = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!signupForm.name || !signupForm.email || !signupForm.phone || signupForm.password.length < 8) {
-      toast.error('Fill all required fields and use at least 8 password characters')
-      return
-    }
-    if (!signupCaptcha) return toast.error('Please complete the security check')
-    registerCustomerMut.mutate({
-      name: signupForm.name,
-      email: signupForm.email.trim().toLowerCase(),
-      phone: signupForm.phone,
-      city: signupForm.city,
-      area: signupForm.area,
-      address: signupForm.address,
-      password: signupForm.password,
-      turnstileToken: signupCaptcha,
-    })
+    if (signupValidation.success) registerCustomerMut.mutate(signupValidation.data)
   }
 
   return (
@@ -203,7 +178,13 @@ export function AuthPage() {
 
                   <Turnstile key={`login-${captchaVersion}`} onVerify={setLoginCaptcha} />
 
-                  <Button type="submit" disabled={!loginCaptcha || loginMut.isPending} className="h-11 w-full gap-2 bg-emerald-600 font-medium hover:bg-emerald-700">
+                  {(loginMut.error || (showLoginValidation && !loginValidation.success)) && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {loginMut.error instanceof Error ? loginMut.error.message : !loginValidation.success ? loginValidation.error.issues[0]?.message : ''}
+                    </p>
+                  )}
+
+                  <Button type="submit" disabled={!loginValidation.success || loginMut.isPending} className="h-11 w-full gap-2 bg-emerald-600 font-medium hover:bg-emerald-700">
                     <span>Sign In to Portal</span>
                     <ArrowRight className="h-4 w-4" />
                   </Button>
@@ -214,11 +195,6 @@ export function AuthPage() {
               {/* Customer Only Signup Tab */}
               <TabsContent value="signup">
                 <form onSubmit={handleSignup} className="space-y-3">
-                  <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2 mb-2">
-                    <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>Customer Registration only. Cleaners & Drivers are created by Admin.</span>
-                  </div>
-
                   <div className="space-y-1.5">
                     <Label htmlFor="signup-name" className="text-xs font-semibold">Full Name *</Label>
                     <div className="relative">
@@ -275,80 +251,30 @@ export function AuthPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 min-[400px]:grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="signup-city" className="text-xs font-semibold">City</Label>
-                      <Select
-                        name="city"
-                        value={signupForm.city}
-                        onValueChange={(v) => setSignupForm({ ...signupForm, city: v })}
-                      >
-                        <SelectTrigger id="signup-city" className="min-h-11 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Dubai">Dubai</SelectItem>
-                          <SelectItem value="Abu Dhabi">Abu Dhabi</SelectItem>
-                          <SelectItem value="Sharjah">Sharjah</SelectItem>
-                          <SelectItem value="Ajman">Ajman</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="signup-area" className="text-xs font-semibold">Area</Label>
-                      <Input
-                        id="signup-area"
-                        name="area"
-                        value={signupForm.area}
-                        onChange={(e) => setSignupForm({ ...signupForm, area: e.target.value })}
-                        placeholder="e.g. Marina / Downtown"
-                        className="h-11 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="signup-address" className="text-xs font-semibold">Street Address</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-address"
-                        name="address"
-                        autoComplete="street-address"
-                        value={signupForm.address}
-                        onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
-                        placeholder="Building 4, Apt 1201..."
-                        className="h-11 pl-9 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="signup-password" className="text-xs font-semibold">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        name="password"
-                        type="password"
-                        autoComplete="new-password"
-                        value={signupForm.password}
-                        onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                        placeholder="Create password"
-                        className="h-11 pl-9 text-xs"
-                        minLength={8}
-                        required
-                      />
-                    </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[['signup-password', 'Password', 'password'], ['signup-confirm-password', 'Confirm Password', 'confirmPassword']].map(([id, label, field]) => (
+                      <div className="space-y-1.5" key={id}>
+                        <Label htmlFor={id} className="text-xs font-semibold">{label} *</Label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input id={id} name={field} type="password" autoComplete="new-password" value={signupForm[field as 'password' | 'confirmPassword']} onChange={(e) => setSignupForm({ ...signupForm, [field]: e.target.value })} placeholder="At least 8 characters" className="h-11 pl-9 text-xs" minLength={8} required />
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   <Turnstile key={`signup-${captchaVersion}`} onVerify={setSignupCaptcha} />
 
+                  {(registerCustomerMut.error || (showSignupValidation && !signupValidation.success)) && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {registerCustomerMut.error instanceof Error ? registerCustomerMut.error.message : !signupValidation.success ? signupValidation.error.issues[0]?.message : ''}
+                    </p>
+                  )}
+
                   <Button
                     type="submit"
                     className="mt-2 h-11 w-full gap-2 bg-emerald-600 text-xs font-medium hover:bg-emerald-700"
-                    disabled={!signupCaptcha || registerCustomerMut.isPending}
+                    disabled={!signupValidation.success || registerCustomerMut.isPending}
                   >
                     {registerCustomerMut.isPending ? 'Creating Customer Account...' : 'Create Customer Account'}
                   </Button>

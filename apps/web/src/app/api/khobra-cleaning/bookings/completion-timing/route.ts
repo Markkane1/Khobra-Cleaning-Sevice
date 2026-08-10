@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { z } from 'zod'
 import { db } from '@repo/db'
 import { CompletionTimingResponseSchema, canCleanerSubmitCompletionTiming, shouldGeneratePickupAlert } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 import { deliverPickupAlert } from '@/lib/pickup-alerts'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
@@ -64,8 +64,7 @@ export async function POST(req: NextRequest) {
     broadcast('booking:updated', { bookingNo: response.bookingNo, message: 'Completion timing updated' }, auth.session.tenantId)
     if (response.alert) broadcast('dispatch:updated', { bookingNo: response.bookingNo, pickupAlertId: response.alert.id }, auth.session.tenantId)
     return NextResponse.json(response.record, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid response' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Failed to record completion timing' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to record completion timing', missing: 'Booking or cleaner not found', domainErrorStatus: 400 })
   }
 }

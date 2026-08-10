@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { PrismaActivityRepository } from '@repo/db/src/repositories/PrismaActivityRepository';
 import { ActivityService } from '@repo/application/src/activity/ActivityService';
 import { requireAuth } from '@/lib/auth';
+import { apiErrorResponse } from '@/lib/api-error';
 
 // ponytail: single activity service
 const activityRepository = new PrismaActivityRepository(db);
@@ -16,8 +17,7 @@ export async function GET(req: NextRequest) {
     const activities = await activityService.getActivities(auth.session.tenantId);
     return NextResponse.json(activities);
   } catch (error) {
-    console.error('Activity error:', error);
-    return NextResponse.json({ error: 'Failed' }, { status: 500 });
+    return apiErrorResponse(error, { fallback: 'Failed to load activity' });
   }
 }
 

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ZodError } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaComplaintRepository } from '@repo/db'
 import { ComplaintService } from '@repo/application'
 import { CreateComplaintSchema, UpdateComplaintSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const complaintService = new ComplaintService(new PrismaComplaintRepository(db))
 
 function errorResponse(error: unknown, fallback: string) {
-  if (error instanceof ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid complaint' }, { status: 400 })
-  const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : 500
-  return NextResponse.json({ error: error instanceof Error ? error.message : fallback }, { status })
+  return apiErrorResponse(error, { fallback, missing: 'Complaint or related record not found', conflict: 'This complaint conflicts with an existing record', domainErrorStatus: 400 })
 }
 
 export async function GET(req: NextRequest) {

@@ -5,6 +5,7 @@ import { db } from '@repo/db'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 import { deliverPickupAlert } from '@/lib/pickup-alerts'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req, ['admin', 'driver'])
@@ -55,9 +56,8 @@ export async function POST(req: NextRequest) {
     await deliverPickupAlert(result.alert, result.driverUserId, auth.session.tenantId)
     broadcast('dispatch:updated', { bookingNo: result.alert.booking.bookingNo, pickupAlertId: result.alert.id }, auth.session.tenantId)
     return NextResponse.json(result.alert, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Booking ID is required' }, { status: 400 })
-    return NextResponse.json({ error: error.message || 'Failed to send pickup alert' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to send pickup alert', missing: 'Booking or driver not found', domainErrorStatus: 400 })
   }
 }
 
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest) {
     if (auth.session.role === 'driver' && alert.driver.userId !== auth.session.userId) return NextResponse.json({ error: 'This pickup alert is assigned to another driver' }, { status: 403 })
     await db.bookingPickupAlert.updateMany({ where: { id, viewedAt: null }, data: { viewedAt: new Date() } })
     return NextResponse.json(await db.bookingPickupAlert.findUnique({ where: { id } }))
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to mark pickup alert viewed' }, { status: 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to mark pickup alert viewed', missing: 'Pickup alert not found', domainErrorStatus: 400 })
   }
 }

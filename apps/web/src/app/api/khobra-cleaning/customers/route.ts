@@ -3,8 +3,17 @@ import { broadcast } from '@/lib/broadcast'
 import { db, PrismaCustomerRepository } from '@repo/db'
 import { CreateCustomerSchema, UpdateCustomerSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const customerRepository = new PrismaCustomerRepository(db)
+
+function customerErrorResponse(error: unknown) {
+  return apiErrorResponse(error, {
+    fallback: 'Failed to save customer',
+    conflict: 'A customer with this email already exists',
+    missing: 'Customer not found',
+  })
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,8 +22,8 @@ export async function GET(req: NextRequest) {
 
     const customers = await customerRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(auth.session.role === 'customer' ? customers.filter(customer => customer.userId === auth.session.userId) : customers)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch customers' })
   }
 }
 
@@ -32,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(customer, { status: 201 })
   } catch (error) {
     console.error('Create customer error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return customerErrorResponse(error)
   }
 }
 
@@ -52,7 +61,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updated)
   } catch (error) {
     console.error('Update customer error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return customerErrorResponse(error)
   }
 }
 
@@ -69,8 +78,8 @@ export async function DELETE(req: NextRequest) {
     
     broadcast('customer:updated', { status: 'deleted' }, auth.session.tenantId)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete customer', missing: 'Customer not found', relatedRecord: 'This customer has related records and cannot be deleted' })
   }
 }
 

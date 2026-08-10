@@ -7,6 +7,7 @@ import {
   Bell, Send, Plus, Trash2, CheckCircle2, AlertTriangle, Info, AlertCircle, Sparkles, Filter, Search, Users, ShieldAlert, Check, RefreshCw, Mail, User, Radio,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateNotificationSchema } from '@repo/core'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { exportToCSV } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 
 export type NotificationItem = {
   id: string
@@ -53,28 +55,24 @@ export function NotificationManagement() {
   // Fetch Notifications
   const { data: notifications = [], isLoading, refetch } = useQuery<NotificationItem[]>({
     queryKey: ['notifications', 'audit'],
-    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app').then(r => r.json()),
+    queryFn: () => apiRequest<NotificationItem[]>('/api/khobra-cleaning/notifications?channel=in_app'),
   })
 
   // Fetch Users for Target User Selection
   const { data: rbacData } = useQuery({
     queryKey: ['rbac'],
-    queryFn: () => fetch('/api/khobra-cleaning/rbac').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/rbac'),
   })
   const users = rbacData?.users || []
 
   // Create & Dispatch Notification Mutation
   const createNotifMut = useMutation({
-    mutationFn: async (d: any) => {
-      const response = await fetch('/api/khobra-cleaning/notifications', {
+    mutationFn: (d: any) =>
+      apiRequest('/api/khobra-cleaning/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to dispatch notification')
-      return result
-    },
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       toast.success('Notification broadcast dispatched successfully!')
@@ -87,36 +85,33 @@ export function NotificationManagement() {
   // Mark All Read Mutation
   const markAllReadMut = useMutation({
     mutationFn: () =>
-      fetch('/api/khobra-cleaning/notifications?channel=in_app', {
+      apiRequest('/api/khobra-cleaning/notifications?channel=in_app', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ markAllRead: true }),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] })
       toast.success('All notifications marked as read')
     },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to mark notifications as read'),
   })
+
+  const notificationPayload = {
+    title: composeForm.title,
+    message: composeForm.message,
+    type: composeForm.type,
+    userId: composeForm.targetAudience === 'user' ? composeForm.selectedUserId : null,
+  }
+  const notificationValidation = CreateNotificationSchema.safeParse(notificationPayload)
+  const notificationAudienceError = composeForm.targetAudience === 'user' && !composeForm.selectedUserId
+    ? 'Select a recipient user'
+    : ''
+  const showNotificationValidation = Boolean(composeForm.title || composeForm.message || composeForm.selectedUserId)
 
   const handleSendNotification = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!composeForm.title || !composeForm.message) {
-      toast.error('Title and message are required')
-      return
-    }
-    if (composeForm.targetAudience === 'user' && !composeForm.selectedUserId) {
-      toast.error('Select a recipient user')
-      return
-    }
-
-    const payload: any = {
-      title: composeForm.title,
-      message: composeForm.message,
-      type: composeForm.type,
-      userId: composeForm.targetAudience === 'user' ? composeForm.selectedUserId : null,
-    }
-
-    createNotifMut.mutate(payload)
+    if (!notificationAudienceError && notificationValidation.success) createNotifMut.mutate(notificationValidation.data)
   }
 
   const filtered = useMemo(() => {
@@ -242,8 +237,15 @@ export function NotificationManagement() {
                 )}
 
                 <DialogFooter className="pt-2">
+                  {(createNotifMut.error || (showNotificationValidation && (notificationAudienceError || !notificationValidation.success))) && (
+                    <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                      {createNotifMut.error instanceof Error
+                        ? createNotifMut.error.message
+                        : notificationAudienceError || (!notificationValidation.success ? notificationValidation.error.issues[0]?.message : '')}
+                    </p>
+                  )}
                   <Button type="button" variant="outline" onClick={() => setOpenCompose(false)}>Cancel</Button>
-                  <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2" disabled={createNotifMut.isPending}>
+                  <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2" disabled={Boolean(notificationAudienceError) || !notificationValidation.success || createNotifMut.isPending}>
                     <Send className="h-3.5 w-3.5" />Send Now
                   </Button>
                 </DialogFooter>

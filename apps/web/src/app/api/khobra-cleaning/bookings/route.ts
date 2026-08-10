@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, parseTimeToMinutes } from '@repo/core'
+import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, getPrimaryCustomerAddress, parseTimeToMinutes } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const bookingRepository = new PrismaBookingRepository(db)
+
+function bookingErrorResponse(error: unknown, fallback: string) {
+  return apiErrorResponse(error, {
+    fallback,
+    conflict: 'This booking conflicts with an existing record. Refresh the page and try again.',
+    relatedRecord: 'A selected customer, service, or cleaner record no longer exists. Refresh the page and try again.',
+    missing: 'The booking or a related record was not found. Refresh the page and try again.',
+    domainErrorStatus: 400,
+  })
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,8 +39,8 @@ export async function GET(req: NextRequest) {
       bookings = bookings.filter(booking => booking.driverId === driver?.id)
     }
     return NextResponse.json(bookings.map(booking => ({ ...booking, currency: tenant.currency })))
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return bookingErrorResponse(error, 'Failed to fetch bookings')
   }
 }
 
@@ -60,20 +70,26 @@ export async function POST(req: NextRequest) {
     if (!customer || (auth.session.role === 'customer' && customer.userId !== auth.session.userId)) {
       return NextResponse.json({ error: 'Customer is not allowed to create this booking' }, { status: 403 })
     }
+    if (auth.session.role === 'customer') {
+      const primaryAddress = getPrimaryCustomerAddress(customer.addresses, customer.address)
+      if (!primaryAddress) return NextResponse.json({ error: 'Add a primary address in Profile before booking', code: 'PRIMARY_ADDRESS_REQUIRED' }, { status: 409 })
+      validatedData.address = primaryAddress
+      const savedAddresses = Array.isArray(customer.addresses) ? customer.addresses : []
+      const primary = savedAddresses[0] as { city?: unknown; area?: unknown } | undefined
+      validatedData.city = typeof primary?.city === 'string' ? primary.city : customer.city || validatedData.city
+      validatedData.area = typeof primary?.area === 'string' ? primary.area : customer.area || validatedData.area
+    }
     
-    const booking = await bookingRepository.create(tenant.id, { ...validatedData, createdBy: auth.session.role })
+    const booking = await bookingRepository.create(tenant.id, validatedData, {
+      userId: auth.session.userId,
+      role: auth.session.role,
+      name: auth.session.name,
+    })
     
     broadcast('booking:created', { bookingNo: booking.bookingNo, status: 'pending', service: booking.service?.name }, auth.session.tenantId)
     return NextResponse.json(booking, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid request data' }, { status: 400 })
-    }
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-    console.error('Create booking error:', error)
-    return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
+  } catch (error) {
+    return bookingErrorResponse(error, 'Failed to create booking')
   }
 }
 
@@ -122,21 +138,14 @@ export async function PUT(req: NextRequest) {
     const updateData = role === 'admin'
       ? validatedData
       : role === 'customer'
-        ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason, cancelledBy: 'customer' as const }
+        ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason }
         : { id: validatedData.id, status: validatedData.status }
     const updated = await bookingRepository.update(auth.session.tenantId, updateData.id, updateData, { userId: auth.session.userId, role, name: auth.session.name }, authorizedDriverId, authorizedEmployeeId)
     
     broadcast('booking:updated', { bookingNo: updated.bookingNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid request data' }, { status: 400 })
-    }
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-    console.error('Update booking error:', error)
-    return NextResponse.json({ error: 'Failed to update booking' }, { status: 500 })
+  } catch (error) {
+    return bookingErrorResponse(error, 'Failed to update booking')
   }
 }
 
@@ -154,7 +163,7 @@ export async function DELETE(req: NextRequest) {
     
     broadcast('booking:deleted', { bookingNo: booking?.bookingNo }, auth.session.tenantId)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return bookingErrorResponse(error, 'Failed to delete booking')
   }
 }

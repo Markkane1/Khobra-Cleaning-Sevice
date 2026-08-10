@@ -1,16 +1,14 @@
 import { z } from 'zod';
 
 export const CreateVendorItemSchema = z.object({
-  vendorId: z.string(),
-  itemId: z.string(),
-  unitCost: z.number().or(z.string().transform(Number)).optional(),
-  leadTimeDays: z.number().or(z.string().transform(Number)).optional(),
+  vendorId: z.string().min(1, 'Vendor is required'),
+  itemId: z.string().min(1, 'Inventory item is required'),
+  unitCost: z.coerce.number().nonnegative('Unit cost cannot be negative').optional(),
+  leadTimeDays: z.coerce.number().int().nonnegative('Lead time cannot be negative').optional(),
 });
 
-// Since the route doesn't have a PUT for vendor-items, we don't strictly need an UpdateVendorItemSchema,
-// but it's good practice to provide one just in case.
 export const UpdateVendorItemSchema = CreateVendorItemSchema.partial().extend({
-  id: z.string(),
+  id: z.string().min(1, 'Vendor item ID is required'),
 });
 
 export type CreateVendorItemDTO = z.infer<typeof CreateVendorItemSchema>;

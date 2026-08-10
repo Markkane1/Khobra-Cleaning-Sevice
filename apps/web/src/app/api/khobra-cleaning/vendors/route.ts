@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaVendorRepository } from '@repo/db'
 import { CreateVendorSchema, UpdateVendorSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const vendorRepository = new PrismaVendorRepository(db)
 
@@ -12,8 +13,8 @@ export async function GET(req: NextRequest) {
     
     const vendors = await vendorRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(vendors)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch vendors' })
   }
 }
 
@@ -28,8 +29,7 @@ export async function POST(req: NextRequest) {
     const vendor = await vendorRepository.create(auth.session.tenantId, validatedData)
     return NextResponse.json(vendor, { status: 201 })
   } catch (error) {
-    console.error('Create vendor error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to create vendor', conflict: 'A vendor with these details already exists' })
   }
 }
 
@@ -46,8 +46,7 @@ export async function PUT(req: NextRequest) {
     const updated = await vendorRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     return NextResponse.json(updated)
   } catch (error) {
-    console.error('Update vendor error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to update vendor', conflict: 'A vendor with these details already exists', missing: 'Vendor not found' })
   }
 }
 
@@ -62,8 +61,8 @@ export async function DELETE(req: NextRequest) {
     
     await vendorRepository.delete(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete vendor', missing: 'Vendor not found', relatedRecord: 'This vendor is still in use and cannot be deleted' })
   }
 }
 

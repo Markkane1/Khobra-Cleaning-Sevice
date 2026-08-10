@@ -4,6 +4,8 @@ import { createSessionToken, isRoleId, SESSION_TTL_SECONDS, verifyPassword } fro
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getClientIp } from '@/lib/client-ip'
+import { LoginSchema } from '@repo/core'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,12 +19,7 @@ export async function POST(req: NextRequest) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return NextResponse.json({ error: 'Invalid request data' }, { status: 400 })
     }
-    const { email, password, turnstileToken } = body
-
-    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
-    }
-    const normalizedEmail = email.trim().toLowerCase()
+    const { email: normalizedEmail, password, turnstileToken } = LoginSchema.parse(body)
     if (!(await checkRateLimit(`login-account:${normalizedEmail.slice(0, 254)}`, 20, 5 * 60_000)).allowed) {
       return NextResponse.json({ error: 'Too many login attempts. Please wait five minutes and try again.' }, { status: 429 })
     }
@@ -66,7 +63,6 @@ export async function POST(req: NextRequest) {
 
     return response
   } catch (error) {
-    console.error('Login error:', error)
-    return NextResponse.json({ error: 'Login failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Login failed' })
   }
 }

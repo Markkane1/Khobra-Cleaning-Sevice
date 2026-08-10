@@ -1,6 +1,7 @@
 import { db, PrismaInvoicePdfRepository } from '@repo/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const invoicePdfRepository = new PrismaInvoicePdfRepository(db)
 
@@ -249,8 +250,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('PDF generation error:', error)
-    return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to generate PDF' })
   }
 }
 

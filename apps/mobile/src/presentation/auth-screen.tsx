@@ -24,10 +24,8 @@ const emptySignup: SignupInput = {
   name: '',
   email: '',
   phone: '',
-  city: 'Dubai',
-  area: '',
-  address: '',
   password: '',
+  confirmPassword: '',
   turnstileToken: '',
 }
 
@@ -94,16 +92,11 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (session: Session) => v
             <Field label="Email address" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
             <Field inputRef={passwordRef} label="Password" value={password} onChangeText={setPassword} placeholder="Enter your password" secureTextEntry autoComplete="password" returnKeyType="go" onSubmitEditing={submit} />
           </View> : <View style={styles.form}>
-            <View style={styles.notice}><Text style={styles.noticeText}>Customer registration</Text></View>
             <Field label="Full name *" value={signup.name} onChangeText={updateSignup('name')} placeholder="Your full name" autoComplete="name" />
             <Field label="Email address *" value={signup.email} onChangeText={updateSignup('email')} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" />
             <Field label="Phone number *" value={signup.phone} onChangeText={updateSignup('phone')} placeholder="+971 50 000 0000" keyboardType="phone-pad" autoComplete="tel" />
-            <View style={styles.row}>
-              <View style={styles.half}><Field label="City" value={signup.city} onChangeText={updateSignup('city')} placeholder="Dubai" /></View>
-              <View style={styles.half}><Field label="Area" value={signup.area} onChangeText={updateSignup('area')} placeholder="Downtown" /></View>
-            </View>
-            <Field label="Street address" value={signup.address} onChangeText={updateSignup('address')} placeholder="Building, street, apartment" autoComplete="street-address" />
             <Field label="Password *" value={signup.password} onChangeText={updateSignup('password')} placeholder="At least 8 characters" secureTextEntry autoComplete="new-password" />
+            <Field label="Confirm password *" value={signup.confirmPassword} onChangeText={updateSignup('confirmPassword')} placeholder="Enter password again" secureTextEntry autoComplete="new-password" />
           </View>}
 
           {apiBaseUrl ? <View style={styles.captcha}>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Eye, Calendar, Clock, MapPin, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning } from 'lucide-react'
-import { calculateBookingFinancials } from '@repo/core'
+import { calculateBookingFinancials, CreateBookingSchema } from '@repo/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -39,6 +39,7 @@ import { exportToCSV } from '@/lib/csv-export'
 import { useSortable } from '@/hooks/use-sort'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useAppStore } from '@/store/app-store'
+import { apiRequest } from '@/lib/api-client'
 import { calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing } from '@repo/core'
 
 const statusColors: Record<string, string> = {
@@ -152,11 +153,13 @@ const legendItems = [
 export function Bookings() {
   const currentRole = useAppStore(s => s.currentRole)
   const currentUser = useAppStore(s => s.currentUser)
+  const setView = useAppStore(s => s.setView)
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<any>(null)
   const [form, setForm] = useState(emptyForm)
   const [bookingStep, setBookingStep] = useState(0)
+  const [bookingError, setBookingError] = useState<string | null>(null)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
@@ -185,23 +188,23 @@ export function Bookings() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
   })
 
   const { data: customers = [], isLoading: isLoadingCustomers } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => fetch('/api/khobra-cleaning/customers').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/customers'),
     enabled: currentRole === 'admin' || currentRole === 'customer',
   })
 
   const { data: services = [], isLoading: isLoadingServices } = useQuery({
     queryKey: ['services'],
-    queryFn: () => fetch('/api/khobra-cleaning/services').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/services'),
   })
 
   const { data: employees = [] } = useQuery({
     queryKey: ['employees'],
-    queryFn: () => fetch('/api/khobra-cleaning/employees').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/employees'),
     enabled: currentRole === 'admin',
   })
 
@@ -213,9 +216,27 @@ export function Bookings() {
   const selectedCustomerAddresses = customerAddresses(selectedCustomer)
   const requiresAddressSelection = selectedCustomerAddresses.length > 1
 
+  const handleBookingOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && currentRole === 'customer') {
+      const customer = customers.find((item: any) => item.userId === currentUser?.userId)
+      const primary = customerAddresses(customer)[0]
+      if (!customer || !primary) {
+        toast.error('Add a primary address in Profile before booking', { action: { label: 'Go to Profile', onClick: () => setView('profile') } })
+        return
+      }
+      setForm({ ...emptyForm, customerId: customer.id, address: primary.address, city: primary.city || '', area: primary.area || '' })
+      setSelectedCustomerAddressIndex('0')
+      setCustomerPickerOpen(false)
+    } else {
+      setCustomerPickerOpen(nextOpen)
+    }
+    setOpen(nextOpen)
+    if (!nextOpen) { setForm(emptyForm); setBookingStep(0); setBookingError(null); setCustomerSearch(''); setSelectedCustomerAddressIndex('') }
+  }
+
   const { data: tenantSettings } = useQuery({
     queryKey: ['tenant-settings'],
-    queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings'),
     enabled: currentRole === 'admin' || currentRole === 'customer',
   })
   const firstBookingTime = tenantSettings?.tenant?.firstBookingTime || '08:00'
@@ -225,11 +246,11 @@ export function Bookings() {
   const createMut = useMutation({
     mutationFn: (d: any) => fetch('/api/khobra-cleaning/bookings', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => {
       const res = await r.json()
-      if (!r.ok) throw new Error(res.error || 'Failed to create booking')
+      if (!r.ok) throw new Error(Array.isArray(res.issues) ? res.issues.map((issue: { message: string }) => issue.message).join(' ') : res.error || 'Failed to create booking')
       return res
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bookings'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Booking created successfully'); setOpen(false); setForm(emptyForm); setBookingStep(0); setSelectedCustomerAddressIndex('') },
-    onError: (err: any) => toast.error(err.message || 'Failed to create booking'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bookings'] }); qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Booking created successfully'); setBookingError(null); setOpen(false); setForm(emptyForm); setBookingStep(0); setSelectedCustomerAddressIndex('') },
+    onError: (err: any) => { const message = err.message || 'Failed to create booking'; setBookingError(message); toast.error(message) },
   })
 
   const updateMut = useMutation({
@@ -243,7 +264,7 @@ export function Bookings() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/bookings?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/bookings?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] })
       toast.success('Booking deleted successfully')
@@ -359,7 +380,7 @@ export function Bookings() {
 
   const { data: companyAccountsData } = useQuery({
     queryKey: ['companyBankAccountsCustomer'],
-    queryFn: () => fetch('/api/khobra-cleaning/company-bank-accounts').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/company-bank-accounts'),
     enabled: Boolean(paymentBooking && paymentMethod === 'bank_transfer'),
   })
 
@@ -506,9 +527,9 @@ export function Bookings() {
     },
   })
 
-  const { data: assignAvailability } = useQuery({
+  const { data: assignAvailability, error: assignAvailabilityError } = useQuery<any>({
     queryKey: ['availability', assigningBooking?.scheduledDate, assigningBooking?.startTime, assigningBooking?.endTime],
-    queryFn: () => fetch(`/api/khobra-cleaning/employees/availability?date=${assigningBooking?.scheduledDate?.split('T')[0]}&startTime=${assigningBooking?.startTime}&endTime=${assigningBooking?.endTime}&serviceIds=${(assigningBooking?.items?.map((item: any) => item.serviceId) || [assigningBooking?.serviceId]).filter(Boolean).join(',')}`).then(r => r.json()),
+    queryFn: () => apiRequest(`/api/khobra-cleaning/employees/availability?date=${assigningBooking?.scheduledDate?.split('T')[0]}&startTime=${assigningBooking?.startTime}&endTime=${assigningBooking?.endTime}&serviceIds=${(assigningBooking?.items?.map((item: any) => item.serviceId) || [assigningBooking?.serviceId]).filter(Boolean).join(',')}`),
     enabled: Boolean(assigningBooking),
   })
 
@@ -533,26 +554,42 @@ export function Bookings() {
     : form.bookingType === 'multiple_dates'
       ? form.selectedDates.length > 0 || Boolean(form.scheduledDate)
       : Boolean(form.startDate && form.endDate)
+  const selectedBookingDates = form.bookingType === 'multiple_dates' && form.selectedDates.length === 0 && form.scheduledDate
+    ? [form.scheduledDate]
+    : form.selectedDates
+  const bookingPayload = {
+    ...form,
+    scheduledDate: form.scheduledDate || undefined,
+    selectedDates: form.bookingType === 'multiple_dates' ? selectedBookingDates : undefined,
+    startDate: form.startDate || undefined,
+    endDate: form.endDate || undefined,
+    preferredEmployeeIds: form.hasPreferredEmployee ? form.preferredEmployeeIds : undefined,
+    preferredEmployeeId: undefined,
+    serviceIds: form.serviceIds,
+    serviceId: form.serviceIds[0],
+    duration,
+  }
+  const bookingValidation = CreateBookingSchema.safeParse(bookingPayload)
+  const bookingValidationError = !bookingValidation.success ? bookingValidation.error.issues[0]?.message : null
   const canContinueBooking = bookingStep === 0
     ? Boolean(form.customerId && form.serviceIds.length && (!requiresAddressSelection || selectedCustomerAddressIndex))
     : bookingStep === 1
       ? Boolean(hasScheduleDates && form.startTime && form.endTime && duration > 0 && !isTimeInvalid && !isPastStartTime)
       : true
-  const { data: availability, isLoading: isAvailLoading } = useQuery({
+  const { data: availability, isLoading: isAvailLoading, error: availabilityError } = useQuery<any>({
     queryKey: ['employee-availability', form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate, form.startTime, form.endTime, form.serviceIds.join(',')],
     queryFn: async () => {
       const date = form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate
       if (!date || !form.startTime || !form.endTime || duration <= 0) return null
-      const res = await fetch(`/api/khobra-cleaning/employees/availability?date=${date}&startTime=${form.startTime}&endTime=${form.endTime}&serviceIds=${form.serviceIds.join(',')}`)
-      if (!res.ok) return null
-      return res.json()
+      return apiRequest(`/api/khobra-cleaning/employees/availability?date=${date}&startTime=${form.startTime}&endTime=${form.endTime}&serviceIds=${form.serviceIds.join(',')}`)
     },
     enabled: Boolean((form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate) && form.startTime && form.endTime && duration > 0),
   })
 
   const canCreateBooking = Boolean(
     form.customerId && form.serviceIds.length && (!requiresAddressSelection || selectedCustomerAddressIndex) && hasScheduleDates && form.startTime && form.endTime && duration > 0 && !isTimeInvalid && !isPastStartTime &&
-    (!form.hasPreferredEmployee || (form.preferredEmployeeIds.length === form.employeeCount && form.preferredEmployeeIds.every(id => availability?.allEmployeesStatus?.find((employee: any) => employee.id === id)?.isAvailable)))
+    (!form.hasPreferredEmployee || (form.preferredEmployeeIds.length === form.employeeCount && form.preferredEmployeeIds.every(id => availability?.allEmployeesStatus?.find((employee: any) => employee.id === id)?.isAvailable))) &&
+    bookingValidation.success
   )
 
   const selectedServices = useMemo(() => {
@@ -699,11 +736,11 @@ export function Bookings() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="text-xs h-8" onClick={handleExport}><Download className="h-3.5 w-3.5 mr-1.5" />Export</Button>
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); setCustomerPickerOpen(v); if (!v) { setForm(emptyForm); setBookingStep(0); setCustomerSearch(''); setSelectedCustomerAddressIndex('') } }}>
+          <Dialog open={open} onOpenChange={handleBookingOpenChange}>
             <Tooltip>
               <TooltipTrigger asChild>
             <DialogTrigger asChild>
-              <Button disabled={currentRole === 'cleaner' || currentRole === 'driver'} className={`bg-emerald-600 hover:bg-emerald-700 ${currentRole === 'cleaner' || currentRole === 'driver' ? 'hidden' : ''}`}><Plus className="h-4 w-4 mr-2" />New Booking</Button>
+              <Button disabled={currentRole === 'cleaner' || currentRole === 'driver' || (currentRole === 'customer' && isLoadingCustomers)} className={`bg-emerald-600 hover:bg-emerald-700 ${currentRole === 'cleaner' || currentRole === 'driver' ? 'hidden' : ''}`}><Plus className="h-4 w-4 mr-2" />New Booking</Button>
             </DialogTrigger>
               </TooltipTrigger>
               <TooltipContent>Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">N</kbd></TooltipContent>
@@ -931,6 +968,37 @@ export function Bookings() {
                       </PopoverContent>
                     </Popover>
                     <p className={`text-[11px] ${form.preferredEmployeeIds.length === form.employeeCount ? 'text-emerald-700' : 'text-muted-foreground'}`}>{form.preferredEmployeeIds.length} of {form.employeeCount} required cleaners selected.</p>
+                    {availabilityError && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{availabilityError instanceof Error ? availabilityError.message : 'Failed to check cleaner availability'}</div>}
+                    {availability?.suggestedAlternatives?.length > 0 && (
+                      <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold">Suggested Cleaners</p>
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400">Highest rating first</span>
+                        </div>
+                        <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                          {availability.suggestedAlternatives.map((employee: any) => {
+                            const selected = form.preferredEmployeeIds.includes(employee.id)
+                            const atLimit = !selected && form.preferredEmployeeIds.length >= form.employeeCount
+                            return (
+                              <div key={employee.id} className="flex items-center justify-between gap-3 rounded-md border bg-background p-2 text-xs">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-semibold">{employee.name}</span>
+                                    <span className="text-amber-600">{employee.ratingCount ? `★ ${employee.averageRating.toFixed(1)}` : 'New · No ratings'}</span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
+                                    <span>✓ Same tenant</span><span>✓ Active</span><span>✓ Not on leave</span><span>✓ No schedule conflict</span>
+                                  </div>
+                                </div>
+                                <Button type="button" size="sm" variant={selected ? 'secondary' : 'outline'} disabled={atLimit} className="h-7 shrink-0 text-[11px]" onClick={() => setForm({ ...form, preferredEmployeeIds: selected ? form.preferredEmployeeIds.filter(id => id !== employee.id) : [...form.preferredEmployeeIds, employee.id] })}>
+                                  {selected ? 'Selected' : 'Select'}
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="hidden">
                     <Select
                       value={form.preferredEmployeeId}
@@ -1091,6 +1159,7 @@ export function Bookings() {
               <div className="grid gap-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div></>}
               </>}
             </div>
+            {(bookingError || (bookingStep === 3 && bookingValidationError)) && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{bookingError || bookingValidationError}</div>}
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
               {bookingStep > 0 && <Button variant="outline" onClick={() => setBookingStep(bookingStep - 1)}>Back</Button>}
@@ -1101,28 +1170,8 @@ export function Bookings() {
                   className="bg-emerald-600 hover:bg-emerald-700"
                   disabled={!canCreateBooking || createMut.isPending}
                   onClick={() => {
-                    let selectedDates = [...form.selectedDates]
-                    if (form.bookingType === 'multiple_dates' && selectedDates.length === 0 && form.scheduledDate) {
-                      selectedDates = [form.scheduledDate]
-                    }
-                    const payload: any = {
-                      ...form,
-                      scheduledDate: form.scheduledDate || undefined,
-                      selectedDates: form.bookingType === 'multiple_dates' ? selectedDates : undefined,
-                      startDate: form.startDate || undefined,
-                      endDate: form.endDate || undefined,
-                      preferredEmployeeIds: form.hasPreferredEmployee ? form.preferredEmployeeIds : undefined,
-                      preferredEmployeeId: undefined,
-                      serviceIds: form.serviceIds,
-                      serviceId: form.serviceIds[0],
-                      duration,
-                    }
-                    if (!payload.scheduledDate) delete payload.scheduledDate
-                    if (!payload.startDate) delete payload.startDate
-                    if (!payload.endDate) delete payload.endDate
-                    if (!payload.preferredEmployeeIds?.length) delete payload.preferredEmployeeIds
-
-                    createMut.mutate(payload)
+                    setBookingError(null)
+                    if (bookingValidation.success) createMut.mutate(bookingValidation.data)
                   }}
                 >
                   {createMut.isPending ? 'Creating...' : 'Create Booking'}
@@ -1335,7 +1384,7 @@ export function Bookings() {
                                       )}
                                       {b.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
                                         <>
-                                          <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => updateMut.mutate({ id: b.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}`, cancelledBy: currentRole })}>Cancel</Button>
+                                          <Button size="sm" variant="ghost" className="text-xs h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => updateMut.mutate({ id: b.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}` })}>Cancel</Button>
                                         </>
                                       )}
                                       {currentRole === 'admin' && b.status === 'assigned' && (
@@ -1855,7 +1904,7 @@ export function Bookings() {
                   <DialogFooter className="flex-row gap-2 sm:justify-start pt-2">
                     {selectedBooking.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
                       <>
-                        <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => { updateMut.mutate({ id: selectedBooking.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}`, cancelledBy: currentRole }); setDetailOpen(false) }}>Cancel Booking</Button>
+                        <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => { updateMut.mutate({ id: selectedBooking.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}` }); setDetailOpen(false) }}>Cancel Booking</Button>
                       </>
                     )}
                     {currentRole === 'admin' && selectedBooking.status === 'assigned' && (
@@ -1932,6 +1981,7 @@ export function Bookings() {
               </div>
 
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {assignAvailabilityError && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{assignAvailabilityError instanceof Error ? assignAvailabilityError.message : 'Failed to check cleaner availability'}</div>}
                 {assignAvailability?.allEmployeesStatus ? (
                   assignAvailability.allEmployeesStatus.map((emp: any) => {
                     const isSelected = selectedAssignEmpIds.includes(emp.id)

@@ -24,6 +24,7 @@ import { useAppStore } from '@/store/app-store'
 import { useRealtime } from '@/hooks/use-realtime'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
 import type { DashboardDTO } from '@repo/core'
+import { apiRequest } from '@/lib/api-client'
 
 /* ------------------------------------------------------------------ */
 /*  Animation Variants                                                 */
@@ -196,31 +197,23 @@ export function Dashboard() {
   useEffect(() => { subscribe('dispatch:updated'); onEvent('dispatch:updated', () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] })) }, [onEvent, qc, subscribe])
   const { data: pickupAlerts = [] } = useQuery<any[]>({
     queryKey: ['pickup-alerts'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings/pickup-alerts').then(async response => {
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error || 'Could not load pickup alerts')
-      return body
-    }),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings/pickup-alerts'),
     enabled: currentRole === 'driver',
     refetchInterval: currentRole === 'driver' ? 10000 : false,
   })
   const markPickupViewed = useMutation({
-    mutationFn: (id: string) => fetch('/api/khobra-cleaning/bookings/pickup-alerts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then(async response => {
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error || 'Could not acknowledge pickup alert')
-      return body
-    }),
+    mutationFn: (id: string) => apiRequest('/api/khobra-cleaning/bookings/pickup-alerts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pickup-alerts'] }),
   })
   const { data, isLoading } = useQuery<DashboardDTO>({
     queryKey: ['dashboard', currentRole, currentUser?.userId],
-    queryFn: () => fetch('/api/khobra-cleaning/dashboard').then(r => r.json()),
+    queryFn: () => apiRequest<DashboardDTO>('/api/khobra-cleaning/dashboard'),
     refetchInterval: 30000,
   })
 
   const { data: activityData = [] } = useQuery({
     queryKey: ['activity', currentRole, currentUser?.userId],
-    queryFn: () => fetch('/api/khobra-cleaning/activity').then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Could not load activity'); return body }),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/activity'),
     enabled: currentRole === 'admin',
     refetchInterval: 20000,
   })

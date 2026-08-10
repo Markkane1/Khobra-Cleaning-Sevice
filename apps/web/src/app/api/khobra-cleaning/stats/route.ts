@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { PrismaStatsRepository } from '@repo/db/src/repositories/PrismaStatsRepository';
 import { StatsService } from '@repo/application/src/stats/StatsService';
 import { requireAuth } from '@/lib/auth';
+import { apiErrorResponse } from '@/lib/api-error';
 
 // ponytail: single stats service
 const statsRepository = new PrismaStatsRepository(db);
@@ -16,7 +17,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(stats);
   } catch (error) {
-    console.error('Stats error:', error);
-    return NextResponse.json({ error: 'Failed to load stats' }, { status: 500 });
+    return apiErrorResponse(error, { fallback: 'Failed to load stats' });
   }
 }

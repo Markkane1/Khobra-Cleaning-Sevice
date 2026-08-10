@@ -36,6 +36,8 @@ import { Progress } from '@/components/ui/progress'
 import { exportToCSV } from '@/lib/csv-export'
 import { useSortable } from '@/hooks/use-sort'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
+import { apiRequest } from '@/lib/api-client'
+import { CreateEmployeeSchema, UpdateEmployeeSchema } from '@repo/core'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -162,32 +164,32 @@ export function Employees() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['employees'],
-    queryFn: () => fetch('/api/khobra-cleaning/employees').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/employees'),
   })
 
   const createMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/employees', {
+      apiRequest('/api/khobra-cleaning/employees', {
         method: 'POST',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
       toast.success('Cleaner added')
       setOpen(false)
       setForm(emptyForm)
     },
-    onError: () => toast.error('Failed to add cleaner'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to add cleaner'),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/employees', {
+      apiRequest('/api/khobra-cleaning/employees', {
         method: 'PUT',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
       toast.success('Cleaner updated')
@@ -195,17 +197,17 @@ export function Employees() {
       setForm(emptyForm)
       setEditId(null)
     },
-    onError: () => toast.error('Failed to update cleaner'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update cleaner'),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/khobra-cleaning/employees?id=${id}`, { method: 'DELETE' }),
+      apiRequest(`/api/khobra-cleaning/employees?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
       toast.success('Cleaner removed')
     },
-    onError: () => toast.error('Failed to remove cleaner'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to remove cleaner'),
   })
 
   /* ---------- handlers --------------------------------------------- */
@@ -233,11 +235,16 @@ export function Employees() {
   }
 
   const handleSubmit = () => {
-    if (editId) updateMut.mutate({ id: editId, ...form })
-    else createMut.mutate(form)
+    const result = editId ? UpdateEmployeeSchema.safeParse({ id: editId, ...form }) : CreateEmployeeSchema.safeParse(form)
+    if (!result.success) return
+    if (editId) updateMut.mutate(result.data)
+    else createMut.mutate(result.data)
   }
 
   /* ---------- derived ---------------------------------------------- */
+
+  const employeeValidation = editId ? UpdateEmployeeSchema.safeParse({ id: editId, ...form }) : CreateEmployeeSchema.safeParse(form)
+  const employeeSaveError = createMut.error || updateMut.error
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { total: items.length, active: 0, inactive: 0 }
@@ -413,8 +420,9 @@ export function Employees() {
                 </div>
               </div>
               <DialogFooter>
+                {(employeeSaveError || ((form.name || form.email) && !employeeValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{employeeSaveError instanceof Error ? employeeSaveError.message : !employeeValidation.success ? employeeValidation.error.issues[0]?.message : ''}</p>}
                 <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!form.name}>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!employeeValidation.success || createMut.isPending || updateMut.isPending}>
                   {editId ? 'Update' : 'Create'}
                 </Button>
               </DialogFooter>

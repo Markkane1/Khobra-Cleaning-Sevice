@@ -4,6 +4,7 @@ import { PrismaDashboardRepository } from '@repo/db/src/repositories/PrismaDashb
 import { DashboardService } from '@repo/application/src/dashboard/DashboardService';
 import { requireAuth } from '@/lib/auth';
 import { calendarDayRange } from '@repo/core';
+import { apiErrorResponse } from '@/lib/api-error';
 
 const dashboardRepository = new PrismaDashboardRepository(db);
 const dashboardService = new DashboardService(dashboardRepository);
@@ -59,8 +60,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Dashboard error:', error);
-    return NextResponse.json({ error: 'Failed to load dashboard' }, { status: 500 });
+    return apiErrorResponse(error, { fallback: 'Failed to load dashboard' });
   }
 }
 

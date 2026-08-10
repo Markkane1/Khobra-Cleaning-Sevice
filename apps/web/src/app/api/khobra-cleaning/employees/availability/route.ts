@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@repo/db'
 import { parseTimeToMinutes, calculateDurationHours, calculateEndTimeFromDuration, isTimeSlotOverlapping, validateBookingHours, calendarDayRange } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   try {
@@ -108,7 +109,7 @@ export async function GET(req: NextRequest) {
         .filter((r): r is number => typeof r === 'number' && r > 0)
       const averageRating = ratings.length > 0
         ? Math.round((ratings.reduce((s, r) => s + r, 0) / ratings.length) * 10) / 10
-        : 4.8
+        : 0
       const completedCount = emp.assignments.filter(a => a.status === 'completed').length
       const currentWorkload = emp.assignments.filter(a =>
         a.booking &&
@@ -126,12 +127,19 @@ export async function GET(req: NextRequest) {
         isLeave,
         isBusy,
         reason,
+        eligibility: {
+          sameTenant: true,
+          active: true,
+          notOnLeave: !isLeave,
+          noScheduleConflict: !isBusy,
+        },
         averageRating,
-        ratingFormatted: `${averageRating.toFixed(1)} ★`,
+        ratingCount: ratings.length,
+        ratingFormatted: ratings.length ? `${averageRating.toFixed(1)} ★` : 'New · No ratings',
         completedCount,
         currentWorkload,
-        displayText: `${emp.user?.name || emp.employeeCode} — ${averageRating.toFixed(1)} ★`,
-        detailText: `${averageRating.toFixed(1)} ★ from ${ratings.length} rating(s) · ${completedCount} jobs completed · Workload: ${currentWorkload}`,
+        displayText: `${emp.user?.name || emp.employeeCode} — ${ratings.length ? `${averageRating.toFixed(1)} ★` : 'New · No ratings'}`,
+        detailText: `${ratings.length ? `${averageRating.toFixed(1)} ★ from ${ratings.length} rating(s)` : 'No customer ratings yet'} · ${completedCount} jobs completed · Workload: ${currentWorkload}`,
       }
 
       if (isAvailable) availableEmployees.push(item)
@@ -141,7 +149,7 @@ export async function GET(req: NextRequest) {
       return item
     })
 
-    const suggestedAlternatives = availableEmployees.sort((a, b) => b.averageRating - a.averageRating)
+    const suggestedAlternatives = [...availableEmployees].sort((a, b) => b.averageRating - a.averageRating || a.currentWorkload - b.currentWorkload || a.name.localeCompare(b.name))
 
     return NextResponse.json({
       date: dateStr,
@@ -156,8 +164,7 @@ export async function GET(req: NextRequest) {
       allEmployeesStatus,
       suggestedAlternatives,
     })
-  } catch (err: any) {
-    console.error('Availability API error:', err)
-    return NextResponse.json({ error: 'Failed to calculate availability' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to calculate availability' })
   }
 }

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db, PrismaPaymentRepository } from '@repo/db'
 import { SelectPaymentMethodSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const paymentRepository = new PrismaPaymentRepository(db)
 
@@ -26,11 +26,8 @@ export async function POST(req: NextRequest) {
     broadcast('booking:updated', { bookingId: validatedData.bookingId }, auth.session.tenantId)
 
     return NextResponse.json({ ...selection, method: validatedData.method, status }, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid payment selection data' }, { status: 400 })
-    }
-    return NextResponse.json({ error: error.message || 'Payment method selection failed' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Payment method selection failed', missing: 'Booking or invoice not found', conflict: 'This booking payment is already locked', domainErrorStatus: 400 })
   }
 }
 
@@ -53,7 +50,7 @@ export async function PUT(req: NextRequest) {
     broadcast('booking:updated', { invoiceId: updatedPayment.invoiceId }, auth.session.tenantId)
 
     return NextResponse.json(updatedPayment)
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Cash verification failed' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Cash verification failed', missing: 'Payment not found', conflict: 'This cash payment has already been verified', domainErrorStatus: 400 })
   }
 }

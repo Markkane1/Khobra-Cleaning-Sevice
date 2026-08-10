@@ -28,6 +28,8 @@ import {
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV } from '@/lib/csv-export'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
+import { apiRequest } from '@/lib/api-client'
+import { CreateServiceSchema, UpdateServiceSchema } from '@repo/core'
 
 export type ServiceMaterial = {
   id: string
@@ -119,45 +121,45 @@ export function Services() {
   // Fetch Services
   const { data: items = [], isLoading } = useQuery<Service[]>({
     queryKey: ['services'],
-    queryFn: () => fetch('/api/khobra-cleaning/services').then(r => r.json()),
+    queryFn: () => apiRequest<Service[]>('/api/khobra-cleaning/services'),
   })
 
   // Fetch Dynamic Categories
   const { data: dbCategories = [] } = useQuery<ServiceCategory[]>({
     queryKey: ['service-categories'],
-    queryFn: () => fetch('/api/khobra-cleaning/services/categories').then(r => r.json()),
+    queryFn: () => apiRequest<ServiceCategory[]>('/api/khobra-cleaning/services/categories'),
   })
 
   // Fetch Inventory Items
   const { data: inventoryItems = [] } = useQuery({
     queryKey: ['inventory'],
-    queryFn: () => fetch('/api/khobra-cleaning/inventory').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/inventory'),
   })
 
   // Service Mutations
   const createMut = useMutation({
     mutationFn: (d: typeof emptyForm) =>
-      fetch('/api/khobra-cleaning/services', {
+      apiRequest('/api/khobra-cleaning/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services'] })
       toast.success('Service created')
       setOpen(false)
       setForm(emptyForm)
     },
-    onError: () => toast.error('Failed to create service'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create service'),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: Record<string, unknown>) =>
-      fetch('/api/khobra-cleaning/services', {
+      apiRequest('/api/khobra-cleaning/services', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services'] })
       toast.success('Service updated')
@@ -165,42 +167,42 @@ export function Services() {
       setForm(emptyForm)
       setEditId(null)
     },
-    onError: () => toast.error('Failed to update service'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update service'),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/services?id=${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/services?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['services'] })
       toast.success('Service deleted')
     },
-    onError: () => toast.error('Failed to delete service'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete service'),
   })
 
   // Category Mutations
   const saveCatMut = useMutation({
     mutationFn: (d: typeof catForm) =>
-      fetch('/api/khobra-cleaning/services/categories', {
+      apiRequest('/api/khobra-cleaning/services/categories', {
         method: editingCatId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['service-categories'] })
       toast.success(editingCatId ? 'Category updated' : 'New category created')
       setCatForm({ id: '', name: '', description: '', color: 'emerald' })
       setEditingCatId(null)
     },
-    onError: () => toast.error('Failed to save category'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save category'),
   })
 
   const deleteCatMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/services/categories?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/services/categories?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['service-categories'] })
       toast.success('Category deleted')
     },
-    onError: () => toast.error('Failed to delete category'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete category'),
   })
 
   const handleFileUpload = async (kind: 'galleryImages' | 'heroImages', e: React.ChangeEvent<HTMLInputElement>) => {
@@ -263,12 +265,17 @@ export function Services() {
   }
 
   const handleSubmit = () => {
+    const result = editId ? UpdateServiceSchema.safeParse({ id: editId, ...form }) : CreateServiceSchema.safeParse(form)
+    if (!result.success) return
     if (editId) {
       updateMut.mutate({ id: editId, ...form })
     } else {
       createMut.mutate(form)
     }
   }
+
+  const serviceValidation = editId ? UpdateServiceSchema.safeParse({ id: editId, ...form }) : CreateServiceSchema.safeParse(form)
+  const serviceSaveError = createMut.error || updateMut.error
 
   const handleEdit = (s: Service) => {
     setEditId(s.id)
@@ -510,8 +517,9 @@ export function Services() {
                 </div>
 
                 <DialogFooter>
+                  {(serviceSaveError || (form.name && !serviceValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{serviceSaveError instanceof Error ? serviceSaveError.message : !serviceValidation.success ? serviceValidation.error.issues[0]?.message : ''}</p>}
                   <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!form.name || form.baseRate <= 0 || isUploading}>
+                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!serviceValidation.success || createMut.isPending || updateMut.isPending || isUploading}>
                     {editId ? 'Update Service' : 'Create Service'}
                   </Button>
                 </DialogFooter>

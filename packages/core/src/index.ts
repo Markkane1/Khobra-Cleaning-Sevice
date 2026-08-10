@@ -1,5 +1,6 @@
 export * from './activity/schema';
 export * from './attendance/schema';
+export * from './auth/schema';
 export * from './bookings/schema';
 export * from './branches/schema';
 export * from './complaints/schema';

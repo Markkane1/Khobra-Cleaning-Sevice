@@ -114,7 +114,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     <KeyboardAvoidingView style={styles.body} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {screen === 'overview' ? <Overview stats={stats} loading={loading} pickupAlerts={pickupAlerts.filter(alert => !alert.viewedAt)} onRefresh={refresh} onPickupViewed={async id => { await khobraBookingGateway.markPickupAlertViewed(id, session.token); setPickupAlerts(current => current.filter(alert => alert.id !== id)) }} /> : null}
       {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
-      {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} /> : null}
+      {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} onAddAddress={() => setScreen('profile')} /> : null}
       {screen === 'operations' ? <OperationsScreen session={session} onNavigate={setScreen} /> : null}
       {screen === 'services' ? <ServicesScreen session={session} onBack={() => setScreen('operations')} /> : null}
       {screen === 'customers' ? <CustomersScreen session={session} onBack={() => setScreen('operations')} /> : null}
@@ -133,7 +133,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       {screen === 'settings' ? <SettingsScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'reports' ? <ReportsScreen session={session} onBack={() => setScreen('admin')} /> : null}
       {screen === 'dispatch' ? <DispatchScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'profile' ? <ProfileScreen session={session} onBack={() => setScreen('admin')} /> : null}
+      {screen === 'profile' ? <ProfileScreen session={session} onBack={() => setScreen(session.user.role === 'customer' ? 'bookings' : 'admin')} /> : null}
     </KeyboardAvoidingView>
     <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'bank-accounts', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={setScreen} />
   </SafeAreaView>

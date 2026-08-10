@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db, PrismaPaymentRepository } from '@repo/db'
 import { CleanerReceiveCashSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const paymentRepository = new PrismaPaymentRepository(db)
 
@@ -25,10 +25,7 @@ export async function POST(req: NextRequest) {
     broadcast('payment:updated', { bookingId: data.bookingId, status: 'paid' }, auth.session.tenantId)
 
     return NextResponse.json(result, { status: 200 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid cash receipt data' }, { status: 400 })
-    }
-    return NextResponse.json({ error: error.message || 'Failed to record cash payment' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to record cash payment', missing: 'Booking, invoice, or payment not found', conflict: 'This cash payment has already been recorded', domainErrorStatus: 400 })
   }
 }

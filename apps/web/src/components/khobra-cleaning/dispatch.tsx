@@ -30,6 +30,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { useAppStore } from '@/store/app-store'
+import { apiRequest } from '@/lib/api-client'
+import { CreateDriverSchema, CreateTripSchema, UpdateDriverSchema } from '@repo/core'
 
 const tripStatusColors : Record<string, string> = {
   planned: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
@@ -53,53 +55,53 @@ export function Dispatch() {
 
   const { data: drivers = [], isLoading: drvLoading } = useQuery({
     queryKey: ['drivers'],
-    queryFn: () => fetch('/api/khobra-cleaning/drivers').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/drivers'),
   })
 
   const { data: trips = [], isLoading: tripLoading } = useQuery({
     queryKey: ['trips'],
-    queryFn: () => fetch('/api/khobra-cleaning/trips').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/trips'),
   })
 
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
   })
 
   const createDriverMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/drivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/drivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver created'); setDriverOpen(false); setDriverForm(emptyDriverForm) },
-    onError: () => toast.error('Failed to create driver'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create driver'),
   })
 
   const updateDriverMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/drivers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/drivers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver updated'); setDriverOpen(false); setDriverForm(emptyDriverForm); setDriverEditId(null) },
-    onError: () => toast.error('Failed to update driver'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update driver'),
   })
 
   const deleteDriverMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/drivers?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/drivers?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['drivers'] }); toast.success('Driver removed') },
-    onError: () => toast.error('Failed to remove driver'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to remove driver'),
   })
 
   const deleteTripMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/trips?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/trips?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trips'] }); toast.success('Trip deleted') },
-    onError: () => toast.error('Failed to delete trip'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete trip'),
   })
 
   const createTripMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/trips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/trips', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trips'] }); toast.success('Trip created successfully'); setTripOpen(false); setTripForm(emptyTrip) },
-    onError: () => toast.error('Failed to create trip'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create trip'),
   })
 
   const updateTripMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/trips', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/trips', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['trips'] }); toast.success('Trip updated') },
-    onError: () => toast.error('Failed to update trip'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update trip'),
   })
 
   const updateBookingMut = useMutation({
@@ -111,6 +113,10 @@ export function Dispatch() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['bookings'] }); toast.success('Booking status updated') },
     onError: (error: Error) => toast.error(error.message),
   })
+
+  const driverValidation = driverEditId ? UpdateDriverSchema.safeParse({ id: driverEditId, ...driverForm }) : CreateDriverSchema.safeParse(driverForm)
+  const tripValidation = CreateTripSchema.safeParse(tripForm)
+  const driverSaveError = createDriverMut.error || updateDriverMut.error
 
   // Today's bookings for kanban
   const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -229,8 +235,9 @@ export function Dispatch() {
                 </div>
               </div>
               <DialogFooter>
+                {(driverSaveError || ((driverForm.name || driverForm.email) && !driverValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{driverSaveError instanceof Error ? driverSaveError.message : !driverValidation.success ? driverValidation.error.issues[0]?.message : ''}</p>}
                 <Button variant="outline" onClick={() => setDriverOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => driverEditId ? updateDriverMut.mutate({ id: driverEditId, ...driverForm }) : createDriverMut.mutate(driverForm)} disabled={!driverForm.name}>{driverEditId ? 'Update' : 'Create'}</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (!driverValidation.success) return; driverEditId ? updateDriverMut.mutate(driverValidation.data) : createDriverMut.mutate(driverValidation.data) }} disabled={!driverValidation.success || createDriverMut.isPending || updateDriverMut.isPending}>{driverEditId ? 'Update' : 'Create'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -256,8 +263,9 @@ export function Dispatch() {
               <div className="grid gap-2"><Label>Notes</Label><Textarea value={tripForm.notes} onChange={e => setTripForm({ ...tripForm, notes: e.target.value })} /></div>
             </div>
             <DialogFooter>
+              {((tripForm.driverId || tripForm.date) && !tripValidation.success) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{tripValidation.error.issues[0]?.message}</p>}
               <Button variant="outline" onClick={() => setTripOpen(false)}>Cancel</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => createTripMut.mutate(tripForm)} disabled={!tripForm.driverId || !tripForm.date}>Schedule</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (tripValidation.success) createTripMut.mutate(tripValidation.data) }} disabled={!tripValidation.success || createTripMut.isPending}>Schedule</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

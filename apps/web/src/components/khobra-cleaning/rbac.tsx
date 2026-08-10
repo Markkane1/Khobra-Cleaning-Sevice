@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { apiRequest } from '@/lib/api-client'
 
 type Role = { id: 'admin' | 'driver' | 'customer' | 'cleaner'; name: string; description: string }
 type User = { id: string; name: string; email: string; role: Role['id']; status: string }
@@ -20,28 +21,17 @@ export function RBACManagement() {
   const [search, setSearch] = useState('')
   const [resetCredential, setResetCredential] = useState<{ name: string; password: string } | null>(null)
   const queryClient = useQueryClient()
-  const { data, isLoading } = useQuery<RbacData>({ queryKey: ['rbac'], queryFn: async () => {
-    const response = await fetch('/api/khobra-cleaning/rbac')
-    if (!response.ok) throw new Error('Failed to load access control')
-    return response.json()
-  } })
+  const { data, isLoading } = useQuery<RbacData>({ queryKey: ['rbac'], queryFn: () => apiRequest<RbacData>('/api/khobra-cleaning/rbac') })
   const assign = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: Role['id'] }) => {
-      const response = await fetch('/api/khobra-cleaning/rbac', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, role }) })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Role update failed')
-      return result
-    },
+    mutationFn: ({ userId, role }: { userId: string; role: Role['id'] }) => apiRequest('/api/khobra-cleaning/rbac', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, role }) }),
     onSuccess: () => { toast.success('User role updated'); queryClient.invalidateQueries({ queryKey: ['rbac'] }) },
     onError: (error: Error) => toast.error(error.message),
   })
   const users = useMemo(() => (data?.users || []).filter(user => `${user.name} ${user.email}`.toLowerCase().includes(search.toLowerCase())), [data?.users, search])
   const resetPassword = useMutation({
     mutationFn: async (user: User) => {
-      const response = await fetch('/api/khobra-cleaning/rbac', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id }) })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Password reset failed')
-      return { name: user.name, password: result.temporaryPassword as string }
+      const result = await apiRequest<{ temporaryPassword: string }>('/api/khobra-cleaning/rbac', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id }) })
+      return { name: user.name, password: result.temporaryPassword }
     },
     onSuccess: setResetCredential,
     onError: (error: Error) => toast.error(error.message),

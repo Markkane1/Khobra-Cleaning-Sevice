@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { db, deliverPushNotifications } from '@repo/db'
 import { CreateNotificationSchema, UpdateNotificationSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,8 +20,8 @@ export async function GET(req: NextRequest) {
       take: 20,
     })
     return NextResponse.json(notifications)
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch notifications' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch notifications' })
   }
 }
 
@@ -43,8 +44,8 @@ export async function PUT(req: NextRequest) {
     const updated = await db.notification.updateMany({ where: { ...where, id: data.id }, data: { read: true } })
     if (!updated.count) return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to update notification' }, { status: 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update notification', missing: 'Notification not found', domainErrorStatus: 400 })
   }
 }
 
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
     })
     await deliverPushNotifications(db, notices)
     return NextResponse.json({ success: true, recipients: recipients.length }, { status: 201 })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to create notification' }, { status: 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to create notification', missing: 'Active recipient not found', domainErrorStatus: 400 })
   }
 }

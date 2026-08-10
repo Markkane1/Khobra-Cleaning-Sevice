@@ -4,6 +4,7 @@ import { db, PrismaInvoiceRepository } from '@repo/db'
 import { InvoiceService } from '@repo/application'
 import { CreateInvoiceSchema, UpdateInvoiceSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 // Dependency Injection
 const invoiceRepository = new PrismaInvoiceRepository(db)
@@ -20,8 +21,8 @@ export async function GET(req: NextRequest) {
       items = items.filter((item: any) => item.customerId === customer?.id)
     }
     return NextResponse.json(items)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch invoices' })
   }
 }
 
@@ -42,9 +43,8 @@ export async function POST(req: NextRequest) {
     
     broadcast('invoice:created', { invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount }, auth.session.tenantId)
     return NextResponse.json(invoice, { status: 201 })
-  } catch (error: any) {
-    console.error('Create invoice error:', error)
-    return NextResponse.json({ error: error.issues?.[0]?.message || error.message || 'Failed to create invoice' }, { status: 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to create invoice', conflict: 'This booking already has an invoice or the invoice number already exists', missing: 'Customer or booking not found', domainErrorStatus: 400 })
   }
 }
 
@@ -61,9 +61,8 @@ export async function PUT(req: NextRequest) {
     
     broadcast('invoice:updated', { invoiceNo: (updated as any).invoiceNo, status: updated.status }, auth.session.tenantId)
     return NextResponse.json(updated)
-  } catch (error: any) {
-    console.error('Update invoice error:', error)
-    return NextResponse.json({ error: error.issues?.[0]?.message || error.message || 'Failed to update invoice' }, { status: 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update invoice', conflict: 'This invoice conflicts with an existing record', missing: 'Invoice not found', domainErrorStatus: 400 })
   }
 }
 

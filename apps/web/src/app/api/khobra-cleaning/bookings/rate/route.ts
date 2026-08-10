@@ -3,6 +3,7 @@ import { db } from '@repo/db';
 import { PrismaBookingRepository } from '@repo/db';
 import { RateBookingEmployeesSchema } from '@repo/core';
 import { requireAuth } from '@/lib/auth';
+import { apiErrorResponse } from '@/lib/api-error';
 
 const bookingRepo = new PrismaBookingRepository(db as any);
 
@@ -50,10 +51,7 @@ export async function POST(req: NextRequest) {
 
     const updated = await bookingRepo.rateBookingEmployees(auth.session.tenantId, parsed.bookingId, booking.customerId, parsed.ratings, parsed.overallRating, parsed.overallComment);
     return NextResponse.json(updated);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Failed to submit cleaner ratings' },
-      { status: 400 }
-    );
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to submit cleaner ratings', missing: 'Booking not found', conflict: 'Ratings have already been submitted for this booking', domainErrorStatus: 400 });
   }
 }

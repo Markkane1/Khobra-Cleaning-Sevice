@@ -8,9 +8,9 @@ import type { Session } from '../domain/auth/types'
 import { khobraBookingGateway, khobraOperationsGateway } from '../infrastructure/http/khobra-gateways'
 import { cardShadow, LoadingState, localDateValue, MessageState, PageHeading, palette, PrimaryButton, SecondaryButton } from './mobile-ui'
 
-export function NewBookingScreen({ session, onCreated, onCancel }: { session: Session; onCreated: () => void; onCancel: () => void }) {
+export function NewBookingScreen({ session, onCreated, onCancel, onAddAddress }: { session: Session; onCreated: () => void; onCancel: () => void; onAddAddress: () => void }) {
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([])
-  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([])
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string; address?: string }>>([])
   const [customerId, setCustomerId] = useState('')
   const [serviceIds, setServiceIds] = useState<string[]>([])
   const [date, setDate] = useState(() => { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); return localDateValue(tomorrow) })
@@ -27,9 +27,10 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
     ])
       .then(([serviceRecords, customerRecords]) => {
         setServices(serviceRecords.map((service) => ({ id: service.id, name: String(service.name || 'Service') })))
-        setCustomers(customerRecords.map(customer => ({ id: customer.id, name: String((customer.user as { name?: string } | undefined)?.name || customer.email || customer.id) })))
+        setCustomers(customerRecords.map(customer => ({ id: customer.id, name: String((customer.user as { name?: string } | undefined)?.name || customer.email || customer.id), address: String((Array.isArray(customer.addresses) ? customer.addresses[0]?.address : '') || customer.address || '') })))
         const customer = customerRecords.find((item) => item.userId === session.user.userId)
         setCustomerId(session.user.role === 'customer' ? customer?.id || '' : '')
+        if (session.user.role === 'customer') setAddress(String((Array.isArray(customer?.addresses) ? customer?.addresses[0]?.address : '') || customer?.address || ''))
       })
       .catch((error) => Alert.alert('Could not prepare booking', error instanceof Error ? error.message : 'Try again.'))
       .finally(() => setLoading(false))
@@ -49,6 +50,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
 
   if (loading) return <LoadingState label="Preparing your booking..." />
   if (session.user.role === 'customer' && !customerId) return <MessageState icon="person-circle-outline" title="Customer account required" detail="Your customer profile could not be found." action={<SecondaryButton label="Back to bookings" icon="arrow-back" onPress={onCancel} />} />
+  if (session.user.role === 'customer' && !address) return <MessageState icon="location-outline" title="Add your primary address" detail="A primary address is required before you can create a booking." action={<PrimaryButton label="Add address in Profile" icon="person-outline" onPress={onAddAddress} />} />
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
     <PageHeading title="New booking" subtitle="Choose a service, time, and location." action={<Pressable accessibilityLabel="Close booking form" onPress={onCancel} style={styles.close}><Ionicons name="close" size={22} color={palette.inkSoft} /></Pressable>} />
@@ -78,7 +80,7 @@ export function NewBookingScreen({ session, onCreated, onCancel }: { session: Se
 
     <View style={styles.section}>
       <View style={styles.sectionTitle}><View style={styles.step}><Text style={styles.stepText}>{session.user.role === 'admin' ? '4' : '3'}</Text></View><View><Text style={styles.sectionHeading}>Service address</Text><Text style={styles.sectionHint}>Tell the team where to arrive.</Text></View></View>
-      <Field label="Address" icon="location-outline" value={address} onChangeText={setAddress} placeholder="Building, street, apartment" autoComplete="street-address" />
+      <Field label="Address" icon="location-outline" value={address} onChangeText={setAddress} editable={session.user.role !== 'customer'} placeholder="Building, street, apartment" autoComplete="street-address" />
     </View>
 
     <PrimaryButton label="Confirm booking" icon="checkmark" onPress={submit} loading={submitting} disabled={!customerId || serviceIds.length === 0} />

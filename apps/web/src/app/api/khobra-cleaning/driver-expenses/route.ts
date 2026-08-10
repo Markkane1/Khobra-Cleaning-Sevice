@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db } from '@repo/db'
 import { CreateDriverExpenseSchema, DecideDriverExpenseSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const include = { driver: { include: { user: { select: { name: true } } } }, trip: { select: { id: true, date: true, status: true } } } as const
 
@@ -17,9 +17,8 @@ export async function GET(req: NextRequest) {
       include,
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
     }))
-  } catch (error: any) {
-    console.error('Load driver expenses failed:', error)
-    return NextResponse.json({ error: 'Failed to load driver expenses' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to load driver expenses' })
   }
 }
 
@@ -52,10 +51,8 @@ export async function POST(req: NextRequest) {
       },
       include,
     }), { status: 201 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid expense' }, { status: 400 })
-    console.error('Add driver expense failed:', error)
-    return NextResponse.json({ error: 'Failed to add expense' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to add expense', relatedRecord: 'The selected driver or trip no longer exists' })
   }
 }
 
@@ -72,9 +69,7 @@ export async function PUT(req: NextRequest) {
       data: { status: data.decision, decisionRemarks: data.remarks, approvedBy: auth.session.userId, approvedAt: new Date() },
       include,
     }))
-  } catch (error: any) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Invalid decision' }, { status: 400 })
-    console.error('Review driver expense failed:', error)
-    return NextResponse.json({ error: 'Failed to review expense' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to review expense', missing: 'Expense not found', conflict: 'Only pending expenses can be approved or rejected' })
   }
 }

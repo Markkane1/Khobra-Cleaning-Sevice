@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
 import { AssignEmployeesSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const bookingRepository = new PrismaBookingRepository(db)
 
@@ -36,14 +36,7 @@ export async function POST(req: NextRequest) {
     }, auth.session.tenantId)
 
     return NextResponse.json(updatedBooking, { status: 200 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid assignment data' }, { status: 400 })
-    }
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-    console.error('Assign cleaners error:', error)
-    return NextResponse.json({ error: 'Failed to assign cleaners' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to assign cleaners', missing: 'Booking or cleaner not found', relatedRecord: 'A selected booking or cleaner no longer exists', domainErrorStatus: 400 })
   }
 }

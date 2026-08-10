@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EmailSchema } from '../email';
+import { EmailSchema } from '../email.ts';
 
 export const CreateDriverSchema = z.object({
   name: z.string().min(1, 'Driver name is required'),
@@ -12,8 +12,8 @@ export const CreateDriverSchema = z.object({
 });
 
 export const UpdateDriverSchema = z.object({
-  id: z.string(),
-  name: z.string().optional(),
+  id: z.string().min(1, 'Driver ID is required'),
+  name: z.string().trim().min(1, 'Driver name is required').optional(),
   email: EmailSchema.optional().or(z.literal('')),
   phone: z.string().optional().nullable(),
   licenseNo: z.string().optional(),

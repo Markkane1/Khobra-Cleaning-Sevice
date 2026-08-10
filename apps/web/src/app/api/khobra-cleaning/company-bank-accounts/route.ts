@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { db, PrismaPaymentRepository } from '@repo/db';
 import { CompanyBankAccountSchema } from '@repo/core';
 import { requireAuth } from '@/lib/auth';
+import { apiErrorResponse } from '@/lib/api-error';
 
 const paymentRepository = new PrismaPaymentRepository(db);
 
@@ -15,8 +15,8 @@ export async function GET(req: NextRequest) {
     const accounts = await paymentRepository.getCompanyBankAccounts(auth.session.tenantId, isAdmin);
 
     return NextResponse.json({ accounts }, { status: 200 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch company bank accounts' }, { status: 400 });
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch company bank accounts', domainErrorStatus: 400 });
   }
 }
 
@@ -35,11 +35,8 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json(account, { status: 201 });
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid bank account data' }, { status: 400 });
-    }
-    return NextResponse.json({ error: error.message || 'Failed to save company bank account' }, { status: 400 });
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to save company bank account', conflict: 'A bank account with this account number or IBAN already exists', domainErrorStatus: 400 });
   }
 }
 
@@ -71,11 +68,8 @@ export async function PUT(req: NextRequest) {
     );
 
     return NextResponse.json(account, { status: 200 });
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid bank account data' }, { status: 400 });
-    }
-    return NextResponse.json({ error: error.message || 'Failed to update company bank account' }, { status: 400 });
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update company bank account', conflict: 'A bank account with this account number or IBAN already exists', missing: 'Company bank account not found', domainErrorStatus: 400 });
   }
 }
 
@@ -98,7 +92,7 @@ export async function DELETE(req: NextRequest) {
     );
 
     return NextResponse.json(result, { status: 200 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to delete company bank account' }, { status: 400 });
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete company bank account', missing: 'Company bank account not found', relatedRecord: 'This bank account is used by a payment and cannot be deleted', domainErrorStatus: 400 });
   }
 }

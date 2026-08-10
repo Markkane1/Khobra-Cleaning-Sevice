@@ -62,7 +62,7 @@ export class PrismaCustomerRepository implements ICustomerRepository {
 
     return this.db.customer.update({
       where: { id, tenantId },
-      data: custData,
+      data: { ...custData, phone },
       include: { user: { select: { name: true, email: true } } }
     }) as unknown as Customer;
   }

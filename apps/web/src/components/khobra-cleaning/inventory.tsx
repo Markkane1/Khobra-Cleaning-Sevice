@@ -8,6 +8,7 @@ import {
   TrendingDown, ShoppingCart, ArrowUpRight, ArrowDownRight, Phone, Mail, MapPin, Search, Grid, List, RefreshCw, Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateInventoryItemSchema, CreateVendorSchema, UpdateInventoryItemSchema, UpdateVendorSchema } from '@repo/core'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +31,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { exportToCSV } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 
 const emptyItem = { name: '', sku: '', category: '', unit: 'pcs', currentStock: 0, minStock: 0, costPrice: 0, sellPrice: 0 }
 const emptyVendor = { name: '', contactPerson: '', phone: '', email: '', address: '' }
@@ -62,7 +64,7 @@ export function Inventory() {
 
   const { data: items = [], isLoading: itemLoading } = useQuery({
     queryKey: ['inventory'],
-    queryFn: () => fetch('/api/khobra-cleaning/inventory').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/inventory'),
   })
 
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -71,54 +73,63 @@ export function Inventory() {
 
   const { data: vendors = [], isLoading: venLoading } = useQuery({
     queryKey: ['vendors'],
-    queryFn: () => fetch('/api/khobra-cleaning/vendors').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/vendors'),
   })
 
   const createItemMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/inventory', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/inventory', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Item added'); setItemOpen(false); setForm(emptyItem) },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to add item'),
   })
 
   const updateItemMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/inventory', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/inventory', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Item updated'); setItemOpen(false); setForm(emptyItem); setEditId(null) },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update item'),
   })
 
   const adjustStockMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/inventory', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/inventory', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Stock adjusted'); setAdjustOpen(false); setAdjustItem(null) },
-    onError: () => toast.error('Failed to adjust stock'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to adjust stock'),
   })
 
   const deleteItemMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/inventory?id=${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/inventory?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['inventory'] }); toast.success('Item deleted') },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete item'),
   })
 
   const createVendorMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/vendors', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/vendors', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['vendors'] }); toast.success('Vendor added'); setVendorOpen(false); setVForm(emptyVendor) },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to add vendor'),
   })
 
   const updateVendorMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/vendors', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/vendors', { method: 'PUT', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['vendors'] }); toast.success('Vendor updated'); setVendorOpen(false); setVForm(emptyVendor); setVendorEditId(null) },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update vendor'),
   })
 
   const deleteVendorMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/vendors?id=${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/vendors?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['vendors'] }); toast.success('Vendor removed') },
-    onError: () => toast.error('Failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to remove vendor'),
   })
 
   const handleItemSubmit = () => {
-    if (editId) updateItemMut.mutate({ id: editId, ...form })
-    else createItemMut.mutate(form)
+    const result = editId ? UpdateInventoryItemSchema.safeParse({ id: editId, ...form }) : CreateInventoryItemSchema.safeParse(form)
+    if (!result.success) return
+    if (editId) updateItemMut.mutate(result.data)
+    else createItemMut.mutate(result.data)
+  }
+
+  const handleVendorSubmit = () => {
+    const result = vendorEditId ? UpdateVendorSchema.safeParse({ id: vendorEditId, ...vForm }) : CreateVendorSchema.safeParse(vForm)
+    if (!result.success) return
+    if (vendorEditId) updateVendorMut.mutate(result.data)
+    else createVendorMut.mutate(result.data)
   }
 
   const handleItemEdit = (item: any) => {
@@ -132,6 +143,10 @@ export function Inventory() {
   const categories: Record<string, number> = {}
   items.forEach((i: any) => { if (i.category) { const k = i.category as string; categories[k] = (categories[k] || 0) + 1 } })
   const maxCategory = Math.max(...Object.values(categories), 1)
+  const itemValidation = editId ? UpdateInventoryItemSchema.safeParse({ id: editId, ...form }) : CreateInventoryItemSchema.safeParse(form)
+  const vendorValidation = vendorEditId ? UpdateVendorSchema.safeParse({ id: vendorEditId, ...vForm }) : CreateVendorSchema.safeParse(vForm)
+  const itemSaveError = createItemMut.error || updateItemMut.error
+  const vendorSaveError = createVendorMut.error || updateVendorMut.error
 
   const filteredItems = items.filter((i: any) => {
     if (categoryFilter !== 'all' && i.category !== categoryFilter) return false
@@ -180,8 +195,9 @@ export function Inventory() {
                 <div className="grid gap-2"><Label>Address</Label><Input value={vForm.address} onChange={e => setVForm({ ...vForm, address: e.target.value })} /></div>
               </div>
               <DialogFooter>
+                {(vendorSaveError || (vForm.name.length > 0 && !vendorValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{vendorSaveError instanceof Error ? vendorSaveError.message : !vendorValidation.success ? vendorValidation.error.issues[0]?.message : ''}</p>}
                 <Button variant="outline" onClick={() => setVendorOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => vendorEditId ? updateVendorMut.mutate({ id: vendorEditId, ...vForm }) : createVendorMut.mutate(vForm)} disabled={!vForm.name}>{vendorEditId ? 'Update' : 'Add'}</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleVendorSubmit} disabled={!vendorValidation.success || createVendorMut.isPending || updateVendorMut.isPending}>{vendorEditId ? 'Update' : 'Add'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -218,8 +234,9 @@ export function Inventory() {
                 </div>
               </div>
               <DialogFooter>
+                {(itemSaveError || (form.name.length > 0 && !itemValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{itemSaveError instanceof Error ? itemSaveError.message : !itemValidation.success ? itemValidation.error.issues[0]?.message : ''}</p>}
                 <Button variant="outline" onClick={() => setItemOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleItemSubmit} disabled={!form.name}>{editId ? 'Update' : 'Add'}</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleItemSubmit} disabled={!itemValidation.success || createItemMut.isPending || updateItemMut.isPending}>{editId ? 'Update' : 'Add'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

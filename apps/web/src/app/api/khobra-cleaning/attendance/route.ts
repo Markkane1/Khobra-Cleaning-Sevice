@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ZodError } from 'zod'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaAttendanceRepository } from '@repo/db'
 import { CreateAttendanceSchema, UpdateAttendanceSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const attendanceRepository = new PrismaAttendanceRepository(db)
-const fail = (error: unknown) => NextResponse.json({ error: error instanceof ZodError ? error.issues[0]?.message : error instanceof Error ? error.message : 'Attendance request failed' }, { status: error instanceof ZodError ? 400 : 500 })
+const fail = (error: unknown) => apiErrorResponse(error, { fallback: 'Attendance request failed', missing: 'Attendance record not found' })
 
 export async function GET(req: NextRequest) {
   try {

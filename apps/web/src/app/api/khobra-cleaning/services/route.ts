@@ -3,6 +3,7 @@ import { broadcast } from '@/lib/broadcast'
 import { db, PrismaServiceRepository } from '@repo/db'
 import { CreateServiceSchema, UpdateServiceSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const serviceRepository = new PrismaServiceRepository(db)
 
@@ -13,8 +14,8 @@ export async function GET(req: NextRequest) {
 
     const services = await serviceRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(services)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch services' })
   }
 }
 
@@ -31,8 +32,7 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json(item, { status: 201 })
   } catch (error) {
-    console.error('Create service error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to create service', conflict: 'A service with these details already exists' })
   }
 }
 
@@ -49,8 +49,7 @@ export async function PUT(req: NextRequest) {
     
     return NextResponse.json(item)
   } catch (error) {
-    console.error('Update service error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Failed to update service', conflict: 'A service with these details already exists', missing: 'Service not found' })
   }
 }
 
@@ -67,7 +66,7 @@ export async function DELETE(req: NextRequest) {
     broadcast('service:updated', { status: 'deleted' }, auth.session.tenantId)
     
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete service', missing: 'Service not found', relatedRecord: 'This service is used by a booking and cannot be deleted' })
   }
 }

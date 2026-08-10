@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaBranchRepository } from '@repo/db'
 import { CreateBranchSchema, UpdateBranchSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const branchRepository = new PrismaBranchRepository(db)
 
@@ -12,9 +13,8 @@ export async function GET(req: NextRequest) {
     
     const branches = await branchRepository.findManyByTenant(auth.session.tenantId)
     return NextResponse.json(branches)
-  } catch (error: any) {
-    console.error('Fetch branches failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch branches' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch branches' })
   }
 }
 
@@ -28,9 +28,8 @@ export async function POST(req: NextRequest) {
     
     const branch = await branchRepository.create(auth.session.tenantId, validatedData)
     return NextResponse.json(branch, { status: 201 })
-  } catch (error: any) {
-    console.error('Create branch failed:', error)
-    return NextResponse.json({ error: 'Failed to create branch' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to create branch', conflict: 'A branch with these details already exists' })
   }
 }
 
@@ -44,9 +43,8 @@ export async function PUT(req: NextRequest) {
     
     const updated = await branchRepository.update(auth.session.tenantId, validatedData.id, validatedData)
     return NextResponse.json(updated)
-  } catch (error: any) {
-    console.error('Update branch failed:', error)
-    return NextResponse.json({ error: 'Failed to update branch' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update branch', conflict: 'A branch with these details already exists', missing: 'Branch not found' })
   }
 }
 
@@ -61,9 +59,8 @@ export async function DELETE(req: NextRequest) {
     
     await branchRepository.delete(auth.session.tenantId, id)
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error('Delete branch failed:', error)
-    return NextResponse.json({ error: 'Failed to delete branch' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to delete branch', missing: 'Branch not found', relatedRecord: 'This branch is still used by another record and cannot be deleted' })
   }
 }
 

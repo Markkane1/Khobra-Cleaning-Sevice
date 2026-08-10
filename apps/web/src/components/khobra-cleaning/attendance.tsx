@@ -37,6 +37,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV, csvDate } from '@/lib/csv-export'
 import { useAppStore } from '@/store/app-store'
+import { apiRequest } from '@/lib/api-client'
+import { CreateLeaveSchema } from '@repo/core'
 
 const attStatusColors : Record<string, string> = {
   present: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -77,12 +79,12 @@ export function Attendance() {
 
   const { data: records = [], isLoading } = useQuery({
     queryKey: ['attendance'],
-    queryFn: () => fetch('/api/khobra-cleaning/attendance').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/attendance'),
   })
 
   const { data: employees = [] } = useQuery({
     queryKey: ['employees'],
-    queryFn: () => fetch('/api/khobra-cleaning/employees').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/employees'),
   })
 
   useEffect(() => {
@@ -94,43 +96,45 @@ export function Attendance() {
 
   const { data: leaveRecords = [] } = useQuery({
     queryKey: ['leaveRecords'],
-    queryFn: () => fetch('/api/khobra-cleaning/leave').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/leave'),
   })
 
   const createLeaveMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['leaveRecords'] }); toast.success('Leave request submitted'); setLeaveOpen(false); setLeaveForm({ employeeId: '', startDate: '', endDate: '', type: 'Annual', days: 1, reason: '' }) },
-    onError: () => toast.error('Failed to submit leave request'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to submit leave request'),
   })
 
   const clockMut = useMutation({
     mutationFn: (data: any) =>
-      fetch('/api/khobra-cleaning/attendance', {
+      apiRequest('/api/khobra-cleaning/attendance', {
         method: data.id ? 'PUT' : 'POST',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      }).then(r => r.json()),
+      }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['attendance'] }); toast.success('Attendance record updated') },
-    onError: () => toast.error('Failed to update attendance record'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update attendance record'),
   })
 
   const deleteAttendanceMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/attendance?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/attendance?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['attendance'] }); toast.success('Attendance record deleted') },
-    onError: () => toast.error('Failed to delete attendance record'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete attendance record'),
   })
 
   const updateLeaveMut = useMutation({
-    mutationFn: (data: any) => fetch('/api/khobra-cleaning/leave', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+    mutationFn: (data: any) => apiRequest('/api/khobra-cleaning/leave', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['leaveRecords'] }); toast.success('Leave status updated') },
-    onError: () => toast.error('Failed to update leave status'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update leave status'),
   })
 
   const deleteLeaveMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/leave?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/leave?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['leaveRecords'] }); toast.success('Leave request deleted') },
-    onError: () => toast.error('Failed to delete leave request'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete leave request'),
   })
+
+  const leaveValidation = CreateLeaveSchema.safeParse(leaveForm)
 
   const handleClockIn = () => {
     if (!clockEmployeeId) { toast.error('Please select a cleaner first'); return }
@@ -247,8 +251,9 @@ export function Attendance() {
                 <div className="grid gap-2"><Label>Reason (optional)</Label><Textarea value={leaveForm.reason} onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })} placeholder="Reason for leave..." /></div>
               </div>
               <DialogFooter>
+                {(createLeaveMut.error || ((leaveForm.employeeId || leaveForm.startDate || leaveForm.endDate) && !leaveValidation.success)) && <p className="text-sm text-destructive sm:mr-auto" role="alert">{createLeaveMut.error instanceof Error ? createLeaveMut.error.message : !leaveValidation.success ? leaveValidation.error.issues[0]?.message : ''}</p>}
                 <Button variant="outline" onClick={() => setLeaveOpen(false)}>Cancel</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => createLeaveMut.mutate(leaveForm)} disabled={!leaveForm.employeeId || !leaveForm.startDate || !leaveForm.endDate}>Submit</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (leaveValidation.success) createLeaveMut.mutate(leaveValidation.data) }} disabled={!leaveValidation.success || createLeaveMut.isPending}>Submit</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

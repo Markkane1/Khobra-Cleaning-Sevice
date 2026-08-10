@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaPaymentRepository } from '@repo/db'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const paymentRepository = new PrismaPaymentRepository(db)
 
@@ -12,8 +13,8 @@ export async function GET(req: NextRequest) {
     let items = await paymentRepository.getPayments(auth.session.tenantId)
     if (auth.session.role === 'customer') items = items.filter((item: any) => item.invoice?.customer?.userId === auth.session.userId)
     return NextResponse.json(items)
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch payments' })
   }
 }
 

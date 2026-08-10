@@ -25,6 +25,7 @@ export async function signUp(
   if (!input.name.trim() || !input.email.trim() || !input.phone.trim() || input.password.length < 8) {
     throw new Error('Name, email, phone, and an 8-character password are required.')
   }
+  if (input.password !== input.confirmPassword) throw new Error('Passwords do not match.')
   if (!input.turnstileToken) throw new Error('Complete the security check.')
 
   const session = await gateway.signUp({

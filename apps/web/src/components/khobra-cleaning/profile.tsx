@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
-  User, Mail, Phone, MapPin, Camera, Calendar, Clock, DollarSign, FileText, Plus, Trash2, Edit2, Shield, CheckCircle2, AlertCircle, ChevronRight, Building, Sparkles, Receipt, Download, CreditCard, Lock, Check, Search, Star, Truck, Award, Briefcase, Navigation, BadgeCheck, Activity,
+  User, Mail, Phone, MapPin, Camera, Calendar, Clock, DollarSign, FileText, Plus, Trash2, Edit2, Shield, CheckCircle2, AlertCircle, ChevronRight, Building, Sparkles, Receipt, Download, CreditCard, Lock, Check, Search, Star, Truck, Award, Briefcase, Navigation, BadgeCheck, Activity, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ChangePasswordSchema, CustomerAddressSchema, UpdateOwnProfileSchema } from '@repo/core'
 import { useAppStore, type RoleId } from '@/store/app-store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { downloadBlob } from '@/lib/csv-export'
+import { apiRequest } from '@/lib/api-client'
 
 export interface CustomerAddress {
   id: string
@@ -45,6 +47,13 @@ export function CustomerProfile() {
   const [activeTab, setActiveTab] = useState<string>('info')
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null)
   const [newAddrOpen, setNewAddrOpen] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingAddress, setSavingAddress] = useState(false)
+  const [savingSecurity, setSavingSecurity] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [addressError, setAddressError] = useState<string | null>(null)
+  const [securityError, setSecurityError] = useState<string | null>(null)
 
   // Profile Form State
   const [profileForm, setProfileForm] = useState({
@@ -60,28 +69,7 @@ export function CustomerProfile() {
   })
 
   // Multiple Addresses State for Customer
-  const [addresses, setAddresses] = useState<CustomerAddress[]>([
-    {
-      id: 'addr-1',
-      label: 'Home',
-      street: 'Marina Promenade, Street 4',
-      building: 'Delphine Tower',
-      apt: 'Apt 1402',
-      city: 'Dubai',
-      area: 'Dubai Marina',
-      isDefault: true,
-    },
-    {
-      id: 'addr-2',
-      label: 'Office',
-      street: 'Al Abraj Street',
-      building: 'Business Bay Tower 2',
-      apt: 'Suite 804',
-      city: 'Dubai',
-      area: 'Business Bay',
-      isDefault: false,
-    },
-  ])
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([])
 
   // New Address Form
   const [addrForm, setAddrForm] = useState<Partial<CustomerAddress>>({
@@ -100,16 +88,52 @@ export function CustomerProfile() {
     newPassword: '',
     confirmPassword: '',
   })
+  const profileValidation = UpdateOwnProfileSchema.safeParse({ name: profileForm.name, email: profileForm.email, phone: profileForm.phone })
+  const pendingAddress = {
+    label: addrForm.label,
+    address: [addrForm.building, addrForm.apt, addrForm.street].filter(Boolean).join(', '),
+    city: addrForm.city,
+    area: addrForm.area,
+  }
+  const addressValidation = CustomerAddressSchema.safeParse(pendingAddress)
+  const addressContextError = !addrForm.area?.trim() ? 'Area is required' : ''
+  const passwordValidation = ChangePasswordSchema.safeParse({ currentPassword: secForm.currentPassword, newPassword: secForm.newPassword })
+  const passwordMatchError = secForm.confirmPassword && secForm.newPassword !== secForm.confirmPassword ? 'New passwords do not match' : ''
 
   // Data Queries
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
     enabled: userRole === 'customer',
   })
+  const { data: customerProfiles = [] } = useQuery({
+    queryKey: ['customers', 'profile'],
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/customers'),
+    enabled: userRole === 'customer',
+  })
+  const customerProfile = customerProfiles[0]
+  const { data: authProfile } = useQuery({
+    queryKey: ['auth-profile'],
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/auth/me'),
+  })
+
+  useEffect(() => {
+    if (authProfile?.user?.avatarUrl) setProfileForm(current => ({ ...current, avatar: authProfile.user.avatarUrl }))
+  }, [authProfile])
+
+  useEffect(() => {
+    if (!customerProfile) return
+    const saved = Array.isArray(customerProfile.addresses) && customerProfile.addresses.length
+      ? customerProfile.addresses
+      : customerProfile.address
+        ? [{ label: 'Primary', address: customerProfile.address, city: customerProfile.city, area: customerProfile.area }]
+        : []
+    setAddresses(saved.map((address: any, index: number) => ({ id: `addr-${index}`, label: address.label || (index ? `Address ${index + 1}` : 'Primary'), street: address.address, building: '', apt: '', city: address.city || '', area: address.area || '', isDefault: index === 0 })))
+    setProfileForm(current => ({ ...current, name: customerProfile.user?.name || current.name, email: customerProfile.user?.email || current.email, phone: customerProfile.phone || current.phone }))
+  }, [customerProfile])
   const { data: settings } = useQuery({
     queryKey: ['settings'],
-    queryFn: () => fetch('/api/khobra-cleaning/settings').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings'),
   })
   const currency = settings?.tenant?.currency || 'AED'
 
@@ -127,39 +151,81 @@ export function CustomerProfile() {
 
   const { data: attendanceRecords = [] } = useQuery({
     queryKey: ['attendance'],
-    queryFn: () => fetch('/api/khobra-cleaning/attendance').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/attendance'),
     enabled: userRole === 'cleaner',
   })
 
   const { data: trips = [] } = useQuery({
     queryKey: ['trips'],
-    queryFn: () => fetch('/api/khobra-cleaning/trips').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/trips'),
     enabled: userRole === 'driver',
   })
 
   // Picture Upload Handler
-  const handlePictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      const url = URL.createObjectURL(file)
-      setProfileForm(prev => ({ ...prev, avatar: url }))
-      toast.success('Profile picture updated!')
+    e.target.value = ''
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return toast.error('Use a JPG, PNG, or WebP image')
+    setUploadingAvatar(true)
+    try {
+      const formData = new FormData()
+      formData.append('folder', 'profile-photos')
+      formData.append('file', file)
+      const uploaded = await apiRequest<{ url: string }>('/api/khobra-cleaning/upload', { method: 'POST', body: formData })
+      await apiRequest('/api/khobra-cleaning/auth/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatarUrl: uploaded.url }) })
+      setProfileForm(prev => ({ ...prev, avatar: uploaded.url }))
+      qc.invalidateQueries({ queryKey: ['auth-profile'] })
+      toast.success('Profile photo updated!')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not upload profile photo')
+    } finally {
+      setUploadingAvatar(false)
     }
   }
 
   // Profile Update Submission
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (currentUser) {
-      setUser({ ...currentUser, name: profileForm.name, email: profileForm.email })
+    setProfileError(null)
+    if (!profileValidation.success) {
+      setProfileError(profileValidation.error.issues[0]?.message || 'Check the profile fields')
+      return
     }
-    toast.success('Profile information updated successfully!')
+    setSavingProfile(true)
+    try {
+      if (userRole === 'customer') {
+        if (!customerProfile) throw new Error('Customer profile could not be loaded')
+        const savedAddresses = addresses.map(item => ({ label: item.label, address: [item.building, item.apt, item.street].filter(Boolean).join(', '), city: item.city, area: item.area }))
+        await apiRequest('/api/khobra-cleaning/customers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: customerProfile.id, name: profileForm.name, email: profileForm.email, phone: profileForm.phone, addresses: savedAddresses, address: savedAddresses[0]?.address || '', city: savedAddresses[0]?.city || '', area: savedAddresses[0]?.area || '' }),
+        })
+        qc.invalidateQueries({ queryKey: ['customers'] })
+      } else {
+        await apiRequest('/api/khobra-cleaning/auth/me', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(profileValidation.data),
+        })
+      }
+      if (currentUser) setUser({ ...currentUser, name: profileForm.name, email: profileForm.email })
+      toast.success('Profile information updated successfully!')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update profile'
+      setProfileError(message)
+      toast.error(message)
+    } finally {
+      setSavingProfile(false)
+    }
   }
 
   // Add Address Handler
-  const handleAddAddress = () => {
-    if (!addrForm.street || !addrForm.area) {
-      toast.error('Please enter street and area')
+  const handleAddAddress = async () => {
+    setAddressError(null)
+    if (addressContextError || !addressValidation.success) {
+      setAddressError(addressContextError || (!addressValidation.success ? addressValidation.error.issues[0]?.message : '') || 'Check the address fields')
       return
     }
     const newAddr: CustomerAddress = {
@@ -172,29 +238,60 @@ export function CustomerProfile() {
       area: addrForm.area || '',
       isDefault: addrForm.isDefault || addresses.length === 0,
     }
-    setAddresses(prev => [...prev, newAddr])
-    setNewAddrOpen(false)
-    setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', isDefault: false })
-    toast.success('New address added!')
+    if (!customerProfile) {
+      setAddressError('Customer profile could not be loaded')
+      return
+    }
+    const nextAddresses = [...addresses, newAddr].map((item, index) => ({
+      label: item.label || (index ? `Address ${index + 1}` : 'Primary'),
+      address: [item.building, item.apt, item.street].filter(Boolean).join(', '),
+      city: item.city,
+      area: item.area,
+    }))
+    setSavingAddress(true)
+    try {
+      await apiRequest('/api/khobra-cleaning/customers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: customerProfile.id, name: customerProfile.user.name, email: customerProfile.user.email, phone: customerProfile.phone || '', addresses: nextAddresses, address: nextAddresses[0]?.address || '', city: nextAddresses[0]?.city || '', area: nextAddresses[0]?.area || '' }),
+      })
+      setAddresses([...addresses, newAddr].map((item, index) => ({ ...item, isDefault: index === 0 })))
+      setNewAddrOpen(false)
+      setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', isDefault: false })
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      toast.success(addresses.length ? 'New address added!' : 'Primary address added!')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save address'
+      setAddressError(message)
+      toast.error(message)
+    } finally {
+      setSavingAddress(false)
+    }
   }
 
   // Handle Security Update
   const handleSaveSecurity = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (secForm.newPassword !== secForm.confirmPassword) {
-      toast.error('New passwords do not match')
+    setSecurityError(null)
+    if (passwordMatchError || !passwordValidation.success) {
+      setSecurityError(passwordMatchError || (!passwordValidation.success ? passwordValidation.error.issues[0]?.message : '') || 'Check the password fields')
       return
     }
+    setSavingSecurity(true)
     try {
-      await fetch('/api/khobra-cleaning/auth/password', {
+      await apiRequest('/api/khobra-cleaning/auth/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword: secForm.currentPassword, newPassword: secForm.newPassword }),
+        body: JSON.stringify(passwordValidation.data),
       })
       toast.success('Password changed successfully!')
       setSecForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not change password')
+      const message = error instanceof Error ? error.message : 'Could not change password'
+      setSecurityError(message)
+      toast.error(message)
+    } finally {
+      setSavingSecurity(false)
     }
   }
 
@@ -228,9 +325,9 @@ export function CustomerProfile() {
                   </AvatarFallback>
                 )}
               </Avatar>
-              <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 p-1.5 rounded-full bg-white text-emerald-700 shadow-md cursor-pointer hover:bg-emerald-50 transition-colors">
-                <Camera className="h-4 w-4" />
-                <input id="avatar-upload" type="file" accept="image/*" className="hidden" onChange={handlePictureUpload} />
+              <label htmlFor="avatar-upload" aria-label="Upload profile photo" className={`absolute bottom-0 right-0 grid h-11 w-11 place-items-center rounded-full bg-white text-emerald-700 shadow-md transition-colors hover:bg-emerald-50 ${uploadingAvatar ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}>
+                {uploadingAvatar ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                <input id="avatar-upload" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handlePictureUpload} disabled={uploadingAvatar} />
               </label>
             </div>
 
@@ -271,7 +368,7 @@ export function CustomerProfile() {
               {userRole === 'customer' && (
                 <p className="text-emerald-200 text-xs flex items-center justify-center sm:justify-start gap-1 pt-1">
                   <MapPin className="h-3.5 w-3.5" />
-                  {addresses.find(a => a.isDefault)?.area || 'Dubai Marina'}, Dubai, UAE
+                  {addresses[0] ? [addresses[0].area, addresses[0].city, 'UAE'].filter(Boolean).join(', ') : 'Add your primary address'}
                 </p>
               )}
             </div>
@@ -336,7 +433,7 @@ export function CustomerProfile() {
 
           <TabsTrigger value="security" className="gap-2">
             <Lock className="h-4 w-4" />
-            <span>Security</span>
+            <span>Change Password</span>
           </TabsTrigger>
         </TabsList>
 
@@ -384,9 +481,10 @@ export function CustomerProfile() {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2">
-                    <Check className="h-4 w-4" />Save Profile Changes
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+                  {profileError && <p className="text-sm text-destructive sm:mr-auto" role="alert">{profileError}</p>}
+                  <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2" disabled={!profileValidation.success || savingProfile}>
+                    <Check className="h-4 w-4" />{savingProfile ? 'Saving...' : 'Save Profile Changes'}
                   </Button>
                 </div>
               </form>
@@ -403,7 +501,7 @@ export function CustomerProfile() {
                 <p className="text-xs text-muted-foreground">Configure multiple residential or office addresses for cleaning bookings.</p>
               </div>
 
-              <Dialog open={newAddrOpen} onOpenChange={setNewAddrOpen}>
+              <Dialog open={newAddrOpen} onOpenChange={(open) => { setNewAddrOpen(open); if (!open) setAddressError(null) }}>
                 <DialogTrigger asChild>
                   <Button className="bg-emerald-600 hover:bg-emerald-700 gap-2">
                     <Plus className="h-4 w-4" />Add New Address
@@ -465,14 +563,18 @@ export function CustomerProfile() {
                     </div>
                   </div>
                   <DialogFooter>
+                    {(addressError || ((addrForm.street || addrForm.area) && (addressContextError || !addressValidation.success))) && (
+                      <p className="text-sm text-destructive sm:mr-auto" role="alert">{addressError || addressContextError || (!addressValidation.success ? addressValidation.error.issues[0]?.message : '')}</p>
+                    )}
                     <Button variant="outline" onClick={() => setNewAddrOpen(false)}>Cancel</Button>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddAddress}>Save Address</Button>
+                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddAddress} disabled={Boolean(addressContextError) || !addressValidation.success || savingAddress}>{savingAddress ? 'Saving...' : 'Save Address'}</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {!addresses.length && <Card className="md:col-span-2 border-dashed"><CardContent className="p-6 text-center text-sm text-muted-foreground">Add a primary address before creating your first booking.</CardContent></Card>}
               {addresses.map((addr) => (
                 <Card key={addr.id} className={`border transition-all ${addr.isDefault ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-sm' : ''}`}>
                   <CardContent className="p-4 space-y-3">
@@ -674,12 +776,12 @@ export function CustomerProfile() {
           </TabsContent>
         )}
 
-        {/* Tab 4: Security (All Roles) */}
+        {/* Change Password (All Roles) */}
         <TabsContent value="security" className="mt-4">
           <Card className="border-0 shadow-sm max-w-xl">
             <CardHeader>
-              <CardTitle className="text-base">Account Security & Password</CardTitle>
-              <CardDescription>Update your password and manage account security settings.</CardDescription>
+              <CardTitle className="text-base">Change Password</CardTitle>
+              <CardDescription>Enter your current password, then choose a new one.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSaveSecurity} className="space-y-4">
@@ -698,8 +800,11 @@ export function CustomerProfile() {
                   <Input type="password" value={secForm.confirmPassword} onChange={e => setSecForm({ ...secForm, confirmPassword: e.target.value })} required />
                 </div>
 
-                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2 text-xs">
-                  <Lock className="h-3.5 w-3.5" />Update Password
+                {(securityError || ((secForm.currentPassword || secForm.newPassword || secForm.confirmPassword) && (passwordMatchError || !passwordValidation.success))) && (
+                  <p className="text-sm text-destructive" role="alert">{securityError || passwordMatchError || (!passwordValidation.success ? passwordValidation.error.issues[0]?.message : '')}</p>
+                )}
+                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 gap-2 text-xs" disabled={Boolean(passwordMatchError) || !passwordValidation.success || savingSecurity}>
+                  <Lock className="h-3.5 w-3.5" />{savingSecurity ? 'Updating...' : 'Update Password'}
                 </Button>
               </form>
             </CardContent>

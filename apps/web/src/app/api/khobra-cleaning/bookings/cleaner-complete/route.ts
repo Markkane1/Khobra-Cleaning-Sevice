@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { z } from 'zod'
 import { db, notifyBookingStatusChange } from '@repo/db'
 import { CleanerCompleteBookingSchema, calculateMultiServicePricing, canCleanerCompleteBooking } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
@@ -135,10 +135,7 @@ export async function POST(req: NextRequest) {
     broadcast('booking:updated', { bookingId: result.booking.id, bookingNo: result.booking.bookingNo, status: 'completed' }, auth.session.tenantId)
 
     return NextResponse.json(result, { status: 200 })
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || 'Invalid completion request' }, { status: 400 })
-    }
-    return NextResponse.json({ error: error.message || 'Failed to complete booking' }, { status: error.status || 400 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to complete booking', missing: 'Booking or cleaner not found', domainErrorStatus: 400 })
   }
 }

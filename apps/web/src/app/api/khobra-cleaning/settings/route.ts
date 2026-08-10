@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaSettingsRepository } from '@repo/db'
 import { UpdateSettingsSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
+import { apiErrorResponse } from '@/lib/api-error'
 
 const settingsRepository = new PrismaSettingsRepository(db)
 
@@ -21,9 +22,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(settings)
-  } catch (error: any) {
-    console.error('Fetch settings failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to fetch settings', missing: 'Tenant not found' })
   }
 }
 
@@ -38,12 +38,8 @@ export async function PUT(req: NextRequest) {
     const response = await settingsRepository.updateSettings(auth.session.tenantId, validatedData)
     
     return NextResponse.json(response)
-  } catch (error: any) {
-    if (error.message === 'Tenant not found') {
-      return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
-    }
-    console.error('Update settings failed:', error)
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: 'Failed to update settings', missing: 'Tenant not found', conflict: 'These settings conflict with an existing tenant' })
   }
 }
 

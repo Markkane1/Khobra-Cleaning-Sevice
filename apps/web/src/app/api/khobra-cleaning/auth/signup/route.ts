@@ -4,18 +4,15 @@ import { createSessionToken, hashPassword, SESSION_TTL_SECONDS } from '@/lib/aut
 import { verifyTurnstile } from '@/lib/turnstile'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getPublicTenant } from '@/lib/public-tenant'
-import { EmailSchema } from '@repo/core'
+import { SignupSchema } from '@repo/core'
 import { getClientIp } from '@/lib/client-ip'
+import { apiErrorResponse } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
     if (!(await checkRateLimit(`signup:${ip}`, 5, 60_000)).allowed) return NextResponse.json({ error: 'Too many signup attempts. Please wait and try again.' }, { status: 429 })
-    const { name, email, phone, city, area, address, password, turnstileToken } = await req.json()
-
-    if (!name || !email || !phone || typeof password !== 'string' || password.length < 8) {
-      return NextResponse.json({ error: 'Name, email, phone, and a password of at least 8 characters are required' }, { status: 400 })
-    }
+    const { name, email, phone, password, turnstileToken } = SignupSchema.parse(await req.json())
     if (!await verifyTurnstile(turnstileToken, req.headers.get('cf-connecting-ip') || undefined)) {
       return NextResponse.json({ error: 'Please complete the security check again' }, { status: 400 })
     }
@@ -25,18 +22,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 400 })
     }
 
-    const normalizedEmail = EmailSchema.safeParse(email)
-    if (!normalizedEmail.success) {
-      return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 })
-    }
-    const existingUser = await db.user.findUnique({ where: { email: normalizedEmail.data } })
+    const existingUser = await db.user.findUnique({ where: { email } })
     if (existingUser) {
-      return NextResponse.json({ error: 'An account with this email already exists' }, { status: 400 })
+      return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 })
     }
 
     const { user, customer } = await db.$transaction(async tx => {
-      const user = await tx.user.create({ data: { tenantId: tenant.id, email: normalizedEmail.data, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
-      const customer = await tx.customer.create({ data: { tenantId: tenant.id, userId: user.id, phone, city, area, address, status: 'active' } })
+      const user = await tx.user.create({ data: { tenantId: tenant.id, email, passwordHash: hashPassword(password), name, phone, role: 'customer', status: 'active' } })
+      const customer = await tx.customer.create({ data: { tenantId: tenant.id, userId: user.id, phone: phone.trim(), status: 'active' } })
       return { user, customer }
     })
 
@@ -69,8 +62,8 @@ export async function POST(req: NextRequest) {
     })
 
     return response
-  } catch (error: any) {
+  } catch (error) {
     console.error('Signup error:', error)
-    return NextResponse.json({ error: 'Signup failed' }, { status: 500 })
+    return apiErrorResponse(error, { fallback: 'Signup failed' })
   }
 }

@@ -7,6 +7,7 @@ import {
   Building2, Plus, Phone, MapPin, Search, Pencil, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateBranchSchema, UpdateBranchSchema } from '@repo/core'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +23,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { apiRequest } from '@/lib/api-client'
 
 const emptyForm = {
   name: '',
@@ -45,22 +47,22 @@ export function Branches() {
 
   const { data: branches = [], isLoading } = useQuery({
     queryKey: ['branches'],
-    queryFn: () => fetch('/api/khobra-cleaning/branches').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/branches'),
   })
 
   const createMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/branches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/branches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['branches'] })
       toast.success('Branch created')
       setOpen(false)
       setForm(emptyForm)
     },
-    onError: () => toast.error('Failed to create branch'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create branch'),
   })
 
   const updateMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/branches', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/branches', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['branches'] })
       toast.success('Branch updated')
@@ -68,22 +70,23 @@ export function Branches() {
       setForm(emptyForm)
       setEditId(null)
     },
-    onError: () => toast.error('Failed to update branch'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update branch'),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) => fetch(`/api/khobra-cleaning/branches?id=${id}`, { method: 'DELETE' }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/branches?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['branches'] })
       toast.success('Branch deleted')
     },
-    onError: () => toast.error('Failed to delete branch'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete branch'),
   })
 
   const handleSubmit = () => {
-    if (!form.name.trim()) return
-    if (editId) updateMut.mutate({ id: editId, ...form })
-    else createMut.mutate(form)
+    const result = editId ? UpdateBranchSchema.safeParse({ id: editId, ...form }) : CreateBranchSchema.safeParse(form)
+    if (!result.success) return
+    if (editId) updateMut.mutate(result.data)
+    else createMut.mutate(result.data)
   }
 
   const handleEdit = (b: any) => {
@@ -102,6 +105,8 @@ export function Branches() {
     const s = search.toLowerCase()
     return b.name?.toLowerCase().includes(s) || b.address?.toLowerCase().includes(s) || b.phone?.includes(s)
   }), [branches, search])
+  const validation = editId ? UpdateBranchSchema.safeParse({ id: editId, ...form }) : CreateBranchSchema.safeParse(form)
+  const saveError = createMut.error || updateMut.error
 
   return (
     <div className="space-y-6">
@@ -146,8 +151,13 @@ export function Branches() {
               </div>
             </div>
             <DialogFooter>
+              {(saveError || (form.name.length > 0 && !validation.success)) && (
+                <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                  {saveError instanceof Error ? saveError.message : !validation.success ? validation.error.issues[0]?.message : ''}
+                </p>
+              )}
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!form.name.trim()}>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmit} disabled={!validation.success || createMut.isPending || updateMut.isPending}>
                 {editId ? 'Update' : 'Create'}
               </Button>
             </DialogFooter>

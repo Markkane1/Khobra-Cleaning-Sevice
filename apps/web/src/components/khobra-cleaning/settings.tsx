@@ -25,6 +25,8 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { apiRequest } from '@/lib/api-client'
+import { UpdateSettingsSchema } from '@repo/core'
 
 const fadeUp = {
   initial: { opacity: 0, y: 16 },
@@ -51,7 +53,7 @@ export function Settings() {
 
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['tenant-info'],
-    queryFn: () => fetch('/api/khobra-cleaning/settings').then(res => res.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings'),
     staleTime: 60000,
   })
   const tenant = settingsData?.tenant
@@ -94,8 +96,7 @@ export function Settings() {
               ? '/api/khobra-cleaning/inventory'
               : `/api/khobra-cleaning/${e.key}`
             try {
-              const res = await fetch(url)
-              const data = await res.json()
+              const data = await apiRequest<any>(url)
               const count = Array.isArray(data) ? data.length : (data?.records?.length || data?.length || 0)
               return { label: e.label, count }
             } catch {
@@ -116,23 +117,25 @@ export function Settings() {
 
   const qc = useQueryClient()
   const saveSettingsMut = useMutation({
-    mutationFn: (d: any) => fetch('/api/khobra-cleaning/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.json()),
+    mutationFn: (d: any) => apiRequest('/api/khobra-cleaning/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dashboard'] }); toast.success('Company settings saved to database') },
-    onError: () => toast.error('Failed to save settings'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to save settings'),
+  })
+
+  const settingsValidation = UpdateSettingsSchema.safeParse({
+    name: companyName,
+    slug: companySlug,
+    currency: companyCurrency,
+    locale: companyLocale,
+    timezone: companyTimezone,
+    taxRate: Number(companyTaxRate),
+    firstBookingTime,
+    lastWorkingTime,
+    settings: { phone: companyPhone, address: companyAddress },
   })
 
   const handleSaveCompany = () => {
-    saveSettingsMut.mutate({
-      name: companyName,
-      slug: companySlug,
-      currency: companyCurrency,
-      locale: companyLocale,
-      timezone: companyTimezone,
-      taxRate: Number(companyTaxRate),
-      firstBookingTime,
-      lastWorkingTime,
-      settings: { phone: companyPhone, address: companyAddress },
-    })
+    if (settingsValidation.success) saveSettingsMut.mutate(settingsValidation.data)
   }
 
   const handleToggleTheme = (checked: boolean) => {
@@ -247,10 +250,12 @@ export function Settings() {
                       </div>
                     ))}
                     <Separator />
-                    <div className="flex justify-end pt-2">
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      {(saveSettingsMut.error || !settingsValidation.success) && <p className="text-sm text-destructive" role="alert">{saveSettingsMut.error instanceof Error ? saveSettingsMut.error.message : !settingsValidation.success ? settingsValidation.error.issues[0]?.message : ''}</p>}
                       <Button
                         className="bg-emerald-600 hover:bg-emerald-700"
                         onClick={handleSaveCompany}
+                        disabled={!settingsValidation.success || saveSettingsMut.isPending}
                       >
                         <Save className="h-4 w-4 mr-2" />
                         Save Changes
@@ -313,10 +318,12 @@ export function Settings() {
 
                   <Separator />
 
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-3">
+                    {(saveSettingsMut.error || !settingsValidation.success) && <p className="text-sm text-destructive" role="alert">{saveSettingsMut.error instanceof Error ? saveSettingsMut.error.message : !settingsValidation.success ? settingsValidation.error.issues[0]?.message : ''}</p>}
                     <Button
                       className="bg-emerald-600 hover:bg-emerald-700"
                       onClick={handleSaveCompany}
+                      disabled={!settingsValidation.success || saveSettingsMut.isPending}
                     >
                       <Save className="h-4 w-4 mr-2" />
                       Save Booking Hours

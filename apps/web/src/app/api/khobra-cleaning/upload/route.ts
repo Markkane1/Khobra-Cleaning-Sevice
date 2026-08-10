@@ -44,14 +44,15 @@ export async function POST(request: NextRequest) {
     const purpose = String(formData.get('folder') || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'general'
     
     const allowedPurposes = auth.session.role === 'admin'
-      ? ['general', 'service-gallery', 'service-hero', 'inventory', 'payment-proofs']
-      : auth.session.role === 'customer' ? ['general', 'payment-proofs'] : ['general']
+      ? ['general', 'profile-photos', 'service-gallery', 'service-hero', 'inventory', 'payment-proofs']
+      : auth.session.role === 'customer' ? ['general', 'profile-photos', 'payment-proofs'] : ['general', 'profile-photos']
     if (!allowedPurposes.includes(purpose)) return NextResponse.json({ error: 'Forbidden. Role cannot upload to this folder.' }, { status: 403 })
 
     const validation = FileValidationSchema.safeParse({ name: file.name, type: file.type, size: file.size })
     if (!validation.success) {
       return NextResponse.json({ error: validation.error.issues[0]?.message || 'Invalid file.' }, { status: 400 })
     }
+    if (purpose === 'profile-photos' && !file.type.startsWith('image/')) return NextResponse.json({ error: 'Profile photos must be images.' }, { status: 400 })
 
     const bytes = new Uint8Array(await file.arrayBuffer())
     if (!isValidSignature(file.type, bytes)) {

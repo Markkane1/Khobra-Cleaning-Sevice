@@ -98,20 +98,9 @@ export const CompanyBankAccountSchema = z.object({
   displayOrder: z.coerce.number().int().min(0).max(999).default(0),
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
-  isDeleted: z.boolean().optional(),
-  createdBy: z.string().optional(),
-  updatedBy: z.string().optional(),
-  activatedBy: z.string().optional(),
-  deactivatedBy: z.string().optional(),
-  deletedBy: z.string().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
-  activatedAt: z.string().optional(),
-  deactivatedAt: z.string().optional(),
-  deletedAt: z.string().optional(),
 });
 
-export type CompanyBankAccountDTO = z.infer<typeof CompanyBankAccountSchema>;
+export type CompanyBankAccountDTO = z.infer<typeof CompanyBankAccountSchema> & { isDeleted?: boolean };
 
 export function filterActiveBankAccounts(accounts: CompanyBankAccountDTO[] = []): CompanyBankAccountDTO[] {
   return accounts

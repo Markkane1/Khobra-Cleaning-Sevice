@@ -340,6 +340,26 @@ test('complete operational workflow passes through real API routes and persisten
     assert.equal(revokedSession.response.status, 200)
     assert.equal(revokedSession.data.authenticated, false, 'Logout must revoke the server session, not only clear the client token')
 
+    await db.service.update({ where: { id: service.id }, data: { skills: 'specialist-only' } })
+    const manualBookingDate = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)
+    result = await request('/bookings', auth.admin, 'POST', {
+      customerId: customer.id,
+      serviceId: service.id,
+      serviceIds: [service.id],
+      preferredEmployeeIds: [otherCleaner.id],
+      employeeCount: 1,
+      bookingType: 'one_time',
+      scheduledDate: manualBookingDate,
+      startTime: '10:00',
+      endTime: '12:00',
+      address: 'Villa 10',
+      city: 'Dubai',
+    })
+    assert.equal(result.response.status, 201, `Cleaner availability must not depend on skills: ${JSON.stringify(result.data)}`)
+    ids.bookingIds.push(result.data.id)
+    assert.equal(result.data.createdBy, adminUser.id, 'Booking creator must be the authenticated user ID')
+    assert.equal(result.data.assignments[0].employeeId, otherCleaner.id)
+
     const finalCash = await db.booking.findUniqueOrThrow({ where: { id: cashBooking.id }, include: { invoices: true, pickupAlerts: true, rating: true, statusHistory: true } })
     assert.equal(finalCash.status, 'completed')
     assert.equal(finalCash.invoices[0].status, 'paid')
@@ -376,6 +396,7 @@ test('complete operational workflow passes through real API routes and persisten
     await db.assignment.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.booking.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.service.deleteMany({ where: { tenantId: ids.tenantId } })
+    await db.referenceSequence.deleteMany({ where: { tenantId: ids.tenantId } })
     await db.appSettings.deleteMany({ where: { key: `company_bank_accounts_${ids.tenantId}` } })
     await db.appSettings.deleteMany({ where: { key: { startsWith: `${ids.tenantId}:` } } })
     await db.employee.deleteMany({ where: { tenantId: ids.tenantId } })

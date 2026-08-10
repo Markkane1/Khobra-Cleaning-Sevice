@@ -16,9 +16,7 @@ export interface SignupInput {
   name: string
   email: string
   phone: string
-  city: string
-  area: string
-  address: string
   password: string
+  confirmPassword: string
   turnstileToken: string
 }

@@ -10,6 +10,7 @@ import {
   Upload, X, FileText, Paperclip, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CreateComplaintSchema, UpdateComplaintSchema } from '@repo/core'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +35,7 @@ import { Separator } from '@/components/ui/separator'
 import { useSortable } from '@/hooks/use-sort'
 import { exportToCSV } from '@/lib/csv-export'
 import { useAppStore } from '@/store/app-store'
+import { apiRequest } from '@/lib/api-client'
 
 const priorityColors : Record<string, string> = {
   low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -151,52 +153,52 @@ export function Complaints() {
   const [formDescription, setFormDescription] = useState('')
 
   // Attachment state
-  const [attachments, setAttachments] = useState<Array<{url: string; name: string; size: number; type: string}>>([])
+  const [attachments, setAttachments] = useState<Array<{file: File; name: string; size: number; type: string}>>([])
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['complaints'],
-    queryFn: () => fetch('/api/khobra-cleaning/complaints').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/complaints'),
   })
 
   const { data: customers= [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => fetch('/api/khobra-cleaning/customers').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/customers'),
     enabled: currentRole !== 'cleaner',
   })
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['bookings'],
-    queryFn: () => fetch('/api/khobra-cleaning/bookings').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/bookings'),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/complaints', {
+      apiRequest('/api/khobra-cleaning/complaints', {
         method: 'PUT',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to update complaint'); return body }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
       toast.success('Complaint updated successfully')
       setDetailOpen(false)
     },
-    onError: () => toast.error('Failed to update complaint'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update complaint'),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE' }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to delete complaint'); return body }),
+      apiRequest(`/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
       toast.success('Complaint deleted')
       setDetailOpen(false)
     },
-    onError: () => toast.error('Failed to delete complaint'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete complaint'),
   })
 
   const createMut = useMutation({
@@ -206,9 +208,8 @@ export function Complaints() {
       for (const file of attachments) {
         try {
           const fd = new FormData()
-          fd.append('file', file as unknown as File)
-          const res = await fetch('/api/khobra-cleaning/upload', { method: 'POST', body: fd })
-          const data = await res.json()
+          fd.append('file', file.file)
+          const data = await apiRequest<{ url: string }>('/api/khobra-cleaning/upload', { method: 'POST', body: fd })
           if (data.url) {
             uploadResults.push({ url: data.url, name: file.name, size: file.size, type: file.type })
           }
@@ -216,11 +217,11 @@ export function Complaints() {
           toast.error(`Failed to upload ${file.name}`)
         }
       }
-      return fetch('/api/khobra-cleaning/complaints', {
+      return apiRequest('/api/khobra-cleaning/complaints', {
         method: 'POST',
         headers : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...d, attachments: JSON.stringify(uploadResults) }),
-      }).then(async r => { const body = await r.json(); if (!r.ok) throw new Error(body.error || 'Failed to file complaint'); return body })
+      })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['complaints'] })
@@ -229,7 +230,7 @@ export function Complaints() {
       setNewDialogOpen(false)
       resetForm()
     },
-    onError: () => toast.error('Failed to file complaint'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to file complaint'),
   })
 
   const resetForm = () => {
@@ -247,23 +248,32 @@ export function Complaints() {
     if (newStatus) data.status = newStatus
     if (newResolution) data.resolution = newResolution
     if (newStatus === 'resolved') data.resolvedAt = new Date().toISOString()
-    updateMut.mutate(data)
+    const result = UpdateComplaintSchema.safeParse(data)
+    if (result.success) updateMut.mutate(result.data)
   }
 
   const handleFileNew = () => {
-    if ((currentRole === 'cleaner' ? !formBookingId : !formCustomerId) || !formCategory || !formDescription) {
-      toast.error('Please fill all required fields')
-      return
-    }
+    if (complaintContextError || !complaintValidation.success) return
     createMut.mutate({
-      customerId: formCustomerId,
+      ...complaintValidation.data,
+      customerId: formCustomerId || undefined,
       bookingId: formBookingId || undefined,
-      category: formCategory,
-      priority: formPriority,
-      description: formDescription,
-      status: 'open',
     })
   }
+
+  const complaintInput = {
+    customerId: formCustomerId || undefined,
+    bookingId: formBookingId || undefined,
+    category: formCategory || undefined,
+    priority: formPriority,
+    description: formDescription,
+    status: 'open' as const,
+  }
+  const complaintValidation = CreateComplaintSchema.safeParse(complaintInput)
+  const complaintContextError = currentRole === 'cleaner'
+    ? (!formBookingId ? 'Booking is required' : '')
+    : (!formCustomerId ? 'Customer is required' : '')
+  const showComplaintValidation = Boolean(formCustomerId || formBookingId || formCategory || formDescription)
 
   const handleFilesSelected = (files: FileList | null) => {
     if (!files) return
@@ -279,7 +289,7 @@ export function Complaints() {
       }
       // Avoid duplicates
       if (attachments.some(a => a.name === file.name && a.size === file.size)) continue
-      const fileEntry = { url: '', name: file.name, size: file.size, type: file.type } as {url: string; name: string; size: number; type: string}
+      const fileEntry = { file, name: file.name, size: file.size, type: file.type }
       setAttachments(prev => [...prev, fileEntry])
     }
   }
@@ -684,13 +694,20 @@ export function Complaints() {
             </div>
           </div>
           <DialogFooter>
+            {(createMut.error || (showComplaintValidation && (complaintContextError || !complaintValidation.success))) && (
+              <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                {createMut.error instanceof Error
+                  ? createMut.error.message
+                  : complaintContextError || (!complaintValidation.success ? complaintValidation.error.issues[0]?.message : '')}
+              </p>
+            )}
             <Button variant="outline" onClick={() => { setNewDialogOpen(false); resetForm() }}>
               Cancel
             </Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={handleFileNew}
-              disabled={createMut.isPending}
+              disabled={Boolean(complaintContextError) || !complaintValidation.success || createMut.isPending}
             >
               {createMut.isPending ? 'Filing...' : 'File Complaint'}
             </Button>
@@ -919,6 +936,7 @@ export function Complaints() {
               </AlertDialogContent>
             </AlertDialog>
             <div className="flex items-center gap-2">
+              {updateMut.error && <p className="text-sm text-destructive" role="alert">{updateMut.error instanceof Error ? updateMut.error.message : 'Failed to update complaint'}</p>}
               <Button variant="outline" onClick={() => setDetailOpen(false)}>
                 Cancel
               </Button>

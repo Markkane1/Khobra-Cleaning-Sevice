@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { CompanyBankAccountSchema } from '@repo/core'
+import { apiRequest } from '@/lib/api-client'
 import {
   Building2,
   Plus,
@@ -46,19 +48,15 @@ export function CompanyBankAccounts() {
 
   const { data: accountsData, isLoading } = useQuery({
     queryKey: ['companyBankAccounts'],
-    queryFn: () => fetch('/api/khobra-cleaning/company-bank-accounts').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/company-bank-accounts'),
   })
 
   const saveMut = useMutation({
     mutationFn: (d: any) =>
-      fetch('/api/khobra-cleaning/company-bank-accounts', {
+      apiRequest('/api/khobra-cleaning/company-bank-accounts', {
         method: d.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d),
-      }).then(async r => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Failed to save bank account')
-        return res
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companyBankAccounts'] })
@@ -74,14 +72,10 @@ export function CompanyBankAccounts() {
 
   const toggleActiveMut = useMutation({
     mutationFn: (d: { id: string; isActive: boolean }) =>
-      fetch('/api/khobra-cleaning/company-bank-accounts', {
+      apiRequest('/api/khobra-cleaning/company-bank-accounts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'toggleActive', id: d.id, isActive: d.isActive }),
-      }).then(async r => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Failed to update active status')
-        return res
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['companyBankAccounts'] })
@@ -95,12 +89,8 @@ export function CompanyBankAccounts() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/khobra-cleaning/company-bank-accounts?id=${id}`, {
+      apiRequest<any>(`/api/khobra-cleaning/company-bank-accounts?id=${id}`, {
         method: 'DELETE',
-      }).then(async r => {
-        const res = await r.json()
-        if (!r.ok) throw new Error(res.error || 'Failed to delete account')
-        return res
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['companyBankAccounts'] })
@@ -115,6 +105,8 @@ export function CompanyBankAccounts() {
   })
 
   const accounts = accountsData?.accounts || []
+  const accountValidation = CompanyBankAccountSchema.safeParse(form)
+  const showAccountValidation = Boolean(form.accountTitle || form.bankName || form.accountNumber || form.iban)
 
   return (
     <div className="space-y-6">
@@ -426,16 +418,21 @@ export function CompanyBankAccounts() {
           </div>
 
           <DialogFooter className="pt-2">
+            {(saveMut.error || (showAccountValidation && !accountValidation.success)) && (
+              <p className="text-sm text-destructive sm:mr-auto" role="alert">
+                {saveMut.error instanceof Error
+                  ? saveMut.error.message
+                  : !accountValidation.success
+                    ? accountValidation.error.issues[0]?.message
+                    : ''}
+              </p>
+            )}
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-              disabled={saveMut.isPending}
+              disabled={!accountValidation.success || saveMut.isPending}
               onClick={() => {
-                if (!form.accountTitle || !form.bankName || !form.accountNumber) {
-                  toast.error('Please fill in all required fields (Title, Bank Name, Account #)')
-                  return
-                }
-                saveMut.mutate(form)
+                if (accountValidation.success) saveMut.mutate(accountValidation.data)
               }}
             >
               {saveMut.isPending ? 'Saving...' : form.id ? 'Save Changes' : 'Create Bank Account'}
