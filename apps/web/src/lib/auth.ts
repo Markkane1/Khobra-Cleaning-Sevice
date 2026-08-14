@@ -21,9 +21,9 @@ export async function getAuthSession(req: NextRequest): Promise<VerifiedSession 
   if (!session) return null
   const user = await db.user.findFirst({
     where: { id: session.userId, tenantId: session.tenantId, status: 'active' },
-    select: { email: true, name: true, role: true, sessionVersion: true },
+    select: { name: true, role: true, sessionVersion: true },
   })
-  if (!user || user.email !== session.email || user.role !== session.role || user.sessionVersion !== (session.sessionVersion ?? 0)) return null
+  if (!user || user.role !== session.role || user.sessionVersion !== (session.sessionVersion ?? 0)) return null
   return { ...session, name: user.name }
 }
 

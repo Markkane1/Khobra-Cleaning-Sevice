@@ -20,10 +20,10 @@ export async function GET(req: NextRequest) {
           ? await db.customer.findFirst({ where: { tenantId: auth.session.tenantId, userId: auth.session.userId }, select: { id: true } })
           : await db.driver.findFirst({ where: { tenantId: auth.session.tenantId, userId: auth.session.userId }, select: { id: true } });
       const bookingWhere = auth.session.role === 'cleaner'
-        ? { tenantId: auth.session.tenantId, assignments: { some: { employeeId: actor?.id || '__none__' } } }
+        ? { tenantId: auth.session.tenantId, deletedAt: null, assignments: { some: { employeeId: actor?.id || '__none__' } } }
         : auth.session.role === 'customer'
-          ? { tenantId: auth.session.tenantId, customerId: actor?.id || '__none__' }
-          : { tenantId: auth.session.tenantId, driverId: actor?.id || '__none__' };
+          ? { tenantId: auth.session.tenantId, deletedAt: null, customerId: actor?.id || '__none__' }
+          : { tenantId: auth.session.tenantId, deletedAt: null, driverId: actor?.id || '__none__' };
       const bookings = await db.booking.findMany({
         where: bookingWhere,
         include: { customer: { include: { user: { select: { name: true } } } }, service: { select: { name: true } }, assignments: { include: { employee: { include: { user: { select: { name: true } } } } } } },

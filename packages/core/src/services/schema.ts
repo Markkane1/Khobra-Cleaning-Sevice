@@ -17,7 +17,7 @@ export const CreateServiceSchema = z.object({
   withMaterialsRate: z.coerce.number().positive('With-materials rate must be greater than zero'),
   minDuration: z.coerce.number().positive('Minimum duration must be greater than zero').optional(),
   category: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
   skills: z.string().optional(),
   materials: z.array(ServiceMaterialSchema).max(50).optional(),
   galleryImages: z.array(CloudinaryImageSchema).optional(),

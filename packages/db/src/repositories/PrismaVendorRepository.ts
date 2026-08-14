@@ -44,8 +44,11 @@ export class PrismaVendorRepository implements IVendorRepository {
   }
 
   async delete(tenantId: string, id: string): Promise<void> {
-    // Delete VendorItems first (no onDelete: Cascade in schema)
-    await this.db.vendorItem.deleteMany({ where: { vendorId: id } });
-    await this.db.vendor.delete({ where: { id, tenantId } });
+    await this.db.$transaction(async tx => {
+      const vendor = await tx.vendor.findFirst({ where: { id, tenantId }, select: { id: true } });
+      if (!vendor) throw new Error('Vendor not found');
+      await tx.vendorItem.deleteMany({ where: { vendorId: vendor.id } });
+      await tx.vendor.delete({ where: { id: vendor.id, tenantId } });
+    });
   }
 }

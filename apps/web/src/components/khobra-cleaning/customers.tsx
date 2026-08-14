@@ -78,14 +78,11 @@ const emptyForm = {
 }
 
 async function saveCustomer(method: 'POST' | 'PUT', data: unknown) {
-  const response = await fetch('/api/khobra-cleaning/customers', {
+  return apiRequest('/api/khobra-cleaning/customers', {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  const result = await response.json().catch(() => null)
-  if (!response.ok) throw new Error(result?.error || 'Failed to save customer')
-  return result
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,8 +148,7 @@ export function Customers() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: string) =>
-      fetch(`/api/khobra-cleaning/customers?id=${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/customers?id=${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] })
       toast.success('Customer deleted')
@@ -299,7 +295,7 @@ export function Customers() {
                 Add Customer
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="h-[100dvh] max-h-[100dvh] max-w-none rounded-none border-0 p-4 sm:h-auto sm:max-h-[90dvh] sm:max-w-lg sm:rounded-lg sm:border sm:p-6">
               <DialogHeader>
                 <DialogTitle>
                   {editId ? 'Edit Customer' : 'Add New Customer'}
@@ -338,8 +334,13 @@ export function Customers() {
                 {!editId && <div className="grid gap-2"><Label htmlFor="customer-password">Temporary Password</Label><Input id="customer-password" type="password" required minLength={8} autoComplete="new-password" aria-invalid={Boolean(formErrors.temporaryPassword)} value={form.temporaryPassword} onChange={(e) => { setForm({ ...form, temporaryPassword: e.target.value }); setFormErrors({ ...formErrors, temporaryPassword: '' }) }} />{formErrors.temporaryPassword && <p className="text-sm text-destructive" role="alert">{formErrors.temporaryPassword}</p>}</div>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label>Phone</Label>
+                    <Label htmlFor="customer-phone">Phone</Label>
                     <Input
+                      id="customer-phone"
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={form.phone}
                       onChange={(e) =>
                         setForm({ ...form, phone: e.target.value })
@@ -404,7 +405,7 @@ export function Customers() {
                     }
                   />
                 </div>
-              <DialogFooter>
+              <DialogFooter className="gap-2 [&_button]:min-h-11 [&_button]:w-full sm:[&_button]:w-auto">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
@@ -665,15 +666,15 @@ export function Customers() {
                           )}
                         </div>
 
-                        {/* Actions — visible on hover */}
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Actions stay visible on touch screens. */}
+                        <div className="flex justify-end gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 aria-label={`Edit ${c.user?.name || 'customer'}`}
-                                className="h-7 w-7"
+                                className="h-11 w-11 sm:h-7 sm:w-7"
                                 onClick={(e) => handleEdit(c, e)}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -689,7 +690,7 @@ export function Customers() {
                                     variant="ghost"
                                     size="icon"
                                     aria-label={`Delete ${c.user?.name || 'customer'}`}
-                                    className="h-7 w-7 text-red-500 hover:text-red-700"
+                                    className="h-11 w-11 text-red-500 hover:text-red-700 sm:h-7 sm:w-7"
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -843,7 +844,7 @@ export function Customers() {
                                           variant="ghost"
                                           size="icon"
                                           aria-label={`Edit ${c.user?.name || 'customer'}`}
-                                          className="h-7 w-7"
+                                          className="h-11 w-11 sm:h-7 sm:w-7"
                                           onClick={(e) => handleEdit(c, e)}
                                         >
                                           <Pencil className="h-3.5 w-3.5" />
@@ -859,7 +860,7 @@ export function Customers() {
                                               variant="ghost"
                                               size="icon"
                                               aria-label={`Delete ${c.user?.name || 'customer'}`}
-                                              className="h-7 w-7 text-red-500 hover:text-red-700"
+                                              className="h-11 w-11 text-red-500 hover:text-red-700 sm:h-7 sm:w-7"
                                               onClick={(e) => e.stopPropagation()}
                                             >
                                               <Trash2 className="h-3.5 w-3.5" />
@@ -911,7 +912,7 @@ export function Customers() {
 
       {/* ---- Customer Detail Dialog ---- */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="h-[100dvh] max-h-[100dvh] max-w-none rounded-none border-0 p-4 sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-lg sm:border sm:p-6">
           {selectedCustomer && (
             <>
               <DialogHeader>
@@ -1047,6 +1048,10 @@ export function Customers() {
                   </p>
                 )}
               </div>
+
+              <Button type="button" className="min-h-11 w-full gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={() => { setDetailOpen(false); handleEdit(selectedCustomer) }}>
+                <Pencil className="h-4 w-4" />Edit Customer
+              </Button>
             </>
           )}
         </DialogContent>

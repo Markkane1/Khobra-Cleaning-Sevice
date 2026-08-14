@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db, notifyBookingStatusChange } from '@repo/db'
-import { CleanerCompleteBookingSchema, calculateMultiServicePricing, canCleanerCompleteBooking } from '@repo/core'
+import { CleanerCompleteBookingSchema, canCleanerCompleteBooking, invoiceAmountsFromBooking, MIN_BOOKING_DURATION_HOURS } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
 import { apiErrorResponse } from '@/lib/api-error'
@@ -64,8 +64,8 @@ export async function POST(req: NextRequest) {
       })
 
       // 2. Update Assignments with completedAt & actualHours
-      const updatedAssignments = await Promise.all(booking.assignments.map(assignment => {
-        const hours = assignment.startedAt ? Math.max(0.5, Math.round(((completionTime.getTime() - assignment.startedAt.getTime()) / 3_600_000) * 10) / 10) : booking.duration
+      await Promise.all(booking.assignments.map(assignment => {
+        const hours = assignment.startedAt ? Math.max(MIN_BOOKING_DURATION_HOURS, Math.round(((completionTime.getTime() - assignment.startedAt.getTime()) / 3_600_000) * 10) / 10) : Math.max(MIN_BOOKING_DURATION_HOURS, booking.duration)
         return tx.assignment.update({
           where: { id: assignment.id },
           data: {
@@ -75,16 +75,6 @@ export async function POST(req: NextRequest) {
           },
         })
       }))
-
-      // Calculate actual total hours worked
-      const avgActualHours = updatedAssignments.reduce((acc, curr) => acc + (curr.actualHours || booking.duration), 0) / (updatedAssignments.length || 1)
-      const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: auth.session.tenantId }, select: { taxRate: true } })
-      const itemServices = booking.items.flatMap(item => item.service ? [{ ...item.service, includesMaterials: item.includesMaterials }] : [])
-      const services = itemServices.length
-        ? itemServices.map(service => ({ id: service.id, name: service.name, baseRate: Number(service.includesMaterials ? service.withMaterialsRate : service.baseRate), includesMaterials: service.includesMaterials }))
-        : booking.service ? [{ id: booking.service.id, name: booking.service.name, baseRate: Number(booking.service.baseRate), includesMaterials: false }] : []
-      if (!services.length) throw new Error('Booking has no billable service')
-      const pricing = calculateMultiServicePricing(services, updatedAssignments.length, avgActualHours, Number(booking.materialsCost), Number(booking.discount), Number(tenant.taxRate))
 
       // 3. Record BookingStatusHistory
       const statusHistory = await tx.bookingStatusHistory.create({
@@ -100,10 +90,11 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // 4. Issue Invoice with actual worked hours repricing
+      // 4. Invoice the authoritative amount accepted when the booking was placed.
       const existingInvoice = await tx.invoice.findFirst({ where: { bookingId: booking.id } })
       if (!existingInvoice) {
         const invoiceNo = `INV-${booking.bookingNo}`
+        const amounts = invoiceAmountsFromBooking(booking)
         await tx.invoice.create({
           data: {
             tenantId: auth.session.tenantId,
@@ -112,11 +103,8 @@ export async function POST(req: NextRequest) {
             customerId: booking.customerId,
             status: 'issued',
             issuedAt: completionTime,
-            subtotal: pricing.subtotal,
-            taxAmount: pricing.taxAmount,
-            totalAmount: pricing.netAmount,
+            ...amounts,
             paidAmount: 0,
-            discount: booking.discount || 0,
           },
         })
       }

@@ -5,10 +5,6 @@ export interface Employee {
   tenantId: string;
   userId: string;
   employeeCode: string;
-  phone?: string | null;
-  address?: string | null;
-  city?: string | null;
-  area?: string | null;
   skills?: string | null;
   baseSalary: number;
   status: string;

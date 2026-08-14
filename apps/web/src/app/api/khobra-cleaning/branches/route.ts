@@ -8,7 +8,7 @@ const branchRepository = new PrismaBranchRepository(db)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
     
     const branches = await branchRepository.findManyByTenant(auth.session.tenantId)

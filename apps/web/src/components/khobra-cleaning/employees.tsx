@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Pencil, Trash2, Search, Download, LayoutGrid, List,
-  Users, UserCheck, MapPin, Phone, BarChart3, Eye, Wallet, Mail, Briefcase, Star,
+  Users, UserCheck, Phone, Eye, Wallet, Mail, Briefcase, Star,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -36,6 +35,7 @@ import { Progress } from '@/components/ui/progress'
 import { exportToCSV } from '@/lib/csv-export'
 import { useSortable } from '@/hooks/use-sort'
 import { useTenantCurrency } from '@/hooks/use-tenant-currency'
+import { useRealtime } from '@/hooks/use-realtime'
 import { apiRequest } from '@/lib/api-client'
 import { CreateEmployeeSchema, UpdateEmployeeSchema } from '@repo/core'
 
@@ -93,8 +93,7 @@ const getGradient = (n: string) => {
 }
 
 const emptyForm = {
-  name: '', email: '', phone: '', address: '',
-  city: '', area: '', skills: '', baseSalary: 0, status: 'active', temporaryPassword: '',
+  name: '', email: '', phone: '', skills: '', baseSalary: 0, status: 'active', temporaryPassword: '',
 }
 
 /* ------------------------------------------------------------------ */
@@ -105,7 +104,7 @@ function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Remove cleaner" className="h-7 w-7 text-red-500 hover:text-red-700">
+        <Button variant="ghost" size="icon" aria-label="Remove cleaner" className="h-11 w-11 text-red-500 hover:text-red-700 sm:h-7 sm:w-7">
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </AlertDialogTrigger>
@@ -159,12 +158,19 @@ export function Employees() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid')
   const qc = useQueryClient()
+  const { lastEvent, subscribe } = useRealtime()
+
+  useEffect(() => subscribe(['employee:created', 'employee:updated']), [subscribe])
+  useEffect(() => {
+    if (lastEvent?.type.startsWith('employee:')) qc.invalidateQueries({ queryKey: ['employees'] })
+  }, [lastEvent, qc])
 
   /* ---------- data fetching ----------------------------------------- */
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['employees'],
     queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/employees'),
+    refetchInterval: 30_000,
   })
 
   const createMut = useMutation({
@@ -216,10 +222,7 @@ export function Employees() {
     setForm({
       name: e.user?.name || '',
       email: e.user?.email || '',
-      phone: e.phone || '',
-      address: e.address || '',
-      city: e.city || '',
-      area: e.area || '',
+      phone: e.user?.phone || '',
       skills: e.skills || '',
       baseSalary: e.baseSalary || 0,
       status: e.status || 'active',
@@ -264,8 +267,7 @@ export function Employees() {
         return (
           e.user?.name?.toLowerCase().includes(s) ||
           e.employeeCode?.toLowerCase().includes(s) ||
-          e.area?.toLowerCase().includes(s) ||
-          e.city?.toLowerCase().includes(s) ||
+          e.user?.phone?.includes(s) ||
           e.skills?.toLowerCase().includes(s)
         )
       }),
@@ -303,16 +305,6 @@ export function Employees() {
 
   const maxSkillCount = skillsDistribution.length > 0 ? skillsDistribution[0][1] : 1
 
-  const areaDistribution = useMemo(() => {
-    const m: Record<string, number> = {}
-    items.forEach((e: any) => {
-      const a = e.area || e.city || 'Unknown'
-      m[a] = (m[a] || 0) + 1
-    })
-    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 6)
-  }, [items])
-  const maxAreaCount = Math.max(...areaDistribution.map(([, c]) => c), 1)
-
   const roleDistribution = useMemo(() => {
     const m: Record<string, number> = {}
     items.forEach((e: any) => {
@@ -329,7 +321,7 @@ export function Employees() {
       Name: e.user?.name || '',
       Department: e.department || '',
       Designation: e.designation || '',
-      Phone: e.phone || '',
+      Phone: e.user?.phone || '',
       Status: e.status || '',
       'Join Date': e.joinDate || '',
     }))
@@ -389,20 +381,6 @@ export function Employees() {
                     <Input type="number" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: Number(e.target.value) })} />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>City</Label>
-                    <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Area</Label>
-                    <Input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Address</Label>
-                  <Textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-                </div>
                 <div className="grid gap-2">
                   <Label>Skills (comma-separated)</Label>
                   <Input value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} placeholder="deep_cleaning, bathroom, kitchen" />
@@ -458,42 +436,6 @@ export function Employees() {
           </motion.div>
         ))}
       </div>
-
-      {/* ─── Area Distribution ────────────────────────────────── */}
-      {areaDistribution.length > 0 && (
-        <motion.div {...fadeUp} transition={{ delay: 0.2 }}>
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3"><CardTitle className="text-sm font-medium">Cleaner Area Distribution</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-2.5">
-                {areaDistribution.map(([area, count], i) => {
-                  const pct = (count / maxAreaCount) * 100
-                  const gradients = [
-                    'bg-gradient-to-r from-emerald-400 to-emerald-500',
-                    'bg-gradient-to-r from-teal-400 to-teal-500',
-                    'bg-gradient-to-r from-cyan-400 to-cyan-500',
-                    'bg-gradient-to-r from-emerald-300 to-teal-400',
-                    'bg-gradient-to-r from-teal-300 to-cyan-400',
-                    'bg-gradient-to-r from-cyan-300 to-emerald-400',
-                  ]
-                  return (
-                    <div key={area} className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground w-24 shrink-0 truncate">{String(area)}</span>
-                      <div className="flex-1 h-5 rounded-full bg-muted/60 overflow-hidden">
-                        <motion.div
-                          className={`h-full rounded-full ${gradients[i % gradients.length]}`}
-                          initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6, delay: 0.3 + i * 0.06 }}
-                        />
-                      </div>
-                      <span className="text-xs font-semibold tabular-nums w-6 text-right">{count}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
 
       {/* ─── Role Distribution ──────────────────────────────────── */}
       {roleDistribution.length > 0 && (
@@ -679,10 +621,10 @@ export function Employees() {
                             </div>
                           </div>
 
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex shrink-0 gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" aria-label={`View ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleViewDetail(e)}>
+                                <Button variant="ghost" size="icon" aria-label={`View ${e.user?.name || e.employeeCode}`} className="h-11 w-11 sm:h-7 sm:w-7" onClick={() => handleViewDetail(e)}>
                                   <Eye className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
@@ -690,7 +632,7 @@ export function Employees() {
                             </Tooltip>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" aria-label={`Edit ${e.user?.name || e.employeeCode}`} className="h-7 w-7" onClick={() => handleEdit(e)}>
+                                <Button variant="ghost" size="icon" aria-label={`Edit ${e.user?.name || e.employeeCode}`} className="h-11 w-11 sm:h-7 sm:w-7" onClick={() => handleEdit(e)}>
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                               </TooltipTrigger>
@@ -699,16 +641,6 @@ export function Employees() {
                             <DeleteButton onConfirm={() => deleteMut.mutate(e.id)} />
                           </div>
                         </div>
-
-                        {/* location */}
-                        {(e.city || e.area) && (
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {[e.area, e.city].filter(Boolean).join(', ')}
-                            </span>
-                          </div>
-                        )}
 
                         {/* salary + status badge */}
                         <div className="flex items-center justify-between">
@@ -767,7 +699,6 @@ export function Employees() {
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
                           <TableHead className="text-xs font-semibold"><SortableHeader col={'name' as any}>Cleaner</SortableHeader></TableHead>
                           <TableHead className="text-xs font-semibold hidden sm:table-cell">Skills</TableHead>
-                          <TableHead className="text-xs font-semibold hidden lg:table-cell">Area</TableHead>
                           <TableHead className="text-xs font-semibold hidden md:table-cell"><SortableHeader col={'baseSalary' as any}>Salary</SortableHeader></TableHead>
                           <TableHead className="text-xs font-semibold">Assignments</TableHead>
                           <TableHead className="text-xs font-semibold"><SortableHeader col={'status' as any}>Status</SortableHeader></TableHead>
@@ -777,7 +708,7 @@ export function Employees() {
                       <TableBody>
                         {sortedTable.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center py-12">
+                            <TableCell colSpan={6} className="text-center py-12">
                               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                                 <Users className="h-8 w-8 text-muted-foreground/40" />
                                 <span>No cleaners found</span>
@@ -818,9 +749,6 @@ export function Employees() {
                                       <span className="text-[10px] text-muted-foreground">+{e.skills.split(',').length - 3}</span>
                                     )}
                                   </div>
-                                </TableCell>
-                                <TableCell className="hidden lg:table-cell text-sm">
-                                  {e.area}{e.area && e.city ? ', ' : ''}{e.city}
                                 </TableCell>
                                 <TableCell className="hidden md:table-cell text-sm font-semibold">
                                   {currency} {(e.baseSalary || 0).toLocaleString()}
@@ -901,16 +829,7 @@ export function Employees() {
                   <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">Phone</p>
-                    <p className="text-sm font-medium">{selectedEmployee.phone || '-'}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Location</p>
-                    <p className="text-sm font-medium">
-                      {[selectedEmployee.area, selectedEmployee.city].filter(Boolean).join(', ') || '-'}
-                    </p>
+                    <p className="text-sm font-medium">{selectedEmployee.user?.phone || '-'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -930,13 +849,6 @@ export function Employees() {
                   </div>
                 </div>
               </div>
-
-              {selectedEmployee.address && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Address</p>
-                  <p className="text-sm bg-muted/40 rounded-lg p-3">{selectedEmployee.address}</p>
-                </div>
-              )}
 
               {selectedEmployee.skills && (
                 <div>

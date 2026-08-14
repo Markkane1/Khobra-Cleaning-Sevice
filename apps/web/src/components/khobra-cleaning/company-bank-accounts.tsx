@@ -18,6 +18,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -374,10 +375,10 @@ export function CompanyBankAccounts() {
 
             <div>
               <span className="font-semibold">Display Order Priority</span>
-              <input
+              <Input
                 type="number"
                 min="1"
-                className="w-full h-9 px-3 rounded-md border border-input bg-transparent mt-1 font-mono"
+                className="mt-1 font-mono"
                 placeholder="1"
                 value={form.displayOrder}
                 onChange={e => setForm({ ...form, displayOrder: parseInt(e.target.value || '1', 10) })}

@@ -57,5 +57,5 @@ const styles = StyleSheet.create({
   iconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: palette.primarySoft, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1 },
   title: { fontSize: 16, fontWeight: '700', color: palette.ink, marginBottom: 2 },
-  description: { fontSize: 13, color: palette.muted, lineHeight: 18 },
+  description: { fontSize: 14, color: palette.muted, lineHeight: 20 },
 })

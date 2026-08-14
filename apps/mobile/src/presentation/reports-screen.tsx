@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, LoadingState, PageHeading, palette } from './mobile-ui'
 
 type Report = {
@@ -30,12 +30,8 @@ export function ReportsScreen({ session, onBack }: { session: Session; onBack?: 
     const to = new Date()
     const from = new Date(); from.setUTCDate(from.getUTCDate() - days + 1)
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/reports?from=${date(from)}&to=${date(to)}`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(async response => {
-        const body = await response.json()
-        if (!response.ok) throw new Error(body.error || 'Could not load reports.')
-        setReport(body)
-      })
+    request<Report>(`/api/khobra-cleaning/reports?from=${date(from)}&to=${date(to)}`, {}, session.token)
+      .then(setReport)
       .catch(error => Alert.alert('Reports unavailable', error.message))
       .finally(() => setLoading(false))
   }
@@ -105,34 +101,34 @@ const styles = StyleSheet.create({
   filters: { flexDirection: 'row', gap: 8, marginTop: 16 },
   filter: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: palette.border, borderRadius: 12, backgroundColor: palette.surface },
   filterActive: { backgroundColor: palette.primarySoft, borderColor: palette.primary },
-  filterText: { color: palette.muted, fontSize: 13, fontWeight: '700' },
+  filterText: { color: palette.muted, fontSize: 14, fontWeight: '700' },
   filterTextActive: { color: palette.primaryDark },
   content: { padding: 20, gap: 24, paddingBottom: 120 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   kpiBox: { width: '48%', minHeight: 130, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border, backgroundColor: palette.surface, ...cardShadow },
   kpiLabel: { color: palette.muted, fontSize: 12, marginTop: 10, fontWeight: '600' },
   kpiValue: { color: palette.ink, fontSize: 18, fontWeight: '800', marginTop: 2 },
-  change: { color: palette.primaryDark, fontSize: 10, fontWeight: '600', marginTop: 5 },
+  change: { color: palette.primaryDark, fontSize: 12, fontWeight: '600', marginTop: 5 },
   negative: { color: palette.danger },
   section: { gap: 10 },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: palette.ink },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: palette.ink },
   card: { backgroundColor: palette.surface, borderRadius: 16, borderWidth: 1, borderColor: palette.border, overflow: 'hidden', ...cardShadow },
   insight: { minHeight: 58, flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14 },
-  insightText: { flex: 1, color: palette.ink, fontSize: 13, lineHeight: 20 },
+  insightText: { flex: 1, color: palette.ink, fontSize: 14, lineHeight: 20 },
   row: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
   rowBorder: { borderTopWidth: 1, borderTopColor: palette.border },
-  rowLabel: { fontSize: 13, color: palette.muted, fontWeight: '600' },
+  rowLabel: { fontSize: 14, color: palette.muted, fontWeight: '600' },
   rowValue: { fontSize: 14, color: palette.ink, fontWeight: '800' },
   barItem: { padding: 14, gap: 8 },
   barHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
-  barName: { flex: 1, fontSize: 13, color: palette.ink, fontWeight: '700' },
-  barValue: { fontSize: 11, color: palette.muted, fontWeight: '600', textAlign: 'right' },
+  barName: { flex: 1, fontSize: 14, color: palette.ink, fontWeight: '700' },
+  barValue: { fontSize: 12, color: palette.muted, fontWeight: '600', textAlign: 'right' },
   track: { height: 9, borderRadius: 5, backgroundColor: palette.primarySoft, overflow: 'hidden' },
   fill: { height: 9, borderRadius: 5, backgroundColor: palette.primary },
   staffRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', padding: 14 },
   staffText: { flex: 1, gap: 3 },
   staffName: { fontSize: 14, color: palette.ink, fontWeight: '700' },
-  staffDetail: { fontSize: 11, color: palette.muted },
+  staffDetail: { fontSize: 12, color: palette.muted },
   staffRate: { fontSize: 16, color: palette.primaryDark, fontWeight: '800' },
-  empty: { padding: 20, textAlign: 'center', color: palette.muted, fontSize: 13 },
+  empty: { padding: 20, textAlign: 'center', color: palette.muted, fontSize: 14 },
 })

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Download, LayoutGrid, List, Sparkles, Tag, TrendingUp, Eye, Upload, Image as ImageIcon, X, Cloud, Check, FolderPlus, Settings2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Download, LayoutGrid, List, Sparkles, Tag, TrendingUp, Upload, Image as ImageIcon, X, FolderPlus, Power } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,9 +16,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -155,13 +152,18 @@ export function Services() {
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update service'),
   })
 
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/khobra-cleaning/services?id=${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
+  const statusMut = useMutation({
+    mutationFn: ({ id, status }: Pick<Service, 'id' | 'status'>) =>
+      apiRequest('/api/khobra-cleaning/services', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      }),
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['services'] })
-      toast.success('Service deleted')
+      toast.success(variables.status === 'active' ? 'Service activated' : 'Service inactivated')
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to delete service'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to update service status'),
   })
 
   // Category Mutations
@@ -212,7 +214,7 @@ export function Services() {
       }))
 
       setForm(prev => ({ ...prev, [kind]: [...prev[kind], ...newImageUrls] }))
-      toast.success(`${newImageUrls.length} image(s) uploaded to Cloudinary.`)
+      toast.success(`${newImageUrls.length} image(s) uploaded.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Cloudinary upload failed.')
     } finally {
@@ -345,11 +347,11 @@ export function Services() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold">Without Materials ({currency}/hr) *</Label>
-                      <Input type="number" value={form.baseRate} onChange={e => setForm({ ...form, baseRate: Number(e.target.value) })} className="h-9" />
+                      <Input type="number" min="0.01" step="0.01" value={form.baseRate} onChange={e => setForm({ ...form, baseRate: Number(e.target.value) })} className="h-9" />
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold">With Materials ({currency}/hr) *</Label>
-                      <Input type="number" value={form.withMaterialsRate} onChange={e => setForm({ ...form, withMaterialsRate: Number(e.target.value) })} className="h-9" />
+                      <Input type="number" min="0.01" step="0.01" value={form.withMaterialsRate} onChange={e => setForm({ ...form, withMaterialsRate: Number(e.target.value) })} className="h-9" />
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs font-semibold">Minimum Booking Duration</Label>
@@ -366,14 +368,16 @@ export function Services() {
                       <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, materials: [...form.materials, { inventoryItemId: inventory[0]?.id || '', quantityPerCleanerHour: 1, unit: inventory[0]?.unit || 'pcs' }] })} disabled={!inventory.length}>Add item</Button>
                     </div>
                     {form.materials.map((material, index) => (
-                      <div key={`${material.inventoryItemId}-${index}`} className="grid grid-cols-[1fr_110px_72px_32px] gap-2 items-center">
+                      <div key={`${material.inventoryItemId}-${index}`} className="grid grid-cols-1 gap-2 rounded-lg border border-border/60 p-2 sm:grid-cols-[minmax(0,1fr)_110px_72px_36px] sm:items-center sm:border-0 sm:p-0">
                         <Select value={material.inventoryItemId} onValueChange={inventoryItemId => {
                           const item = inventory.find(candidate => candidate.id === inventoryItemId)
                           setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, inventoryItemId, unit: item?.unit || candidate.unit } : candidate) })
-                        }}><SelectTrigger className="h-9"><SelectValue placeholder="Inventory item" /></SelectTrigger><SelectContent>{inventory.map(item => <SelectItem key={item.id} value={item.id}>{item.name} ({item.currentStock} {item.unit})</SelectItem>)}</SelectContent></Select>
-                        <Input className="h-9" type="number" min="0.01" step="0.01" value={material.quantityPerCleanerHour} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, quantityPerCleanerHour: Number(event.target.value) } : candidate) })} aria-label="Quantity per cleaner hour" />
-                        <Input className="h-9" value={material.unit} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, unit: event.target.value } : candidate) })} aria-label="Unit" />
-                        <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => setForm({ ...form, materials: form.materials.filter((_, i) => i !== index) })} aria-label="Remove material"><Trash2 className="h-4 w-4" /></Button>
+                        }}><SelectTrigger className="h-11 w-full sm:h-9"><SelectValue placeholder="Inventory item" /></SelectTrigger><SelectContent>{inventory.map(item => <SelectItem key={item.id} value={item.id}>{item.name} ({item.currentStock} {item.unit})</SelectItem>)}</SelectContent></Select>
+                        <div className="grid grid-cols-2 gap-2 sm:contents">
+                          <Input className="h-11 min-w-0 sm:h-9" type="number" min="0.01" step="0.01" value={material.quantityPerCleanerHour} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, quantityPerCleanerHour: Number(event.target.value) } : candidate) })} aria-label="Quantity per cleaner hour" />
+                          <Input className="h-11 min-w-0 sm:h-9" value={material.unit} onChange={event => setForm({ ...form, materials: form.materials.map((candidate, i) => i === index ? { ...candidate, unit: event.target.value } : candidate) })} aria-label="Unit" />
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" className="h-11 w-full text-destructive sm:h-9 sm:w-9" onClick={() => setForm({ ...form, materials: form.materials.filter((_, i) => i !== index) })} aria-label="Remove material"><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     ))}
                   </div>
@@ -403,7 +407,7 @@ export function Services() {
                         Service Images
                       </Label>
                       <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700 bg-emerald-50">
-                        <Cloud className="h-3 w-3 mr-1" />Cloudinary CDN
+                        Image storage
                       </Badge>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -462,7 +466,7 @@ export function Services() {
 
                     <label aria-busy={isUploading} className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center transition-colors hover:bg-emerald-50">
                       <Upload className="mb-2 h-7 w-7 text-emerald-600" />
-                      <span className="text-sm font-semibold">{isUploading ? 'Uploading to Cloudinary…' : 'Choose image files'}</span>
+                      <span className="text-sm font-semibold">{isUploading ? 'Uploading…' : 'Choose image files'}</span>
                       <span className="mt-1 text-xs text-muted-foreground">PNG, JPG, WEBP · max 5MB each</span>
                       <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => handleFileUpload(imageModal, e)} className="hidden" disabled={isUploading} />
                     </label>
@@ -476,15 +480,15 @@ export function Services() {
 
             {/* Dynamic Category Management CRUD Modal */}
             <Dialog open={catManagerOpen} onOpenChange={setCatManagerOpen}>
-              <DialogContent className="sm:max-w-xl">
-                <DialogHeader>
+              <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[90vh] sm:w-full sm:max-w-xl sm:rounded-lg">
+                <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
                   <DialogTitle className="flex items-center gap-2">
                     <FolderPlus className="h-5 w-5 text-emerald-600" />
-                    Category Management CRUD
+                    Manage Categories
                   </DialogTitle>
                 </DialogHeader>
 
-                <div className="space-y-4 py-2">
+                <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 sm:px-6">
                   {/* Create / Edit Category Form */}
                   <form
                     onSubmit={(e) => {
@@ -502,14 +506,14 @@ export function Services() {
                           placeholder="e.g. Residential Cleaning"
                           value={catForm.name}
                           onChange={e => setCatForm({ ...catForm, name: e.target.value })}
-                          className="h-8 text-xs"
+                          className="h-11 text-base sm:h-8 sm:text-xs"
                           required
                         />
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Badge Theme</Label>
                         <Select value={catForm.color} onValueChange={v => setCatForm({ ...catForm, color: v })}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-11 text-base sm:h-8 sm:text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="emerald">Emerald Green</SelectItem>
                             <SelectItem value="teal">Teal Cyan</SelectItem>
@@ -527,17 +531,17 @@ export function Services() {
                         placeholder="Brief scope of services in this category..."
                         value={catForm.description}
                         onChange={e => setCatForm({ ...catForm, description: e.target.value })}
-                        className="h-8 text-xs"
+                        className="h-11 text-base sm:h-8 sm:text-xs"
                       />
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-1">
+                    <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
                       {editingCatId && (
-                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setEditingCatId(null); setCatForm({ id: '', name: '', description: '', color: 'emerald' }) }}>
+                        <Button type="button" variant="outline" size="sm" className="h-11 text-xs sm:h-8" onClick={() => { setEditingCatId(null); setCatForm({ id: '', name: '', description: '', color: 'emerald' }) }}>
                           Cancel
                         </Button>
                       )}
-                      <Button type="submit" size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-xs gap-1">
+                      <Button type="submit" size="sm" className="h-11 gap-1 bg-emerald-600 text-xs hover:bg-emerald-700 sm:h-8">
                         {editingCatId ? 'Save Changes' : 'Create Category'}
                       </Button>
                     </div>
@@ -545,8 +549,23 @@ export function Services() {
 
                   {/* Categories Audit Table */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold">Active Categories ({dbCategories.length})</Label>
-                    <div className="max-h-[250px] overflow-y-auto rounded-lg border">
+                    <Label className="text-xs font-semibold">Categories ({dbCategories.length})</Label>
+                    <div className="space-y-2 sm:hidden">
+                      {dbCategories.map(c => (
+                        <div key={c.id} className="rounded-lg border p-3">
+                          <p className="font-semibold">{c.name}</p>
+                          <p className="mt-1 break-words text-xs text-muted-foreground">{c.description || 'Service Category'}</p>
+                          <div className="mt-2 flex justify-end gap-1 border-t pt-2">
+                            <Button size="icon" variant="ghost" aria-label={`Edit ${c.name}`} className="h-11 w-11 text-emerald-600" onClick={() => {
+                              setEditingCatId(c.id)
+                              setCatForm({ id: c.id, name: c.name, description: c.description || '', color: c.color || 'emerald' })
+                            }}><Pencil className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" aria-label={`Delete ${c.name}`} className="h-11 w-11 text-red-500 hover:text-red-700" onClick={() => deleteCatMut.mutate(c.id)}><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden max-h-[250px] overflow-y-auto rounded-lg border sm:block">
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/40">
@@ -564,6 +583,7 @@ export function Services() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={`Edit ${c.name}`}
                                   className="h-6 w-6 text-emerald-600"
                                   onClick={() => {
                                     setEditingCatId(c.id)
@@ -575,6 +595,7 @@ export function Services() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={`Delete ${c.name}`}
                                   className="h-6 w-6 text-red-500 hover:text-red-700"
                                   onClick={() => deleteCatMut.mutate(c.id)}
                                 >
@@ -588,8 +609,8 @@ export function Services() {
                     </div>
                   </div>
                 </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setCatManagerOpen(false)}>Close</Button>
+                <DialogFooter className="shrink-0 border-t px-4 py-3 sm:px-6">
+                  <Button className="h-11 sm:h-9" variant="outline" onClick={() => setCatManagerOpen(false)}>Close</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -627,20 +648,29 @@ export function Services() {
             <Input placeholder="Search services or skills..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-xs" />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
             <Select value={catFilter} onValueChange={setCatFilter}>
-              <SelectTrigger className="h-9 text-xs w-40"><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectTrigger className="h-11 min-w-0 flex-1 text-xs sm:h-9 sm:w-40 sm:flex-none"><SelectValue placeholder="Category" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All Categories</SelectItem>
                 {uniqueCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
 
-            <div className="flex border rounded-lg overflow-hidden">
-              <Button size="icon" variant={viewMode === 'grid' ? 'secondary' : 'ghost'} className="h-9 w-9 rounded-none" onClick={() => setViewMode('grid')}>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-11 min-w-0 flex-1 text-xs sm:h-9 sm:w-32 sm:flex-none"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex overflow-hidden rounded-lg border">
+              <Button size="icon" variant={viewMode === 'grid' ? 'secondary' : 'ghost'} aria-label="Grid view" className="h-11 w-11 rounded-none sm:h-9 sm:w-9" onClick={() => setViewMode('grid')}>
                 <LayoutGrid className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant={viewMode === 'list' ? 'secondary' : 'ghost'} className="h-9 w-9 rounded-none" onClick={() => setViewMode('list')}>
+              <Button size="icon" variant={viewMode === 'list' ? 'secondary' : 'ghost'} aria-label="List view" className="h-11 w-11 rounded-none sm:h-9 sm:w-9" onClick={() => setViewMode('list')}>
                 <List className="h-4 w-4" />
               </Button>
             </div>
@@ -649,7 +679,7 @@ export function Services() {
 
         {/* Services Display Grid */}
         {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sorted.map((s: Service) => {
               const catStyle = catStyles[s.category] || defaultCatStyle
               const coverImage = s.heroImages?.[0] || s.galleryImages?.[0]
@@ -664,13 +694,16 @@ export function Services() {
                     </div>
                   )}
 
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-bold text-base">{s.name}</h3>
-                        <Badge className={`${catStyle.pill} mt-1 text-[10px]`}>{s.category || 'General'}</Badge>
+                  <CardContent className="space-y-3 p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <h3 className="break-words text-base font-bold">{s.name}</h3>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <Badge className={`${catStyle.pill} text-[10px]`}>{s.category || 'General'}</Badge>
+                          <Badge variant={s.status === 'active' ? 'default' : 'secondary'} className={s.status === 'active' ? 'bg-emerald-600 text-[10px]' : 'text-[10px]'}>{s.status}</Badge>
+                        </div>
                       </div>
-                      <div className="text-right">
+                      <div className="shrink-0 text-left sm:text-right">
                         <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{currency} {s.baseRate}/hr <span className="font-normal text-muted-foreground">without</span></p>
                         <p className="text-sm font-bold text-teal-600 dark:text-teal-400">{currency} {s.withMaterialsRate}/hr <span className="font-normal text-muted-foreground">with materials</span></p>
                       </div>
@@ -678,29 +711,21 @@ export function Services() {
 
                     <p className="text-xs text-muted-foreground line-clamp-2">{s.description || 'Professional cleaning service.'}</p>
 
-                    <div className="pt-2 border-t flex items-center justify-between text-xs">
+                    <div className="flex flex-col gap-2 border-t pt-2 text-xs sm:flex-row sm:items-center sm:justify-between">
                       <span className="text-muted-foreground">Min Duration: {s.minDuration} hrs</span>
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Button size="icon" variant="ghost" aria-label={`Edit ${s.name}`} className="h-11 w-11 sm:h-8 sm:w-8" onClick={() => handleEdit(s)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:text-red-700">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Service</AlertDialogTitle>
-                              <AlertDialogDescription>Delete {s.name}? This action cannot be undone.</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteMut.mutate(s.id)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`h-11 gap-1.5 sm:h-8 ${s.status === 'active' ? 'text-amber-700' : 'text-emerald-700'}`}
+                          disabled={statusMut.isPending}
+                          onClick={() => statusMut.mutate({ id: s.id, status: s.status === 'active' ? 'inactive' : 'active' })}
+                        >
+                          <Power className="h-3.5 w-3.5" />{s.status === 'active' ? 'Inactivate' : 'Activate'}
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -730,12 +755,12 @@ export function Services() {
                       <TableCell className="font-bold text-emerald-600">{currency} {s.baseRate}/hr</TableCell>
                       <TableCell className="font-bold text-teal-600">{currency} {s.withMaterialsRate}/hr</TableCell>
                       <TableCell>{s.minDuration} hrs</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" aria-label={`Edit ${s.name}`} className="h-7 w-7" onClick={() => handleEdit(s)}>
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button size="icon" variant="ghost" aria-label={`Edit ${s.name}`} className="h-8 w-8" onClick={() => handleEdit(s)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" aria-label={`Delete ${s.name}`} className="h-7 w-7 text-red-500" onClick={() => deleteMut.mutate(s.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button size="sm" variant="ghost" aria-label={`${s.status === 'active' ? 'Inactivate' : 'Activate'} ${s.name}`} className={s.status === 'active' ? 'h-8 text-amber-700' : 'h-8 text-emerald-700'} disabled={statusMut.isPending} onClick={() => statusMut.mutate({ id: s.id, status: s.status === 'active' ? 'inactive' : 'active' })}>
+                          <Power className="mr-1 h-3.5 w-3.5" />{s.status === 'active' ? 'Inactivate' : 'Activate'}
                         </Button>
                       </TableCell>
                     </TableRow>

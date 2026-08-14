@@ -1,4 +1,32 @@
 import { z } from 'zod';
+import { zonedDateTimeToUtc } from '../timezone.ts';
+
+export const CUSTOMER_BOOKING_EDIT_NOTICE_HOURS = 6;
+
+export function canCustomerEditBooking(
+  scheduledDate: string | Date,
+  startTime: string,
+  timeZone: string,
+  now: Date = new Date(),
+): boolean {
+  const date = scheduledDate instanceof Date ? scheduledDate.toISOString().slice(0, 10) : scheduledDate.slice(0, 10);
+  return zonedDateTimeToUtc(date, startTime, timeZone).getTime() - now.getTime() >= CUSTOMER_BOOKING_EDIT_NOTICE_HOURS * 60 * 60 * 1000;
+}
+
+function bookingDateKey(value: string | Date): string {
+  if (typeof value === 'string') return value.slice(0, 10);
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+export function isBookingAtLeastHoursAhead(
+  scheduledDate: string | Date,
+  startTime: string,
+  timeZone: string,
+  minimumHours: number = 2,
+  now: Date = new Date(),
+): boolean {
+  return zonedDateTimeToUtc(bookingDateKey(scheduledDate), startTime, timeZone).getTime() - now.getTime() >= minimumHours * 60 * 60 * 1000;
+}
 
 export function parseTimeToMinutes(timeStr: string): number {
   if (!timeStr) return Number.NaN;
@@ -37,6 +65,8 @@ export function calculateDurationHours(fromTime: string, toTime: string): number
   const diffMins = endMins - startMins;
   return Math.round((diffMins / 60) * 100) / 100;
 }
+
+export const MIN_BOOKING_DURATION_HOURS = 2;
 
 export function formatMinutesToTime(totalMinutes: number): string {
   const mins = ((totalMinutes % 1440) + 1440) % 1440;
@@ -107,6 +137,28 @@ export interface MultiServicePricingResult {
   totalAmount: number;
   discount: number;
   netAmount: number;
+}
+
+type NumericValue = number | string | { toString(): string };
+
+type InvoiceBookingAmounts = {
+  items?: Array<{ totalAmount: NumericValue }>;
+  hourlyRate: NumericValue;
+  employeeCount: number;
+  duration: number;
+  materialsCost: NumericValue;
+  totalAmount: NumericValue;
+  netAmount: NumericValue;
+  discount: NumericValue;
+};
+
+export function invoiceAmountsFromBooking(booking: InvoiceBookingAmounts) {
+  const serviceSubtotal = booking.items?.length
+    ? booking.items.reduce((sum, item) => sum + Number(item.totalAmount), 0)
+    : Number(booking.hourlyRate) * booking.employeeCount * booking.duration;
+  const subtotal = Math.round((serviceSubtotal + Number(booking.materialsCost)) * 100) / 100;
+  const taxAmount = Math.max(0, Math.round((Number(booking.totalAmount) - subtotal) * 100) / 100);
+  return { subtotal, taxAmount, totalAmount: Number(booking.netAmount), discount: Number(booking.discount) || 0 };
 }
 
 export function calculateMultiServicePricing(
@@ -311,7 +363,7 @@ export const CreateBookingSchema = z.object({
   selectedWeekdays: z.array(z.number().int().min(0).max(6)).optional(),
   startTime: TimeSchema,
   endTime: TimeSchema,
-  duration: z.number().optional(),
+  duration: z.number().min(MIN_BOOKING_DURATION_HOURS, `Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`).optional(),
   employeeCount: z.number().int().min(1, 'At least 1 cleaner must be assigned').optional().default(1),
   discount: z.number().optional().default(0),
   taxRate: z.number().min(0).optional(),
@@ -341,8 +393,8 @@ export const CreateBookingSchema = z.object({
   }
 
   const selectedEmployeeIds = data.preferredEmployeeIds?.length ? data.preferredEmployeeIds : data.preferredEmployeeId ? [data.preferredEmployeeId] : [];
-  if (selectedEmployeeIds.length && selectedEmployeeIds.length !== data.employeeCount) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select exactly the assigned staff count', path: ['preferredEmployeeIds'] });
+  if (selectedEmployeeIds.length > data.employeeCount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Selected cleaners cannot exceed the assigned staff count', path: ['preferredEmployeeIds'] });
   }
   if (new Set(selectedEmployeeIds).size !== selectedEmployeeIds.length) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Employees can only be selected once', path: ['preferredEmployeeIds'] });
@@ -354,12 +406,15 @@ export const CreateBookingSchema = z.object({
     }
   }
 
-  if (calculateDurationHours(data.startTime, data.endTime) <= 0) {
+  const duration = calculateDurationHours(data.startTime, data.endTime);
+  if (duration <= 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'To time must be later than From time',
       path: ['endTime'],
     });
+  } else if (duration < MIN_BOOKING_DURATION_HOURS) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`, path: ['endTime'] });
   }
 
   if (data.bookingType === 'one_time' && !data.scheduledDate) {
@@ -412,7 +467,7 @@ export const PublicBookingSchema = z.object({
   phone: z.string().trim().min(7, 'Enter a valid phone number').max(24),
   scheduledDate: z.string().date('Choose a valid booking date'),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Choose a valid start time'),
-  duration: z.number().int().min(2).max(8),
+  duration: z.number().int().min(MIN_BOOKING_DURATION_HOURS).max(8),
   employeeCount: z.number().int().min(1).max(10),
   address: z.string().trim().max(250).optional().default(''),
   city: z.string().trim().min(2, 'City is required').max(80),
@@ -448,6 +503,14 @@ export type BookingStatusKey = typeof BOOKING_STATUS_KEYS[number];
 const normalizeBookingStatus = (status: string) => status === 'pending' ? 'pending_assignment' : status === 'confirmed' ? 'scheduled' : status;
 
 export const isTerminalBookingStatus = (status: string) => ['completed', 'cancelled', 'no_show'].includes(normalizeBookingStatus(status));
+
+const FINALIZED_BOOKING_FIELDS = new Set(['customerId', 'driverId', 'serviceId', 'serviceIds', 'serviceOptions', 'preferredEmployeeId', 'scheduledDate', 'startTime', 'endTime', 'duration', 'employeeCount', 'discount', 'taxRate', 'address', 'city', 'area', 'latitude', 'longitude', 'isRecurring', 'recurringRule']);
+
+export const canEditFinalizedBooking = (status: string, fields: readonly string[]) => !isTerminalBookingStatus(status) || !fields.some(field => FINALIZED_BOOKING_FIELDS.has(field));
+
+export function fillCleanerSlots(selectedIds: string[], availableIds: string[], cleanerCount: number): string[] {
+  return [...selectedIds, ...availableIds.filter(id => !selectedIds.includes(id)).slice(0, Math.max(0, cleanerCount - selectedIds.length))];
+}
 
 export function canDriverTransitionToOnTheWay(currentStatus: string, targetStatus: string | undefined, assignedDriverId: string | null, actingDriverId: string | undefined): boolean {
   return Boolean(actingDriverId && assignedDriverId === actingDriverId && normalizeBookingStatus(currentStatus) === 'scheduled' && targetStatus === 'on_the_way');
@@ -505,7 +568,7 @@ export const UpdateBookingSchema = z.object({
   scheduledDate: BookingDateSchema.optional(),
   startTime: TimeSchema.optional(),
   endTime: TimeSchema.optional(),
-  duration: z.number().positive('Duration must be greater than zero').optional(),
+  duration: z.number().min(MIN_BOOKING_DURATION_HOURS, `Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`).optional(),
   employeeCount: z.number().int().min(1).optional(),
   status: z.enum(BOOKING_STATUS_KEYS).optional(),
   cancellationReason: z.string().optional(),
@@ -543,6 +606,8 @@ export const UpdateBookingSchema = z.object({
         message: 'To time must be later than From time',
         path: ['endTime'],
       });
+    } else if (duration < MIN_BOOKING_DURATION_HOURS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`, path: ['endTime'] });
     }
   }
   if (data.status === 'cancelled' && !data.cancellationReason) {
@@ -632,6 +697,8 @@ export function validateBookingConfirmationDTO(data: any): { isValid: boolean; e
     errors.push('To time is required');
   } else if (!isValidTime(data.startTime) || !isValidTime(data.endTime) || calculateDurationHours(data.startTime, data.endTime) <= 0) {
     errors.push('To time must be later than From time');
+  } else if (calculateDurationHours(data.startTime, data.endTime) < MIN_BOOKING_DURATION_HOURS) {
+    errors.push(`Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`);
   }
 
   // 8. Employee Count Validation
@@ -677,6 +744,10 @@ export function validateBookingHours(
 
   if (endMins <= startMins) {
     return { isValid: false, error: 'Booking end time must be later than start time' };
+  }
+
+  if (endMins - startMins < MIN_BOOKING_DURATION_HOURS * 60) {
+    return { isValid: false, error: `Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours` };
   }
 
   return { isValid: true };

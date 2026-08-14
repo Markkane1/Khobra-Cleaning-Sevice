@@ -267,12 +267,12 @@ export function AuthPage() {
                   <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 text-sm leading-5 text-muted-foreground">
                     <input
                       type="checkbox"
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
+                      className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-600"
                       checked={signupForm.privacyPolicyAccepted}
                       onChange={event => setSignupForm({ ...signupForm, privacyPolicyAccepted: event.target.checked })}
                     />
                     <span>
-                      By creating an account, I agree to the <a className="font-semibold text-emerald-700 underline underline-offset-2" href="/terms">Terms &amp; Conditions</a> and acknowledge the <a className="font-semibold text-emerald-700 underline underline-offset-2" href="/privacy-policy">Privacy Policy</a>.
+                      By creating an account, I agree to the <a className="inline-flex min-h-11 items-center font-semibold text-emerald-700 underline underline-offset-2" href="/terms">Terms &amp; Conditions</a> and acknowledge the <a className="inline-flex min-h-11 items-center font-semibold text-emerald-700 underline underline-offset-2" href="/privacy-policy">Privacy Policy</a>.
                     </span>
                   </label>
 
@@ -298,7 +298,7 @@ export function AuthPage() {
         </Card>
         <p className="mt-4 text-center text-xs text-muted-foreground">
           By using Khobra Cleaning, you acknowledge our{' '}
-          <a href="/privacy-policy" className="font-semibold text-emerald-700 underline underline-offset-4">Privacy Policy</a>.
+          <a href="/privacy-policy" className="inline-flex min-h-11 items-center font-semibold text-emerald-700 underline underline-offset-4">Privacy Policy</a>.
         </p>
       </motion.div>
     </div>

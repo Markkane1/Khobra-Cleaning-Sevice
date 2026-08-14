@@ -7,7 +7,7 @@ export async function GET() {
   if (!tenant) return NextResponse.json({ services: [], business: null })
 
   const services = await db.service.findMany({
-    where: { tenantId: tenant.id, status: 'active' },
+    where: { tenantId: tenant.id, status: 'active', deletedAt: null },
     select: {
       id: true,
       name: true,

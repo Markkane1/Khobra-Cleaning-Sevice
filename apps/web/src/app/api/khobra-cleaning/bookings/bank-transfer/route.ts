@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { AdminBankTransferDecisionSchema, SubmitBankTransferSchema } from '@repo/core'
-import { createTransactionSnapshot, db } from '@repo/db'
+import { AdminBankTransferDecisionSchema, invoiceAmountsFromBooking, SubmitBankTransferSchema } from '@repo/core'
+import { createTransactionSnapshot, db, deliverPushNotifications } from '@repo/db'
 import { randomUUID } from 'crypto'
 import { requireAuth } from '@/lib/auth'
 import { broadcast } from '@/lib/broadcast'
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${data.bookingId} FOR UPDATE`)
       const booking = await tx.booking.findFirst({
         where: { id: data.bookingId, tenantId: auth.session.tenantId, customerId: customer.id },
-        include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } } },
+        include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } }, items: { select: { totalAmount: true } } },
       })
       if (!booking) throw Object.assign(new Error('Booking not found'), { status: 404 })
       if (booking.status !== 'completed') throw new Error('Bank transfer is available only after the booking is Completed')
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       let invoice = booking.invoices[0]
       if (!invoice) {
         invoice = await tx.invoice.create({
-          data: { tenantId: auth.session.tenantId, bookingId: booking.id, customerId: customer.id, invoiceNo: `INV-${booking.bookingNo}`, subtotal: booking.netAmount, taxAmount: 0, totalAmount: booking.netAmount, paidAmount: 0, status: 'issued', dueDate: new Date() },
+          data: { tenantId: auth.session.tenantId, bookingId: booking.id, customerId: customer.id, invoiceNo: `INV-${booking.bookingNo}`, ...invoiceAmountsFromBooking(booking), paidAmount: 0, status: 'issued', dueDate: new Date() },
           include: { payments: true },
         })
       }
@@ -90,7 +90,11 @@ export async function POST(req: NextRequest) {
     try {
       const booking = await db.booking.findFirst({ where: { id: data.bookingId }, select: { bookingNo: true } })
       const admins = await db.user.findMany({ where: { tenantId: auth.session.tenantId, role: 'admin', status: 'active' }, select: { id: true } })
-      if (admins.length) await db.notification.createMany({ data: admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, title: 'Bank transfer verification required', message: `Booking ${booking?.bookingNo || data.bookingId}: transfer ${payment.referenceNo} for ${companyBankAccount.currency} ${payment.amount} requires verification.`, type: 'warning', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
+      const notices = admins.map(admin => ({ tenantId: auth.session.tenantId, userId: admin.id, deliveryKey: `bank-transfer-submitted:${payment.id}`, title: 'Bank transfer verification required', message: `Booking ${booking?.bookingNo || data.bookingId}: transfer ${payment.referenceNo} for ${companyBankAccount.currency} ${payment.amount} requires verification.`, type: 'warning' }))
+      if (notices.length) {
+        await db.notification.createMany({ skipDuplicates: true, data: notices.map(notice => ({ ...notice, channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() })) })
+        await deliverPushNotifications(db, notices)
+      }
     } catch (error) { console.error('Bank transfer admin notification failed', error) }
     broadcast('payment:created', { paymentId: payment.id, status: payment.status, bookingId: data.bookingId }, auth.session.tenantId)
     broadcast('booking:updated', { bookingId: data.bookingId }, auth.session.tenantId)
@@ -138,7 +142,9 @@ export async function PUT(req: NextRequest) {
       return { payment: updated, customerUserId: payment.invoice.customer.userId, bookingNo: payment.invoice.booking?.bookingNo, bookingId: payment.invoice.bookingId, approved: true }
     })
     try {
-      await db.notification.create({ data: { tenantId: auth.session.tenantId, userId: result.customerUserId, title: result.approved ? 'Bank transfer approved' : 'Bank transfer rejected', message: result.approved ? `Your bank transfer for booking ${result.bookingNo || ''} has been approved.` : `Your bank transfer for booking ${result.bookingNo || ''} was rejected. You may submit corrected details. Remarks: ${data.remarks}`, type: result.approved ? 'success' : 'error', channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() } })
+      const notice = { tenantId: auth.session.tenantId, userId: result.customerUserId, deliveryKey: `bank-transfer-decision:${result.payment.id}`, title: result.approved ? 'Bank transfer approved' : 'Bank transfer rejected', message: result.approved ? `Your bank transfer for booking ${result.bookingNo || ''} has been approved.` : `Your bank transfer for booking ${result.bookingNo || ''} was rejected. You may submit corrected details. Remarks: ${data.remarks}`, type: result.approved ? 'success' : 'error' }
+      await db.notification.createMany({ skipDuplicates: true, data: [{ ...notice, channel: 'in_app', deliveryStatus: 'sent', deliveryAttemptedAt: new Date() }] })
+      await deliverPushNotifications(db, [notice])
     } catch (error) { console.error('Bank transfer customer notification failed', error) }
     broadcast('payment:updated', { paymentId: result.payment.id, status: result.payment.status, bookingId: result.bookingId }, auth.session.tenantId)
     broadcast('booking:updated', { bookingId: result.bookingId }, auth.session.tenantId)

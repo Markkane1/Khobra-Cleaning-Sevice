@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
+import { Alert, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { loadDashboard } from './src/application/dashboard'
 import type { Session } from './src/domain/auth/types'
@@ -84,7 +84,8 @@ export default function App() {
 }
 
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
-  const [screen, setScreen] = useState<Screen>('overview')
+  const [screenHistory, setScreenHistory] = useState<Screen[]>(['overview'])
+  const screen = screenHistory[screenHistory.length - 1]
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [pickupAlerts, setPickupAlerts] = useState<PickupAlert[]>([])
   const [loading, setLoading] = useState(true)
@@ -98,6 +99,8 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   }
 
   const refreshPickupAlerts = () => session.user.role === 'driver' && khobraBookingGateway.getPickupAlerts(session.token).then(setPickupAlerts).catch(() => undefined)
+  const navigate = (next: Screen) => setScreenHistory(current => current[current.length - 1] === next ? current : [...current, next])
+  const goBack = () => setScreenHistory(current => current.length > 1 ? current.slice(0, -1) : current)
 
   useEffect(refresh, [session.token])
   useEffect(() => {
@@ -106,39 +109,48 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     const timer = setInterval(refreshPickupAlerts, 10000)
     return () => clearInterval(timer)
   }, [session.token, session.user.role])
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (screenHistory.length <= 1) return false
+      goBack()
+      return true
+    })
+    return () => subscription.remove()
+  }, [screenHistory.length])
 
   return <SafeAreaView style={styles.screen}>
     <View style={styles.glow} />
-    <AppHeader session={session} onSignOut={onSignOut} />
+    <AppHeader session={session} onSignOut={onSignOut} onBack={goBack} canGoBack={screenHistory.length > 1} />
     <KeyboardAvoidingView style={styles.body} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {screen === 'overview' ? <Overview stats={stats} loading={loading} pickupAlerts={pickupAlerts.filter(alert => !alert.viewedAt)} onRefresh={refresh} onPickupViewed={async id => { await khobraBookingGateway.markPickupAlertViewed(id, session.token); setPickupAlerts(current => current.filter(alert => alert.id !== id)) }} /> : null}
-      {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => setScreen('new-booking')} /> : null}
-      {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={() => setScreen('bookings')} onCancel={() => setScreen('bookings')} onAddAddress={() => setScreen('profile')} /> : null}
-      {screen === 'operations' ? <OperationsScreen session={session} onNavigate={setScreen} /> : null}
-      {screen === 'services' ? <ServicesScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'customers' ? <CustomersScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'employees' ? <EmployeesScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'inventory' ? <InventoryScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'complaints' ? <ComplaintsScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'attendance' ? <AttendanceScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'invoices' ? <InvoicesScreen session={session} onBack={() => setScreen('operations')} /> : null}
-      {screen === 'notifications' ? <NotificationsScreen session={session} onBack={() => setScreen('operations')} /> : null}
+      {screen === 'bookings' ? <BookingsScreen session={session} onNewBooking={() => navigate('new-booking')} /> : null}
+      {screen === 'new-booking' ? <NewBookingScreen session={session} onCreated={goBack} onCancel={goBack} onAddAddress={() => navigate('profile')} /> : null}
+      {screen === 'operations' ? <OperationsScreen session={session} onNavigate={navigate} /> : null}
+      {screen === 'services' ? <ServicesScreen session={session} /> : null}
+      {screen === 'customers' ? <CustomersScreen session={session} /> : null}
+      {screen === 'employees' ? <EmployeesScreen session={session} /> : null}
+      {screen === 'inventory' ? <InventoryScreen session={session} /> : null}
+      {screen === 'complaints' ? <ComplaintsScreen session={session} /> : null}
+      {screen === 'attendance' ? <AttendanceScreen session={session} /> : null}
+      {screen === 'invoices' ? <InvoicesScreen session={session} /> : null}
+      {screen === 'notifications' ? <NotificationsScreen session={session} /> : null}
       {screen === 'expenses' ? <DriverExpensesScreen session={session} /> : null}
-      {screen === 'admin' ? <AdminHubScreen session={session} onNavigate={setScreen as any} /> : null}
-      {screen === 'branches' ? <BranchesScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'payroll' ? <PayrollScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'rbac' ? <RbacScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'settings' ? <SettingsScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'reports' ? <ReportsScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'dispatch' ? <DispatchScreen session={session} onBack={() => setScreen('admin')} /> : null}
-      {screen === 'profile' ? <ProfileScreen session={session} onBack={() => setScreen(session.user.role === 'customer' ? 'bookings' : 'admin')} /> : null}
+      {screen === 'admin' ? <AdminHubScreen session={session} onNavigate={navigate as any} /> : null}
+      {screen === 'branches' ? <BranchesScreen session={session} /> : null}
+      {screen === 'payroll' ? <PayrollScreen session={session} /> : null}
+      {screen === 'rbac' ? <RbacScreen session={session} /> : null}
+      {screen === 'settings' ? <SettingsScreen session={session} /> : null}
+      {screen === 'reports' ? <ReportsScreen session={session} /> : null}
+      {screen === 'dispatch' ? <DispatchScreen session={session} /> : null}
+      {screen === 'profile' ? <ProfileScreen session={session} /> : null}
     </KeyboardAvoidingView>
-    <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={setScreen} />
+    <BottomNavigation screen={['new-booking', 'services', 'customers', 'employees', 'inventory', 'complaints', 'attendance', 'invoices', 'notifications'].includes(screen) ? 'operations' : (['dispatch', 'payroll', 'branches', 'rbac', 'settings', 'reports', 'profile'].includes(screen) ? 'admin' : screen as MainScreen)} role={session.user.role} onChange={navigate} />
   </SafeAreaView>
 }
 
-function AppHeader({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function AppHeader({ session, onSignOut, onBack, canGoBack }: { session: Session; onSignOut: () => void; onBack: () => void; canGoBack: boolean }) {
   return <View style={styles.header}>
+    <Pressable accessibilityLabel="Go back" accessibilityRole="button" accessibilityState={{ disabled: !canGoBack }} disabled={!canGoBack} onPress={onBack} style={({ pressed }) => [styles.backButton, pressed && styles.pressed, !canGoBack && styles.backButtonDisabled]}><Ionicons name="arrow-back" size={22} color={palette.primaryDark} /></Pressable>
     <View style={styles.identity}>
       <View style={styles.headerLogo}><Image source={require('./assets/logo.png')} resizeMode="contain" style={styles.logo} /></View>
       <View style={styles.userText}><Text style={styles.eyebrow}>KHOBRA CLEANING</Text><Text style={styles.userName} numberOfLines={1}>Hello, {session.user.name}</Text></View>
@@ -224,47 +236,49 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   glow: { position: 'absolute', width: 230, height: 230, borderRadius: 115, backgroundColor: palette.tealSoft, top: -130, right: -90, opacity: 0.55 },
   header: { minHeight: 76 + statusBarHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: statusBarHeight, borderBottomWidth: 1, borderBottomColor: '#e4eee9' },
+  backButton: { width: 44, height: 44, marginRight: 10, borderRadius: 14, borderWidth: 1, borderColor: '#cce1d7', backgroundColor: '#ffffffcc', alignItems: 'center', justifyContent: 'center' },
+  backButtonDisabled: { opacity: 0.35 },
   identity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 11 },
   headerLogo: { width: 44, height: 44, borderRadius: 14, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: palette.primarySoft, ...cardShadow },
   logo: { width: '100%', height: '100%' },
   userText: { flex: 1 },
-  eyebrow: { color: palette.primaryDark, fontSize: 9, fontWeight: '800', letterSpacing: 0.9 },
-  userName: { color: palette.ink, fontFamily: headingFont, fontSize: 17, fontWeight: '700', marginTop: 2 },
+  eyebrow: { color: palette.primaryDark, fontSize: 12, fontWeight: '800', letterSpacing: 0.9 },
+  userName: { color: palette.ink, fontFamily: headingFont, fontSize: 18, fontWeight: '700', marginTop: 2 },
   signOut: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, borderColor: '#cce1d7', backgroundColor: '#ffffffcc', alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.75 },
   overview: { padding: 20, paddingBottom: 112 },
   refresh: { width: 44, height: 44, borderRadius: 15, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, alignItems: 'center', justifyContent: 'center' },
   pickupAlert: { borderWidth: 2, borderColor: '#dc2626', backgroundColor: '#fef2f2', borderRadius: 20, padding: 17, gap: 6, marginBottom: 16 },
-  pickupPriority: { color: '#b91c1c', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  pickupPriority: { color: '#b91c1c', fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
   pickupTitle: { color: '#7f1d1d', fontSize: 16, fontWeight: '800' },
   pickupDetail: { color: '#991b1b', fontSize: 12 },
-  pickupTime: { color: '#b45309', fontSize: 10 },
+  pickupTime: { color: '#b45309', fontSize: 12 },
   pickupButton: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', backgroundColor: '#dc2626', borderRadius: 11, paddingHorizontal: 14, marginTop: 5 },
   pickupButtonText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   hero: { overflow: 'hidden', backgroundColor: '#064e3b', borderRadius: 24, padding: 20, marginBottom: 24, shadowColor: '#064e3b', shadowOpacity: 0.22, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   heroGlow: { position: 'absolute', width: 180, height: 180, borderRadius: 90, backgroundColor: '#10b981', opacity: 0.24, top: -85, right: -50 },
   heroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  heroLabel: { color: '#a7f3d0', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  revenue: { color: '#fff', fontFamily: headingFont, fontSize: 29, fontWeight: '700', marginTop: 5 },
+  heroLabel: { color: '#a7f3d0', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  revenue: { color: '#fff', fontFamily: headingFont, fontSize: 28, fontWeight: '700', marginTop: 5 },
   trend: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#ffffff18', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  trendText: { color: '#d1fae5', fontSize: 11, fontWeight: '700' },
+  trendText: { color: '#d1fae5', fontSize: 12, fontWeight: '700' },
   heroStats: { flexDirection: 'row', alignItems: 'center', marginTop: 24, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#ffffff25' },
   heroStat: { flex: 1, alignItems: 'center' },
-  heroStatValue: { color: '#fff', fontSize: 19, fontWeight: '800' },
-  heroStatLabel: { color: '#a7f3d0', fontSize: 10, marginTop: 4 },
+  heroStatValue: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  heroStatLabel: { color: '#a7f3d0', fontSize: 12, marginTop: 4 },
   heroDivider: { width: 1, height: 32, backgroundColor: '#ffffff25' },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
-  sectionTitle: { color: palette.ink, fontFamily: headingFont, fontSize: 17, fontWeight: '700' },
-  sectionCaption: { color: palette.primary, fontSize: 9, fontWeight: '900', letterSpacing: 1, backgroundColor: palette.primarySoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  sectionTitle: { color: palette.ink, fontFamily: headingFont, fontSize: 18, fontWeight: '700' },
+  sectionCaption: { color: palette.primary, fontSize: 12, fontWeight: '900', letterSpacing: 1, backgroundColor: palette.primarySoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metric: { flexGrow: 1, flexBasis: '46%', minHeight: 136, borderRadius: 19, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, padding: 15, ...cardShadow },
   metricIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  metricValue: { color: palette.ink, fontFamily: headingFont, fontSize: 25, fontWeight: '800' },
+  metricValue: { color: palette.ink, fontFamily: headingFont, fontSize: 24, fontWeight: '800' },
   metricLabel: { color: palette.muted, fontSize: 12, marginTop: 4 },
   nav: { position: 'absolute', left: 14, right: 14, bottom: 10, minHeight: 74, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, paddingVertical: 8, borderRadius: 24, backgroundColor: '#fffffffa', borderWidth: 1, borderColor: '#dce9e3', shadowColor: '#064e3b', shadowOpacity: 0.15, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 9 },
   navItem: { flex: 1, alignItems: 'center', gap: 4 },
   navIcon: { width: 36, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   activeNavIcon: { backgroundColor: palette.primary },
-  navLabel: { color: palette.muted, fontSize: 9, fontWeight: '700' },
+  navLabel: { color: palette.muted, fontSize: 12, fontWeight: '700' },
   activeNavLabel: { color: palette.primaryDark },
 })

@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ChangePasswordSchema, LoginSchema, SignupSchema, UpdateOwnProfileSchema } from './auth/schema.ts'
-import { AssignEmployeesSchema, CreateBookingSchema, PublicBookingSchema, UpdateBookingSchema, calculateMultiServicePricing } from './bookings/schema.ts'
+import { CreateAttendanceSchema } from './attendance/schema.ts'
+import { CreateBranchSchema } from './branches/schema.ts'
+import { AssignEmployeesSchema, CreateBookingSchema, PublicBookingSchema, UpdateBookingSchema, calculateMultiServicePricing, fillCleanerSlots, invoiceAmountsFromBooking, isBookingAtLeastHoursAhead, validateBookingHours } from './bookings/schema.ts'
 import { CreateBusinessExpenseSchema, CreateDriverExpenseSchema } from './driver-expenses/schema.ts'
 import { CreateEmployeeSchema } from './employees/schema.ts'
+import { UpdateInventoryItemSchema } from './inventory/schema.ts'
 import { CreateLeaveSchema, UpdateLeaveSchema } from './leave/schema.ts'
 import { getDirectionsUrl } from './location.ts'
 import { CompanyBankAccountSchema } from './payments/schema.ts'
+import { UpdatePayrollSchema } from './payroll/schema.ts'
+import { CreateServiceSchema, UpdateServiceSchema } from './services/schema.ts'
 import { UpdateSettingsSchema } from './settings/schema.ts'
+import { CreateTripSchema } from './trips/schema.ts'
 
 const tomorrow = () => {
   const date = new Date()
@@ -28,6 +34,24 @@ test('authentication schemas reject malformed and mismatched credentials', () =>
   assert.equal(UpdateOwnProfileSchema.safeParse({ name: '', email: 'bad', phone: '1' }).success, false)
 })
 
+test('inventory adjustments require both quantity and direction', () => {
+  assert.equal(UpdateInventoryItemSchema.safeParse({ id: 'item-1', adjustQuantity: 2 }).success, false)
+  assert.equal(UpdateInventoryItemSchema.safeParse({ id: 'item-1', adjustType: 'IN' }).success, false)
+  assert.equal(UpdateInventoryItemSchema.safeParse({ id: 'item-1', adjustQuantity: 2, adjustType: 'IN' }).success, true)
+})
+
+test('payroll rejects unknown accounting states', () => {
+  assert.equal(UpdatePayrollSchema.safeParse({ employeeId: 'employee-1', status: 'verified' }).success, false)
+  assert.equal(UpdatePayrollSchema.safeParse({ employeeId: 'employee-1', status: 'paid' }).success, true)
+})
+
+test('operational schemas reject unknown workflow states', () => {
+  assert.equal(CreateAttendanceSchema.safeParse({ employeeId: 'employee-1', date: tomorrow(), status: 'working' }).success, false)
+  assert.equal(UpdateLeaveSchema.safeParse({ id: 'leave-1', status: 'cancelled' }).success, false)
+  assert.equal(CreateBranchSchema.safeParse({ name: 'Main', status: 'deleted' }).success, false)
+  assert.equal(CreateTripSchema.safeParse({ driverId: 'driver-1', date: tomorrow(), status: 'started' }).success, false)
+})
+
 test('booking schemas validate public input and discard client-controlled actor fields', () => {
   const date = tomorrow()
   const booking = CreateBookingSchema.parse({
@@ -38,6 +62,12 @@ test('booking schemas validate public input and discard client-controlled actor 
 
   assert.equal('createdBy' in booking, false)
   assert.equal('cancelledBy' in update, false)
+  assert.equal(CreateBookingSchema.safeParse({ customerId: 'customer-1', serviceIds: ['service-1'], scheduledDate: date, startTime: '09:00', endTime: '10:59' }).success, false)
+  assert.equal(CreateBookingSchema.safeParse({ customerId: 'customer-1', serviceIds: ['service-1'], scheduledDate: date, startDate: date, endDate: date, startTime: '09:00', endTime: '11:00', employeeCount: 2, preferredEmployeeIds: ['cleaner-1'] }).success, true)
+  assert.equal(CreateBookingSchema.safeParse({ customerId: 'customer-1', serviceIds: ['service-1'], scheduledDate: date, startDate: date, endDate: date, startTime: '09:00', endTime: '11:00', employeeCount: 2, preferredEmployeeIds: ['cleaner-1', 'cleaner-2', 'cleaner-3'] }).success, false)
+  assert.equal(UpdateBookingSchema.safeParse({ id: 'booking-1', duration: 1 }).success, false)
+  assert.equal(UpdateBookingSchema.safeParse({ id: 'booking-1', startTime: '09:00', endTime: '10:59' }).success, false)
+  assert.equal(validateBookingHours('09:00', '10:59').isValid, false)
   assert.equal(PublicBookingSchema.safeParse({ serviceId: '', withMaterials: false, name: '', email: 'bad', phone: '', scheduledDate: date, startTime: '09:00', duration: 2, employeeCount: 1, address: '', city: '', preferredPaymentMethod: 'cash' }).success, false)
   assert.equal(PublicBookingSchema.safeParse({ serviceId: 'service-1', withMaterials: true, name: 'Ali', email: 'ali@example.com', phone: '+971500000000', scheduledDate: date, startTime: '09:00', duration: 2, employeeCount: 1, address: '', city: 'Dubai', latitude: 25.2048, longitude: 55.2708, preferredPaymentMethod: 'cash' }).success, true)
   assert.equal(PublicBookingSchema.safeParse({ serviceId: 'service-1', withMaterials: false, name: 'Ali', email: 'ali@example.com', phone: '+971500000000', scheduledDate: date, startTime: '09:00', duration: 2, employeeCount: 1, address: '', city: 'Dubai', latitude: 25.2048, preferredPaymentMethod: 'cash' }).success, false)
@@ -51,6 +81,21 @@ test('service variant rate is preserved in authoritative pricing', () => {
   assert.equal(pricing.items[0].includesMaterials, true)
 })
 
+test('system fills only the unselected cleaner slots', () => {
+  assert.deepEqual(fillCleanerSlots(['cleaner-1'], ['cleaner-1', 'cleaner-2', 'cleaner-3'], 2), ['cleaner-1', 'cleaner-2'])
+  assert.deepEqual(fillCleanerSlots([], ['cleaner-1', 'cleaner-2', 'cleaner-3'], 3), ['cleaner-1', 'cleaner-2', 'cleaner-3'])
+})
+
+test('invoice fallback preserves the booked subtotal, tax, and discount', () => {
+  assert.deepEqual(invoiceAmountsFromBooking({ items: [{ totalAmount: 200 }], hourlyRate: 100, employeeCount: 1, duration: 2, materialsCost: 20, totalAmount: 231, netAmount: 221, discount: 10 }), { subtotal: 220, taxAmount: 11, totalAmount: 221, discount: 10 })
+})
+
+test('booking notice uses the tenant timezone', () => {
+  const now = new Date('2026-08-13T06:00:00.000Z')
+  assert.equal(isBookingAtLeastHoursAhead('2026-08-13', '12:00', 'Asia/Dubai', 2, now), true)
+  assert.equal(isBookingAtLeastHoursAhead('2026-08-13', '11:30', 'Asia/Dubai', 2, now), false)
+})
+
 test('operational schemas reject invalid money, dates, configuration, and account details', () => {
   assert.equal(CreateDriverExpenseSchema.safeParse({ category: 'petrol', amount: -1, expenseDate: tomorrow() }).success, false)
   assert.equal(CreateBusinessExpenseSchema.safeParse({ category: 'other', description: '', amount: 0, expenseDate: tomorrow() }).success, false)
@@ -58,6 +103,9 @@ test('operational schemas reject invalid money, dates, configuration, and accoun
   assert.equal(CreateLeaveSchema.safeParse({ employeeId: 'employee-1', startDate: '2026-08-12', endDate: '2026-08-11', days: 1 }).success, false)
   assert.equal(UpdateSettingsSchema.safeParse({ taxRate: 2, firstBookingTime: '20:00', lastWorkingTime: '08:00' }).success, false)
   assert.equal(CompanyBankAccountSchema.safeParse({ accountTitle: '', bankName: '', accountNumber: '1', currency: 'XX' }).success, false)
+  assert.equal(CreateServiceSchema.safeParse({ name: 'Deep cleaning', baseRate: 0, withMaterialsRate: 100 }).success, false)
+  assert.equal(CreateServiceSchema.safeParse({ name: 'Deep cleaning', baseRate: 100, withMaterialsRate: 0 }).success, false)
+  assert.equal(UpdateServiceSchema.safeParse({ id: 'service-1', status: 'deleted' }).success, false)
 })
 
 test('leave approval actor cannot be supplied by the client', () => {

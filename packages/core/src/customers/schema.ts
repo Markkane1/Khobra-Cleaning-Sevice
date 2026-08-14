@@ -5,7 +5,7 @@ export const CustomerAddressSchema = z.object({
   label: z.string().trim().max(50).optional(),
   address: z.string().trim().max(250).optional().default(''),
   city: z.string().trim().optional(),
-  area: z.string().trim().optional(),
+  area: z.string().trim().min(1, 'Area is required'),
   latitude: z.number().finite().min(-90).max(90).optional(),
   longitude: z.number().finite().min(-180).max(180).optional(),
 }).superRefine((data, ctx) => {

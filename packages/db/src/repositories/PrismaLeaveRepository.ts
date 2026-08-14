@@ -57,7 +57,7 @@ export class PrismaLeaveRepository implements ILeaveRepository {
   async update(tenantId: string, id: string, data: UpdateLeaveDTO, approvedByUserId?: string): Promise<LeaveRecord> {
     const updateData: any = {};
     if (data.status) updateData.status = data.status;
-    if (data.status && data.status !== 'pending') updateData.approvedBy = approvedByUserId;
+    if (data.status) updateData.approvedBy = data.status === 'pending' ? null : approvedByUserId;
 
     return this.db.leaveRecord.update({
       where: { id, tenantId },

@@ -13,7 +13,7 @@ export function Logo({
   showText = true,
   className = '',
   textClassName = 'font-bold text-sm truncate',
-  subtextClassName = 'text-[10px] text-muted-foreground truncate',
+  subtextClassName = 'text-xs text-muted-foreground truncate',
 }: LogoProps) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>

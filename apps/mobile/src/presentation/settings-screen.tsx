@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, PageHeading, palette, PrimaryButton } from './mobile-ui'
 import { BankAccountsScreen } from './bank-accounts-screen'
 
@@ -24,8 +24,7 @@ export function SettingsScreen({ session, onBack }: { session: Session; onBack?:
 
   const load = () => {
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/settings`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(r => r.json())
+    request<any>('/api/khobra-cleaning/settings', {}, session.token)
       .then(d => {
         const t = d.tenant || {}
         const s = d.settings || {}
@@ -50,12 +49,10 @@ export function SettingsScreen({ session, onBack }: { session: Session; onBack?:
     setSaving(true)
     try {
       const payload = { name, slug, currency, locale, timezone, taxRate: Number(taxRate), firstBookingTime, lastWorkingTime, settings: { phone, address } }
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/settings`, {
+      await request('/api/khobra-cleaning/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(payload)
-      })
-      if (!res.ok) throw new Error('Failed to save settings')
+      }, session.token)
       Alert.alert('Success', 'Company settings saved.')
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -152,7 +149,7 @@ const styles = StyleSheet.create({
   tab: { minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderRadius: 9 },
   tabActive: { backgroundColor: palette.primarySoft },
   tabPressed: { opacity: 0.7 },
-  tabText: { fontSize: 13, fontWeight: '600', color: palette.muted, textAlign: 'center' },
+  tabText: { fontSize: 14, fontWeight: '600', color: palette.muted, textAlign: 'center' },
   tabTextActive: { color: palette.primaryDark },
   
   form: { padding: 20, gap: 24, paddingBottom: 100 },
@@ -162,7 +159,7 @@ const styles = StyleSheet.create({
   
   card: { backgroundColor: palette.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
   spacer: { height: 16 },
-  helpText: { fontSize: 11, color: palette.muted, marginTop: 4 },
+  helpText: { fontSize: 12, color: palette.muted, marginTop: 4 },
   
   footer: { padding: 20, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.border },
 })

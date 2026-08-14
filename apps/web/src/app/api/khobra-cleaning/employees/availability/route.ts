@@ -6,7 +6,7 @@ import { apiErrorResponse } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin', 'customer'])
     if ('response' in auth) return auth.response
     const tenantId = auth.session.tenantId
 
@@ -150,6 +150,25 @@ export async function GET(req: NextRequest) {
     })
 
     const suggestedAlternatives = [...availableEmployees].sort((a, b) => b.averageRating - a.averageRating || a.currentWorkload - b.currentWorkload || a.name.localeCompare(b.name))
+
+    if (auth.session.role === 'customer') {
+      const publicEmployees = availableEmployees.map(({ id, employeeCode, name, skills, isAvailable, averageRating, ratingCount, ratingFormatted, displayText }) => ({
+        id, employeeCode, name, skills, isAvailable, averageRating, ratingCount, ratingFormatted, displayText,
+      }))
+      return NextResponse.json({
+        date: dateStr,
+        startTime,
+        endTime: endTime || calculateEndTimeFromDuration(startTime, duration),
+        duration,
+        totalEmployees: publicEmployees.length,
+        availableCount: publicEmployees.length,
+        availableEmployees: publicEmployees,
+        busyEmployees: [],
+        onLeaveEmployees: [],
+        allEmployeesStatus: publicEmployees,
+        suggestedAlternatives: publicEmployees,
+      })
+    }
 
     return NextResponse.json({
       date: dateStr,

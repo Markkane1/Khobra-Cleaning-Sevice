@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
 type Branch = { id: string; name: string; address: string; phone: string; status: string }
@@ -24,8 +24,7 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
 
   const load = () => {
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/branches`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(r => r.json())
+    request<Branch[]>('/api/khobra-cleaning/branches', {}, session.token)
       .then(setBranches)
       .catch(() => Alert.alert('Error', 'Could not load branches.'))
       .finally(() => setLoading(false))
@@ -56,12 +55,10 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
     setSaving(true)
     try {
       const payload = { id: editId, name: formName, address: formAddress, phone: formPhone, status: formStatus }
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/branches`, {
+      await request('/api/khobra-cleaning/branches', {
         method: editId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(payload)
-      })
-      if (!res.ok) throw new Error('Failed to save branch')
+      }, session.token)
       setFormOpen(false)
       load()
     } catch (e: any) {
@@ -76,9 +73,11 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${apiBaseUrl}/api/khobra-cleaning/branches?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+          await request(`/api/khobra-cleaning/branches?id=${id}`, { method: 'DELETE' }, session.token)
           load()
-        } catch {}
+        } catch (error) {
+          Alert.alert('Error', error instanceof Error ? error.message : 'Could not delete branch.')
+        }
       }}
     ])
   }
@@ -86,7 +85,7 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
   return <View style={styles.screen}>
     <View style={styles.header}>
       {onBack && <Pressable onPress={onBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.ink} /></Pressable>}
-      <PageHeading title="Branches" subtitle="Manage locations" action={<Pressable onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
+      <PageHeading title="Branches" subtitle="Manage locations" action={<Pressable accessibilityRole="button" accessibilityLabel="Add branch" onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
     </View>
 
     {loading ? <LoadingState label="Loading branches..." /> : <FlatList
@@ -107,7 +106,7 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
             {!!b.address && <Text style={styles.detail} numberOfLines={1}><Ionicons name="map-outline" /> {b.address}</Text>}
             {!!b.phone && <Text style={styles.detail} numberOfLines={1}><Ionicons name="call-outline" /> {b.phone}</Text>}
           </View>
-          <Pressable style={styles.delBtn} onPress={() => remove(b.id)}><Ionicons name="trash-outline" size={18} color={palette.danger} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${b.name}`} style={styles.delBtn} onPress={() => remove(b.id)}><Ionicons name="trash-outline" size={18} color={palette.danger} /></Pressable>
         </Pressable>
       )}
     />}
@@ -116,7 +115,7 @@ export function BranchesScreen({ session, onBack }: { session: Session; onBack?:
       <SafeAreaView style={styles.modalScreen}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{editId ? 'Edit Branch' : 'New Branch'}</Text>
-          <Pressable onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close branch form" onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.formBody}>
           <View style={styles.formGroup}>
@@ -170,21 +169,21 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 16, fontWeight: '700', color: palette.ink },
   badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  badgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  detail: { fontSize: 13, color: palette.muted },
-  delBtn: { padding: 8 },
+  badgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  detail: { fontSize: 14, color: palette.muted },
+  delBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   
   modalScreen: { flex: 1, backgroundColor: palette.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border, backgroundColor: palette.surface },
-  modalTitle: { fontSize: 19, fontWeight: '700', color: palette.ink },
-  closeBtn: { padding: 4 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   formBody: { padding: 20, gap: 16 },
   formGroup: {},
   modalFooter: { padding: 20, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.border },
   
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: 20 },
   optionsBox: { backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
-  optionsTitle: { padding: 20, fontSize: 17, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
+  optionsTitle: { padding: 20, fontSize: 18, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
   optionRow: { padding: 18, borderBottomWidth: 1, borderBottomColor: palette.border },
   optionText: { fontSize: 16, textAlign: 'center', color: palette.ink, textTransform: 'capitalize' },
   optionCancel: { padding: 18, backgroundColor: '#f9fafb' },

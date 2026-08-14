@@ -7,7 +7,7 @@ export const CreateDriverSchema = z.object({
   phone: z.string().optional().nullable(),
   licenseNo: z.string().optional(),
   vehicleNo: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive', 'AVAILABLE']).optional(),
   temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters'),
 });
 
@@ -18,7 +18,7 @@ export const UpdateDriverSchema = z.object({
   phone: z.string().optional().nullable(),
   licenseNo: z.string().optional(),
   vehicleNo: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive', 'AVAILABLE']).optional(),
 });
 
 export type CreateDriverDTO = z.infer<typeof CreateDriverSchema>;

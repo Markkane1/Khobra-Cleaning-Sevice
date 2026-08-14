@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
 type NotificationItem = { id: string; title: string; message: string; type: string; read: boolean; createdAt: string }
@@ -14,8 +14,7 @@ export function NotificationsScreen({ session, onBack }: { session: Session; onB
 
   const load = () => {
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/notifications?channel=in_app`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(r => r.json())
+    request<NotificationItem[]>('/api/khobra-cleaning/notifications?channel=in_app', {}, session.token)
       .then(setNotifications)
       .catch(() => Alert.alert('Error', 'Could not load notifications.'))
       .finally(() => setLoading(false))
@@ -26,11 +25,10 @@ export function NotificationsScreen({ session, onBack }: { session: Session; onB
   const markAllRead = async () => {
     setRefreshing(true)
     try {
-      await fetch(`${apiBaseUrl}/api/khobra-cleaning/notifications?channel=in_app`, {
+      await request('/api/khobra-cleaning/notifications?channel=in_app', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ markAllRead: true })
-      })
+      }, session.token)
       load()
     } catch {
       Alert.alert('Error', 'Failed to mark as read.')
@@ -83,16 +81,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.background },
   header: { padding: 20, paddingBottom: 10 },
   backButton: { marginBottom: 10 },
-  markBtn: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, backgroundColor: palette.primarySoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginTop: 12 },
-  markBtnText: { color: palette.primaryDark, fontSize: 13, fontWeight: '700' },
+  markBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, backgroundColor: palette.primarySoft, paddingHorizontal: 12, borderRadius: 8, marginTop: 12 },
+  markBtnText: { color: palette.primaryDark, fontSize: 14, fontWeight: '700' },
   list: { padding: 20, gap: 12, paddingBottom: 100 },
   card: { flexDirection: 'row', gap: 12, backgroundColor: palette.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
   unreadCard: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
   iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1 },
-  title: { fontSize: 15, fontWeight: '600', color: palette.ink, marginBottom: 4 },
+  title: { fontSize: 16, fontWeight: '600', color: palette.ink, marginBottom: 4 },
   unreadText: { fontWeight: '800' },
   message: { fontSize: 14, color: palette.muted, lineHeight: 20, marginBottom: 8 },
-  time: { fontSize: 11, color: palette.muted, fontWeight: '500' },
+  time: { fontSize: 12, color: palette.muted, fontWeight: '500' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: palette.primary, position: 'absolute', top: 16, right: 16 }
 })

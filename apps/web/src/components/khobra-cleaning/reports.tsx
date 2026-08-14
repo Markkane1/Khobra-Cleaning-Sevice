@@ -431,7 +431,7 @@ export function Reports() {
       {/* ── Chart Tabs ── */}
       <motion.div {...fadeUp}>
         <Tabs defaultValue="revenue">
-          <TabsList className="bg-muted/60">
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-muted/60">
             <TabsTrigger value="revenue" className="flex-none text-xs sm:text-sm">Revenue</TabsTrigger>
             <TabsTrigger value="bookings" className="flex-none text-xs sm:text-sm">Bookings</TabsTrigger>
             <TabsTrigger value="services" className="flex-none text-xs sm:text-sm">Services</TabsTrigger>
@@ -630,7 +630,7 @@ export function Reports() {
               </CardHeader>
               <CardContent>
                 {ratingSubmissions.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No customer ratings submitted yet.</p> : (
-                  <div className="max-h-[360px] overflow-y-auto">
+                  <div className="max-h-[360px] overflow-auto">
                     <Table>
                       <TableHeader><TableRow><TableHead>Booking</TableHead><TableHead>Overall</TableHead><TableHead>Cleaner Ratings</TableHead><TableHead>Comment</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
                       <TableBody>{ratingSubmissions.map((submission: any) => (
@@ -664,7 +664,7 @@ export function Reports() {
                     <p className="text-sm">No data available</p>
                   </div>
                 ) : (
-                  <div className="max-h-[360px] overflow-y-auto">
+                  <div className="max-h-[360px] overflow-auto">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -740,7 +740,7 @@ export function Reports() {
                     <p className="text-sm">No cleaner assignment data available</p>
                   </div>
                 ) : (
-                  <div className="max-h-[360px] overflow-y-auto">
+                  <div className="max-h-[360px] overflow-auto">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/30 hover:bg-muted/30">

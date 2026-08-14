@@ -30,31 +30,20 @@ export class PrismaSettingsRepository implements ISettingsRepository {
       throw new Error('Last working time must be later than First booking start time');
     }
 
-    const updatedTenant = await this.db.tenant.update({
-      where: { id: tenant.id },
-      data: {
-        ...(name && { name }),
-        ...(slug && { slug }),
-        ...(currency && { currency }),
-        ...(locale && { locale }),
-        ...(timezone && { timezone }),
-        ...(taxRate !== undefined && { taxRate }),
-        ...(firstBookingTime && { firstBookingTime }),
-        ...(lastWorkingTime && { lastWorkingTime }),
-        ...(logoUrl !== undefined && { logoUrl }),
-      },
+    const updatedTenant = await this.db.$transaction(async tx => {
+      const updated = await tx.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          ...(name && { name }), ...(slug && { slug }), ...(currency && { currency }), ...(locale && { locale }),
+          ...(timezone && { timezone }), ...(taxRate !== undefined && { taxRate }), ...(firstBookingTime && { firstBookingTime }),
+          ...(lastWorkingTime && { lastWorkingTime }), ...(logoUrl !== undefined && { logoUrl }),
+        },
+      });
+      for (const [key, value] of Object.entries(settings || {})) await tx.appSettings.upsert({
+        where: { key: `${tenantId}:${key}` }, update: { value: String(value) }, create: { key: `${tenantId}:${key}`, value: String(value) },
+      });
+      return updated;
     });
-
-    if (settings && typeof settings === 'object') {
-      for (const [key, value] of Object.entries(settings)) {
-        await this.db.appSettings.upsert({
-          where: { key: `${tenantId}:${key}` },
-          update: { value: String(value) },
-          create: { key: `${tenantId}:${key}`, value: String(value) },
-        });
-      }
-    }
-
     return { success: true, tenant: updatedTenant };
   }
 }

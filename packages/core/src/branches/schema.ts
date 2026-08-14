@@ -4,7 +4,7 @@ export const CreateBranchSchema = z.object({
   name: z.string().trim().min(1, 'Branch name is required'),
   address: z.string().optional(),
   phone: z.string().optional(),
-  status: z.string().default('active'),
+  status: z.enum(['active', 'inactive']).default('active'),
 });
 
 export type CreateBranchDTO = z.infer<typeof CreateBranchSchema>;
@@ -14,7 +14,7 @@ export const UpdateBranchSchema = z.object({
   name: z.string().trim().min(1, 'Branch name is required').optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
 });
 
 export type UpdateBranchDTO = z.infer<typeof UpdateBranchSchema>;

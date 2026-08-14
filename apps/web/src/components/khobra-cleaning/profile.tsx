@@ -50,6 +50,7 @@ export function CustomerProfile() {
   const [activeTab, setActiveTab] = useState<string>('info')
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null)
   const [newAddrOpen, setNewAddrOpen] = useState(false)
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingAddress, setSavingAddress] = useState(false)
@@ -63,7 +64,7 @@ export function CustomerProfile() {
   const [profileForm, setProfileForm] = useState({
     name: currentUser?.name || (userRole === 'admin' ? 'Administrator' : userRole === 'cleaner' ? 'Rashid Khan' : userRole === 'driver' ? 'Tariq Mahmood' : 'Sara Ali'),
     email: currentUser?.email || `${userRole}@khobra.ae`,
-    phone: '+971 50 123 4567',
+    phone: '',
     avatar: '',
     language: 'English',
     emergencyContact: '+971 55 987 6543',
@@ -88,6 +89,11 @@ export function CustomerProfile() {
     isDefault: false,
   })
 
+  const resetAddressForm = () => {
+    setEditingAddressId(null)
+    setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', latitude: undefined, longitude: undefined, isDefault: false })
+  }
+
   // Security Form
   const [secForm, setSecForm] = useState({
     currentPassword: '',
@@ -104,7 +110,7 @@ export function CustomerProfile() {
     longitude: addrForm.longitude,
   }
   const addressValidation = CustomerAddressSchema.safeParse(pendingAddress)
-  const addressContextError = addrForm.latitude === undefined && !addrForm.area?.trim() ? 'Area is required for a manually entered address' : ''
+  const addressContextError = !addrForm.area?.trim() ? 'Area is required' : ''
   const passwordValidation = ChangePasswordSchema.safeParse({ currentPassword: secForm.currentPassword, newPassword: secForm.newPassword })
   const passwordMatchError = secForm.confirmPassword && secForm.newPassword !== secForm.confirmPassword ? 'New passwords do not match' : ''
 
@@ -229,15 +235,30 @@ export function CustomerProfile() {
     }
   }
 
-  // Add Address Handler
-  const handleAddAddress = async () => {
+  const openAddressEditor = (address: CustomerAddress) => {
+    setActiveTab('addresses')
+    setEditingAddressId(address.id)
+    setAddrForm({ ...address })
+    setAddressError(null)
+    setNewAddrOpen(true)
+  }
+
+  const openNewAddressEditor = () => {
+    setActiveTab('addresses')
+    resetAddressForm()
+    setAddressError(null)
+    setNewAddrOpen(true)
+  }
+
+  // Add or edit an address while keeping the first saved address as primary.
+  const handleSaveAddress = async () => {
     setAddressError(null)
     if (addressContextError || !addressValidation.success) {
       setAddressError(addressContextError || (!addressValidation.success ? addressValidation.error.issues[0]?.message : '') || 'Check the address fields')
       return
     }
-    const newAddr: CustomerAddress = {
-      id: 'addr-' + Date.now(),
+    const nextAddress: CustomerAddress = {
+      id: editingAddressId || 'addr-' + Date.now(),
       label: addrForm.label || 'Home',
       street: addrForm.street || '',
       building: addrForm.building || '',
@@ -246,13 +267,16 @@ export function CustomerProfile() {
       area: addrForm.area || '',
       latitude: addrForm.latitude,
       longitude: addrForm.longitude,
-      isDefault: addrForm.isDefault || addresses.length === 0,
+      isDefault: editingAddressId ? Boolean(addresses.find(address => address.id === editingAddressId)?.isDefault) : addresses.length === 0,
     }
     if (!customerProfile) {
       setAddressError('Customer profile could not be loaded')
       return
     }
-    const nextAddresses = [...addresses, newAddr].map((item, index) => ({
+    const nextAddressModels = editingAddressId
+      ? addresses.map(address => address.id === editingAddressId ? nextAddress : address)
+      : [...addresses, nextAddress]
+    const nextAddresses = nextAddressModels.map((item, index) => ({
       label: item.label || (index ? `Address ${index + 1}` : 'Primary'),
       address: [item.building, item.apt, item.street].filter(Boolean).join(', ') || 'Pinned GPS location',
       city: item.city,
@@ -267,11 +291,11 @@ export function CustomerProfile() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: customerProfile.id, name: customerProfile.user.name, email: customerProfile.user.email, phone: customerProfile.phone || '', addresses: nextAddresses, address: nextAddresses[0]?.address || '', city: nextAddresses[0]?.city || '', area: nextAddresses[0]?.area || '' }),
       })
-      setAddresses([...addresses, newAddr].map((item, index) => ({ ...item, isDefault: index === 0 })))
+      setAddresses(nextAddressModels.map((item, index) => ({ ...item, isDefault: index === 0 })))
       setNewAddrOpen(false)
-      setAddrForm({ label: 'Home', street: '', building: '', apt: '', city: 'Dubai', area: '', latitude: undefined, longitude: undefined, isDefault: false })
+      resetAddressForm()
       qc.invalidateQueries({ queryKey: ['customers'] })
-      toast.success(addresses.length ? 'New address added!' : 'Primary address added!')
+      toast.success(editingAddressId ? 'Address updated!' : addresses.length ? 'New address added!' : 'Primary address added!')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save address'
       setAddressError(message)
@@ -481,8 +505,8 @@ export function CustomerProfile() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold">Contact Phone Number *</Label>
-                    <Input value={profileForm.phone} onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })} required />
+                    <Label htmlFor="profile-phone" className="text-xs font-semibold">Contact Phone Number *</Label>
+                    <Input id="profile-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" value={profileForm.phone} onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })} required />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs font-semibold">Emergency Contact Phone</Label>
@@ -502,6 +526,26 @@ export function CustomerProfile() {
                     </Select>
                   </div>
                 </div>
+
+                {userRole === 'customer' && (
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="flex items-center gap-2 text-sm font-semibold"><MapPin className="h-4 w-4 text-emerald-600" />Primary Address</p>
+                        {addresses[0] ? (
+                          <>
+                            <p className="text-sm">{[addresses[0].building, addresses[0].apt, addresses[0].street].filter(Boolean).join(', ') || 'Address details not added'}</p>
+                            <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Area:</span> {addresses[0].area} · {addresses[0].city}, UAE</p>
+                            <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Location:</span> {addresses[0].latitude !== undefined && addresses[0].longitude !== undefined ? 'GPS pin saved' : 'Not added (optional)'}</p>
+                          </>
+                        ) : <p className="text-xs text-muted-foreground">No primary address saved.</p>}
+                      </div>
+                      <Button type="button" variant="outline" className="min-h-11 gap-2" onClick={() => addresses[0] ? openAddressEditor(addresses[0]) : openNewAddressEditor()}>
+                        {addresses[0] ? <Edit2 className="h-4 w-4" /> : <Plus className="h-4 w-4" />}{addresses[0] ? 'Edit Primary Address' : 'Add Primary Address'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                   {profileError && <p className="text-sm text-destructive sm:mr-auto" role="alert">{profileError}</p>}
@@ -523,15 +567,15 @@ export function CustomerProfile() {
                 <p className="text-xs text-muted-foreground">Configure multiple residential or office addresses for cleaning bookings.</p>
               </div>
 
-              <Dialog open={newAddrOpen} onOpenChange={(open) => { setNewAddrOpen(open); if (!open) setAddressError(null) }}>
+              <Dialog open={newAddrOpen} onOpenChange={(open) => { setNewAddrOpen(open); if (!open) { setAddressError(null); resetAddressForm() } }}>
                 <DialogTrigger asChild>
-                  <Button className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+                  <Button className="bg-emerald-600 hover:bg-emerald-700 gap-2" onClick={resetAddressForm}>
                     <Plus className="h-4 w-4" />Add New Address
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Add New Address</DialogTitle>
+                    <DialogTitle>{editingAddressId ? 'Edit Address' : 'Add New Address'}</DialogTitle>
                   </DialogHeader>
                   <div className="grid gap-3 py-3 text-xs">
                     <div className="grid gap-1.5">
@@ -548,7 +592,10 @@ export function CustomerProfile() {
                       </Select>
                     </div>
 
-                    <LocationChoice value={{ latitude: addrForm.latitude, longitude: addrForm.longitude }} onChange={coordinates => setAddrForm(current => ({ ...current, latitude: coordinates.latitude, longitude: coordinates.longitude }))} />
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Optional location pin</p>
+                      <LocationChoice value={{ latitude: addrForm.latitude, longitude: addrForm.longitude }} onChange={coordinates => setAddrForm(current => ({ ...current, latitude: coordinates.latitude, longitude: coordinates.longitude }))} />
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1.5">
@@ -564,8 +611,8 @@ export function CustomerProfile() {
                       </div>
 
                       <div className="grid gap-1.5">
-                        <Label className="text-xs">Area / District {addrForm.latitude === undefined ? '*' : '(optional)'}</Label>
-                        <Input value={addrForm.area} onChange={e => setAddrForm({ ...addrForm, area: e.target.value })} placeholder="e.g. Dubai Marina" className="h-11" required={addrForm.latitude === undefined} />
+                        <Label className="text-xs">Area / District *</Label>
+                        <Input value={addrForm.area} onChange={e => setAddrForm({ ...addrForm, area: e.target.value })} placeholder="e.g. Dubai Marina" className="h-11" required />
                       </div>
                     </div>
 
@@ -591,7 +638,7 @@ export function CustomerProfile() {
                       <p className="text-sm text-destructive sm:mr-auto" role="alert">{addressError || addressContextError || (!addressValidation.success ? addressValidation.error.issues[0]?.message : '')}</p>
                     )}
                     <Button variant="outline" onClick={() => setNewAddrOpen(false)}>Cancel</Button>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddAddress} disabled={Boolean(addressContextError) || !addressValidation.success || savingAddress}>{savingAddress ? 'Saving...' : 'Save Address'}</Button>
+                    <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveAddress} disabled={Boolean(addressContextError) || !addressValidation.success || savingAddress}>{savingAddress ? 'Saving...' : editingAddressId ? 'Save Address' : 'Add Address'}</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -602,7 +649,7 @@ export function CustomerProfile() {
               {addresses.map((addr) => (
                 <Card key={addr.id} className={`border transition-all ${addr.isDefault ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-sm' : ''}`}>
                   <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <Badge variant={addr.isDefault ? 'default' : 'outline'} className={addr.isDefault ? 'bg-emerald-600' : ''}>
                         {addr.label}
                       </Badge>
@@ -611,11 +658,14 @@ export function CustomerProfile() {
                           <CheckCircle2 className="h-3 w-3" />Default Address
                         </span>
                       )}
+                      <Button type="button" variant="outline" size="sm" className="min-h-11 gap-2" onClick={() => openAddressEditor(addr)} aria-label={`Edit ${addr.isDefault ? 'primary' : addr.label} address`}>
+                        <Edit2 className="h-4 w-4" />Edit
+                      </Button>
                     </div>
                     <div className="text-xs space-y-1 text-muted-foreground">
                       <p className="font-semibold text-foreground text-sm">{addr.building ? `${addr.building}, ` : ''}{addr.apt}</p>
                       <p>{addr.street}</p>
-                      <p>{addr.area}, {addr.city}, UAE</p>
+                      <p>{[addr.area, addr.city, 'UAE'].filter(Boolean).join(', ')}</p>
                       {addr.latitude !== undefined && addr.longitude !== undefined && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${addr.latitude},${addr.longitude}`)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 font-bold text-emerald-700"><MapPin className="h-4 w-4" />View GPS pin in Maps</a>}
                     </div>
                   </CardContent>

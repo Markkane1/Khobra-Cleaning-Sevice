@@ -14,7 +14,7 @@ export const CreateLeaveSchema = z.object({
 
 export const UpdateLeaveSchema = z.object({
   id: z.string().min(1, 'Leave record ID is required'),
-  status: z.string().optional(),
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
   notes: z.string().optional(),
 });
 

@@ -2,6 +2,7 @@ import { IPaymentRepository } from '@repo/application';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { createTransactionSnapshot } from '../transaction-snapshot';
+import { invoiceAmountsFromBooking } from '@repo/core';
 
 const money = (value: Prisma.Decimal | number | null | undefined) => Number(value || 0)
 
@@ -145,7 +146,7 @@ export class PrismaPaymentRepository implements IPaymentRepository {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Booking" WHERE id = ${bookingId} FOR UPDATE`);
       const booking = await tx.booking.findFirst({
         where: { id: bookingId, tenantId },
-        include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } }, customer: true },
+        include: { invoices: { include: { payments: { orderBy: { createdAt: 'desc' } } } }, customer: true, items: { select: { totalAmount: true } } },
       });
 
       if (!booking) {
@@ -171,10 +172,8 @@ export class PrismaPaymentRepository implements IPaymentRepository {
             customerId: booking.customerId,
             status: 'issued',
             issuedAt: new Date(),
-            subtotal: booking.netAmount,
-            totalAmount: booking.netAmount,
+            ...invoiceAmountsFromBooking(booking),
             paidAmount: 0,
-            discount: booking.discount || 0,
           },
           include: { payments: { orderBy: { createdAt: 'desc' } } },
         });

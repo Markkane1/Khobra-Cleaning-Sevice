@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canCleanerStartWork, canCleanerSubmitCompletionTiming, canDriverTransitionToOnTheWay, isTerminalBookingStatus, isValidStatusTransition, shouldGeneratePickupAlert } from './schema.ts'
+import { canCleanerStartWork, canCleanerSubmitCompletionTiming, canDriverTransitionToOnTheWay, canEditFinalizedBooking, isTerminalBookingStatus, isValidStatusTransition, shouldGeneratePickupAlert } from './schema.ts'
 
 test('booking workflow requires Scheduled → On the Way → In Progress → Completed', () => {
   assert.equal(isValidStatusTransition('scheduled', 'on_the_way'), true)
@@ -28,6 +28,13 @@ test('completed, cancelled, and no-show bookings remain terminal', () => {
   assert.equal(isTerminalBookingStatus('cancelled'), true)
   assert.equal(isTerminalBookingStatus('no_show'), true)
   assert.equal(isTerminalBookingStatus('pending_assignment'), false)
+})
+
+test('finalized bookings keep their commercial details immutable', () => {
+  assert.equal(canEditFinalizedBooking('completed', ['discount']), false)
+  assert.equal(canEditFinalizedBooking('cancelled', ['scheduledDate']), false)
+  assert.equal(canEditFinalizedBooking('completed', ['notes']), true)
+  assert.equal(canEditFinalizedBooking('scheduled', ['discount']), true)
 })
 
 test('any assigned cleaner can start an On the Way booking once', () => {

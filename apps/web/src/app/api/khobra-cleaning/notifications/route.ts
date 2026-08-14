@@ -36,11 +36,10 @@ export async function PUT(req: NextRequest) {
     if ('response' in auth) return auth.response
     const data = UpdateNotificationSchema.parse(await req.json())
     const channel = req.nextUrl.searchParams.get('channel')
-    const mine = req.nextUrl.searchParams.get('scope') === 'mine'
     const where = {
       tenantId: auth.session.tenantId,
       ...(channel ? { channel } : {}),
-      ...(auth.session.role === 'admin' && !mine ? {} : { OR: [{ userId: auth.session.userId }, { userId: null }] }),
+      OR: [{ userId: auth.session.userId }, { userId: null }],
     }
     if (data.markAllRead) {
       const shared = await db.notification.findMany({ where: { ...where, userId: null }, select: { id: true } })

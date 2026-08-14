@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
     if ('response' in auth) return auth.response
 
     const services = await serviceRepository.findManyByTenant(auth.session.tenantId)
-    return NextResponse.json(services)
+    if (auth.session.role === 'admin') return NextResponse.json(services)
+    return NextResponse.json(services.filter(service => service.status === 'active').map(({ id, name, description, category, baseRate, withMaterialsRate, minDuration, galleryImages, heroImages }) => ({ id, name, description, category, baseRate, withMaterialsRate, minDuration, galleryImages, heroImages })))
   } catch (error) {
     return apiErrorResponse(error, { fallback: 'Failed to fetch services' })
   }

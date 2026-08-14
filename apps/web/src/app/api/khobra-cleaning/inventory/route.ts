@@ -9,7 +9,7 @@ const inventoryItemRepository = new PrismaInventoryItemRepository(db)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const items = await inventoryItemRepository.findManyByTenant(auth.session.tenantId)

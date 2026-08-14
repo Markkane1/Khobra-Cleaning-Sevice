@@ -22,6 +22,7 @@ export class PrismaTripRepository implements ITripRepository {
 
   async create(tenantId: string, data: CreateTripDTO): Promise<Trip> {
     const { stops, ...tripData } = data;
+    if (!await this.db.driver.findFirst({ where: { id: tripData.driverId, tenantId }, select: { id: true } })) throw new Error('Driver not found');
 
     return this.db.trip.create({
       data: {
@@ -47,26 +48,23 @@ export class PrismaTripRepository implements ITripRepository {
 
   async update(tenantId: string, id: string, data: UpdateTripDTO): Promise<Trip> {
     const { id: _id, stops, ...tripData } = data;
-
-    if (stops && Array.isArray(stops)) {
-      for (const stop of stops) {
-        if (stop.id) {
-          await this.db.tripStop.updateMany({
-            where: { id: stop.id, tripId: id, trip: { tenantId } },
-            data: {
-              ...(stop.status && { status: stop.status }),
-              ...(stop.completedAt && { completedAt: new Date(stop.completedAt) }),
-              ...(typeof stop.sortOrder === 'number' && { sortOrder: stop.sortOrder }),
-            },
-          });
-        }
+    return this.db.$transaction(async tx => {
+      if (tripData.driverId && !await tx.driver.findFirst({ where: { id: tripData.driverId, tenantId }, select: { id: true } })) throw new Error('Driver not found');
+      for (const stop of stops || []) {
+        const changed = await tx.tripStop.updateMany({
+          where: { id: stop.id, tripId: id, trip: { tenantId } },
+          data: {
+            ...(stop.status && { status: stop.status, completedAt: stop.status === 'completed' ? stop.completedAt || new Date() : null }),
+            ...(!stop.status && stop.completedAt && { completedAt: new Date(stop.completedAt) }),
+            ...(typeof stop.sortOrder === 'number' && { sortOrder: stop.sortOrder }),
+          },
+        });
+        if (!changed.count) throw new Error('Trip stop not found');
       }
-    }
-
-    return this.db.trip.update({
-      where: { id, tenantId },
-      data: tripData,
-      include: { stops: { include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } }, driver: { include: { user: { select: { name: true } } } } },
+      return tx.trip.update({
+        where: { id, tenantId }, data: tripData,
+        include: { stops: { include: { booking: { select: { id: true, bookingNo: true, status: true, startTime: true } } } }, driver: { include: { user: { select: { name: true } } } } },
+      });
     }) as unknown as Trip;
   }
 

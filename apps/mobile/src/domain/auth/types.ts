@@ -18,5 +18,6 @@ export interface SignupInput {
   phone: string
   password: string
   confirmPassword: string
+  privacyPolicyAccepted: boolean
   turnstileToken: string
 }

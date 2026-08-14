@@ -37,18 +37,31 @@ export async function PUT(req: NextRequest) {
     const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
     const { userId, role } = AssignRoleSchema.parse(await req.json())
-    const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
-    if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    const [user] = await db.$transaction([
-      db.user.update({
+    const user = await db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE "tenantId" = ${auth.session.tenantId} AND role = 'admin' FOR UPDATE`
+      const target = await tx.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
+      if (!target) throw Object.assign(new Error('User not found'), { status: 404 })
+      if (target.role === 'admin' && target.status === 'active' && role !== 'admin' && await tx.user.count({ where: { tenantId: auth.session.tenantId, role: 'admin', status: 'active' } }) <= 1) {
+        throw Object.assign(new Error('The tenant must retain at least one active administrator'), { status: 409 })
+      }
+      const profile = role === 'customer'
+        ? await tx.customer.findFirst({ where: { userId: target.id, tenantId: auth.session.tenantId, status: 'active', deletedAt: null }, select: { id: true } })
+        : role === 'cleaner'
+          ? await tx.employee.findFirst({ where: { userId: target.id, tenantId: auth.session.tenantId, status: 'active', deletedAt: null }, select: { id: true } })
+          : role === 'driver'
+            ? await tx.driver.findFirst({ where: { userId: target.id, tenantId: auth.session.tenantId, status: { in: ['active', 'AVAILABLE'] }, deletedAt: null }, select: { id: true } })
+            : true
+      if (!profile) throw Object.assign(new Error(`Create a ${role} profile before assigning this role`), { status: 409 })
+      const updated = await tx.user.update({
         where: { id: target.id },
         data: { role, sessionVersion: { increment: 1 } },
         select: { id: true, name: true, email: true, role: true, status: true },
-      }),
-      db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
-      db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
-    ])
-    broadcast('session:revoked', {}, auth.session.tenantId, target.id)
+      })
+      await tx.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } })
+      await tx.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } })
+      return updated
+    })
+    broadcast('session:revoked', {}, auth.session.tenantId, user.id)
     return NextResponse.json({ success: true, user })
   } catch (error) {
     return apiErrorResponse(error, { fallback: 'Role update failed' })
@@ -60,11 +73,11 @@ export async function PATCH(req: NextRequest) {
     const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
     const { userId } = ResetUserPasswordSchema.parse(await req.json())
-    const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId } })
+    const target = await db.user.findFirst({ where: { id: userId, tenantId: auth.session.tenantId, status: 'active' } })
     if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
     const temporaryPassword = randomBytes(12).toString('base64url')
     await db.$transaction([
-      db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), status: 'active', sessionVersion: { increment: 1 } } }),
+      db.user.update({ where: { id: target.id }, data: { passwordHash: hashPassword(temporaryPassword), sessionVersion: { increment: 1 } } }),
       db.pushSubscription.updateMany({ where: { userId: target.id }, data: { active: false } }),
       db.nativePushToken.updateMany({ where: { userId: target.id }, data: { active: false } }),
     ])

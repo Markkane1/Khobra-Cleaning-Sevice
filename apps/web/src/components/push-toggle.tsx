@@ -72,7 +72,12 @@ export function NativePushBridge({ userId }: { userId?: string }) {
       if (userId) {
         const pendingPath = localStorage.getItem(PENDING_PATH_KEY)
         if (pendingPath) { localStorage.removeItem(PENDING_PATH_KEY); navigate(pendingPath) }
-        if (pushEnabled() && (await PushNotifications.checkPermissions()).receive === 'granted') await PushNotifications.register()
+        let permission = await PushNotifications.checkPermissions()
+        if (permission.receive === 'prompt' || permission.receive === 'prompt-with-rationale') permission = await PushNotifications.requestPermissions()
+        if (permission.receive === 'granted') {
+          localStorage.setItem(ENABLED_KEY, 'true')
+          await PushNotifications.register()
+        }
       }
     }
     void setup().catch(error => toast.error(error instanceof Error ? error.message : 'Native push setup failed'))
@@ -105,6 +110,7 @@ export function PushToggle() {
       .catch(() => setEnabled(false))
   }, [native, webSupported])
 
+  if (native) return null
   if (!native && !webSupported) return null
 
   const toggle = async () => {
@@ -119,7 +125,7 @@ export function PushToggle() {
           }
           await PushNotifications.unregister()
           localStorage.removeItem(TOKEN_KEY)
-          localStorage.removeItem(ENABLED_KEY)
+          localStorage.setItem(ENABLED_KEY, 'false')
           setEnabled(false)
           return
         }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
 type BankAccount = { id: string; accountTitle: string; bankName: string; accountNumber: string; iban: string; branchName: string; branchCode: string; currency: string; isActive: boolean; isDefault: boolean; displayOrder: number }
@@ -20,8 +20,7 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
 
   const load = () => {
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/company-bank-accounts`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(r => r.json())
+    request<{ accounts: BankAccount[] }>('/api/khobra-cleaning/company-bank-accounts', {}, session.token)
       .then(d => setAccounts(d.accounts || []))
       .catch(() => Alert.alert('Error', 'Could not load bank accounts.'))
       .finally(() => setLoading(false))
@@ -43,12 +42,10 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
     if (!form.accountTitle || !form.bankName || !form.accountNumber) return Alert.alert('Validation', 'Account Title, Bank Name, and Account # are required.')
     setSaving(true)
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/company-bank-accounts`, {
+      await request('/api/khobra-cleaning/company-bank-accounts', {
         method: form.id ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(form)
-      })
-      if (!res.ok) throw new Error('Failed to save account')
+      }, session.token)
       setFormOpen(false)
       load()
     } catch (e: any) {
@@ -63,9 +60,11 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${apiBaseUrl}/api/khobra-cleaning/company-bank-accounts?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+          await request(`/api/khobra-cleaning/company-bank-accounts?id=${id}`, { method: 'DELETE' }, session.token)
           load()
-        } catch {}
+        } catch (error) {
+          Alert.alert('Error', error instanceof Error ? error.message : 'Could not delete bank account.')
+        }
       }}
     ])
   }
@@ -73,7 +72,7 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
   return <View style={styles.screen}>
     {!embedded && <View style={styles.header}>
       {onBack && <Pressable onPress={onBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.ink} /></Pressable>}
-      <PageHeading title="Bank Accounts" subtitle="Corporate bank accounts" action={<Pressable onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
+      <PageHeading title="Bank Accounts" subtitle="Corporate bank accounts" action={<Pressable accessibilityRole="button" accessibilityLabel="Add bank account" onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
     </View>}
 
     {embedded && <View style={styles.embeddedActions}>
@@ -97,7 +96,7 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
             <Text style={styles.detail}>{a.bankName} • {a.currency}</Text>
             <Text style={styles.detail} numberOfLines={1}><Ionicons name="card-outline" /> {a.accountNumber} {a.iban ? `(IBAN: ${a.iban})` : ''}</Text>
           </View>
-          <Pressable style={styles.delBtn} onPress={() => remove(a.id)}><Ionicons name="trash-outline" size={18} color={palette.danger} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${a.bankName} account`} style={styles.delBtn} onPress={() => remove(a.id)}><Ionicons name="trash-outline" size={18} color={palette.danger} /></Pressable>
         </Pressable>
       )}
     />}
@@ -106,7 +105,7 @@ export function BankAccountsScreen({ session, onBack, embedded = false }: { sess
       <SafeAreaView style={styles.modalScreen}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{form.id ? 'Edit Account' : 'New Account'}</Text>
-          <Pressable onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close bank account form" onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.formBody}>
           <View style={styles.formGroup}>
@@ -154,7 +153,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.background },
   header: { padding: 20, paddingBottom: 10 },
   embeddedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14 },
-  embeddedTitle: { fontSize: 17, fontWeight: '700', color: palette.ink },
+  embeddedTitle: { fontSize: 18, fontWeight: '700', color: palette.ink },
   backButton: { marginBottom: 10 },
   addButton: { width: 44, height: 44, borderRadius: 14, backgroundColor: palette.primary, alignItems: 'center', justifyContent: 'center', shadowColor: palette.primaryDark, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   buttonPressed: { opacity: 0.75 },
@@ -165,17 +164,17 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8 },
   title: { fontSize: 16, fontWeight: '700', color: palette.ink },
   defBadge: { backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#fde68a' },
-  defBadgeText: { fontSize: 9, fontWeight: '800', color: '#b45309' },
-  detail: { fontSize: 13, color: palette.muted },
-  delBtn: { padding: 8 },
+  defBadgeText: { fontSize: 12, fontWeight: '800', color: '#b45309' },
+  detail: { fontSize: 14, color: palette.muted },
+  delBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   
   modalScreen: { flex: 1, backgroundColor: palette.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border, backgroundColor: palette.surface },
-  modalTitle: { fontSize: 19, fontWeight: '700', color: palette.ink },
-  closeBtn: { padding: 4 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   formBody: { padding: 20, gap: 16 },
   formGroup: {},
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, borderRadius: 12, marginBottom: 8 },
-  toggleLabel: { fontSize: 15, color: palette.ink },
+  toggleLabel: { fontSize: 14, color: palette.ink },
   modalFooter: { padding: 20, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.border },
 })

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
 type Item = { id: string; name: string; sku: string; category: string; unit: string; currentStock: number; minStock: number; costPrice: number }
@@ -33,8 +33,8 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
   const loadData = () => {
     setLoading(true)
     Promise.all([
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/inventory`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json()),
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/vendors`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json())
+      request<Item[]>('/api/khobra-cleaning/inventory', {}, session.token),
+      request<Vendor[]>('/api/khobra-cleaning/vendors', {}, session.token)
     ]).then(([resItems, resVendors]) => {
       setItems(resItems)
       setVendors(resVendors)
@@ -49,12 +49,10 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
     setSaving(true)
     try {
       const payload = { ...itemForm, currentStock: Number(itemForm.currentStock), minStock: Number(itemForm.minStock), costPrice: Number(itemForm.costPrice) }
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/inventory`, {
+      await request('/api/khobra-cleaning/inventory', {
         method: editItemId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(editItemId ? { id: editItemId, ...payload } : payload)
-      })
-      if (!res.ok) throw new Error('Failed to save item')
+      }, session.token)
       setItemFormOpen(false)
       loadData()
     } catch (e: any) {
@@ -68,12 +66,10 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
     if (!vendorForm.name) return Alert.alert('Validation', 'Please provide Company Name.')
     setSaving(true)
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/vendors`, {
+      await request('/api/khobra-cleaning/vendors', {
         method: editVendorId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(editVendorId ? { id: editVendorId, ...vendorForm } : vendorForm)
-      })
-      if (!res.ok) throw new Error('Failed to save vendor')
+      }, session.token)
       setVendorFormOpen(false)
       loadData()
     } catch (e: any) {
@@ -88,7 +84,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${apiBaseUrl}/api/khobra-cleaning/inventory?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+          await request(`/api/khobra-cleaning/inventory?id=${id}`, { method: 'DELETE' }, session.token)
           loadData()
         } catch (e) { Alert.alert('Error', 'Failed to delete.') }
       }}
@@ -100,7 +96,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${apiBaseUrl}/api/khobra-cleaning/vendors?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+          await request(`/api/khobra-cleaning/vendors?id=${id}`, { method: 'DELETE' }, session.token)
           loadData()
         } catch (e) { Alert.alert('Error', 'Failed to delete.') }
       }}
@@ -121,8 +117,8 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
           <Text style={styles.metaText}>SKU: {i.sku || 'N/A'} • {i.category}</Text>
         </View>
         <View style={styles.actionsBox}>
-          <Pressable style={styles.iconButton} onPress={() => { setEditItemId(i.id); setItemForm({ name: i.name, sku: i.sku || '', category: i.category || '', unit: i.unit, currentStock: String(i.currentStock), minStock: String(i.minStock), costPrice: String(i.costPrice) }); setItemFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
-          <Pressable style={styles.iconButton} onPress={() => removeItem(i.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${i.name}`} style={styles.iconButton} onPress={() => { setEditItemId(i.id); setItemForm({ name: i.name, sku: i.sku || '', category: i.category || '', unit: i.unit, currentStock: String(i.currentStock), minStock: String(i.minStock), costPrice: String(i.costPrice) }); setItemFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${i.name}`} style={styles.iconButton} onPress={() => removeItem(i.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
         </View>
       </View>
       <View style={styles.stockRow}>
@@ -148,8 +144,8 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
           <Text style={styles.metaText}>{v.contactPerson}</Text>
         </View>
         <View style={styles.actionsBox}>
-          <Pressable style={styles.iconButton} onPress={() => { setEditVendorId(v.id); setVendorForm({ name: v.name, contactPerson: v.contactPerson || '', phone: v.phone || '', email: v.email || '', address: v.address || '' }); setVendorFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
-          <Pressable style={styles.iconButton} onPress={() => removeVendor(v.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${v.name}`} style={styles.iconButton} onPress={() => { setEditVendorId(v.id); setVendorForm({ name: v.name, contactPerson: v.contactPerson || '', phone: v.phone || '', email: v.email || '', address: v.address || '' }); setVendorFormOpen(true) }}><Ionicons name="pencil" size={16} color={palette.primary} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${v.name}`} style={styles.iconButton} onPress={() => removeVendor(v.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
         </View>
       </View>
       <View style={styles.vendorDetails}>
@@ -163,7 +159,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
   return <View style={styles.screen}>
     <View style={styles.header}>
       {onBack && <Pressable onPress={onBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.ink} /></Pressable>}
-      <PageHeading title="Inventory" subtitle="Stock management and vendor relations" action={<Pressable onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
+      <PageHeading title="Inventory" subtitle="Stock management and vendor relations" action={<Pressable accessibilityRole="button" accessibilityLabel={tab === 'items' ? 'Add inventory item' : 'Add vendor'} onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
       
       <View style={styles.tabs}>
         <Pressable style={[styles.tab, tab === 'items' && styles.tabActive]} onPress={() => setTab('items')}><Text style={[styles.tabText, tab === 'items' && styles.tabTextActive]}>Items ({items.length})</Text></Pressable>
@@ -189,7 +185,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
       <SafeAreaView style={styles.modalScreen}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{editItemId ? 'Edit Item' : 'Add Item'}</Text>
-          <Pressable onPress={() => setItemFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close inventory item form" onPress={() => setItemFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.formBody}>
           <View style={styles.formGroup}><FormLabel label="Item Name *" /><Input value={itemForm.name} onChangeText={t => setItemForm({ ...itemForm, name: t })} placeholder="e.g. Glass Cleaner" /></View>
@@ -214,9 +210,9 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
         <View style={styles.overlay}>
           <View style={styles.optionsBox}>
             <Text style={styles.optionsTitle}>Select Category</Text>
-            {['Chemicals', 'Tools', 'Supplies', 'PPE'].map(s => <Pressable key={s} style={styles.optionRow} onPress={() => { setItemForm({ ...itemForm, category: s }); setCategoryOptionsVisible(false); }}>
+            <ScrollView style={styles.optionsList}>{['Chemicals', 'Tools', 'Supplies', 'PPE'].map(s => <Pressable key={s} style={styles.optionRow} onPress={() => { setItemForm({ ...itemForm, category: s }); setCategoryOptionsVisible(false); }}>
               <Text style={styles.optionText}>{s}</Text>
-            </Pressable>)}
+            </Pressable>)}</ScrollView>
             <Pressable style={styles.optionCancel} onPress={() => setCategoryOptionsVisible(false)}><Text style={styles.optionCancelText}>Cancel</Text></Pressable>
           </View>
         </View>
@@ -227,9 +223,9 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
         <View style={styles.overlay}>
           <View style={styles.optionsBox}>
             <Text style={styles.optionsTitle}>Select Unit</Text>
-            {['pcs', 'litre', 'pack', 'pair', 'can', 'kg'].map(s => <Pressable key={s} style={styles.optionRow} onPress={() => { setItemForm({ ...itemForm, unit: s }); setUnitOptionsVisible(false); }}>
+            <ScrollView style={styles.optionsList}>{['pcs', 'litre', 'pack', 'pair', 'can', 'kg'].map(s => <Pressable key={s} style={styles.optionRow} onPress={() => { setItemForm({ ...itemForm, unit: s }); setUnitOptionsVisible(false); }}>
               <Text style={styles.optionText}>{s}</Text>
-            </Pressable>)}
+            </Pressable>)}</ScrollView>
             <Pressable style={styles.optionCancel} onPress={() => setUnitOptionsVisible(false)}><Text style={styles.optionCancelText}>Cancel</Text></Pressable>
           </View>
         </View>
@@ -240,7 +236,7 @@ export function InventoryScreen({ session, onBack }: { session: Session; onBack?
       <SafeAreaView style={styles.modalScreen}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{editVendorId ? 'Edit Vendor' : 'Add Vendor'}</Text>
-          <Pressable onPress={() => setVendorFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close vendor form" onPress={() => setVendorFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.formBody}>
           <View style={styles.formGroup}><FormLabel label="Company Name *" /><Input value={vendorForm.name} onChangeText={t => setVendorForm({ ...vendorForm, name: t })} placeholder="Vendor Co." /></View>
@@ -267,7 +263,7 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', marginTop: 10, backgroundColor: palette.surfaceMuted, borderRadius: 12, padding: 4 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
   tabActive: { backgroundColor: palette.surface, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
-  tabText: { fontSize: 13, fontWeight: '600', color: palette.muted },
+  tabText: { fontSize: 14, fontWeight: '600', color: palette.muted },
   tabTextActive: { color: palette.ink },
   list: { padding: 20, gap: 12, paddingBottom: 100 },
   card: { backgroundColor: palette.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
@@ -276,10 +272,10 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700', color: palette.ink, marginBottom: 4 },
   metaText: { fontSize: 12, color: palette.muted },
   actionsBox: { flexDirection: 'row', gap: 8 },
-  iconButton: { width: 32, height: 32, borderRadius: 8, backgroundColor: palette.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  iconButton: { width: 44, height: 44, borderRadius: 12, backgroundColor: palette.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   stockRow: { marginBottom: 12 },
-  stockText: { fontSize: 13, fontWeight: '700', color: palette.ink },
-  minText: { fontSize: 11, color: palette.muted },
+  stockText: { fontSize: 14, fontWeight: '700', color: palette.ink },
+  minText: { fontSize: 12, color: palette.muted },
   stockBar: { height: 6, backgroundColor: palette.surfaceMuted, borderRadius: 3, overflow: 'hidden' },
   stockFill: { height: '100%', backgroundColor: palette.primary, borderRadius: 3 },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 10 },
@@ -288,16 +284,17 @@ const styles = StyleSheet.create({
   
   modalScreen: { flex: 1, backgroundColor: palette.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border, backgroundColor: palette.surface },
-  modalTitle: { fontSize: 19, fontWeight: '700', color: palette.ink },
-  closeBtn: { padding: 4 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   formBody: { padding: 20, gap: 16 },
   formGroup: {},
-  row: { flexDirection: 'row', gap: 14 },
+  row: { gap: 14 },
   modalFooter: { padding: 20, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.border },
   
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: 20 },
-  optionsBox: { backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
-  optionsTitle: { padding: 20, fontSize: 17, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
+  optionsBox: { maxHeight: '85%', backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
+  optionsList: { flexShrink: 1 },
+  optionsTitle: { padding: 20, fontSize: 18, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
   optionRow: { padding: 18, borderBottomWidth: 1, borderBottomColor: palette.border },
   optionText: { fontSize: 16, textAlign: 'center', color: palette.ink },
   optionCancel: { padding: 18, backgroundColor: '#f9fafb' },

@@ -8,7 +8,7 @@ const vendorItemRepository = new PrismaVendorItemRepository(db)
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin'])
     if ('response' in auth) return auth.response
 
     const { searchParams } = new URL(req.url)

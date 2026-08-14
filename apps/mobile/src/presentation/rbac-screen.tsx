@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View, SafeAreaView } from 'react-native'
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette } from './mobile-ui'
 
 type Role = { id: 'admin' | 'driver' | 'customer' | 'cleaner'; name: string; description: string }
@@ -18,8 +18,7 @@ export function RbacScreen({ session, onBack }: { session: Session; onBack?: () 
 
   const load = () => {
     setLoading(true)
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/rbac`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(r => r.json())
+    request<{ users: User[]; roles: Role[] }>('/api/khobra-cleaning/rbac', {}, session.token)
       .then(d => {
         setUsers(d.users || [])
         setRoles(d.roles || [])
@@ -32,12 +31,10 @@ export function RbacScreen({ session, onBack }: { session: Session; onBack?: () 
 
   const assignRole = async (userId: string, role: Role['id']) => {
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/rbac`, {
+      await request('/api/khobra-cleaning/rbac', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ userId, role })
-      })
-      if (!res.ok) throw new Error('Role update failed')
+      }, session.token)
       load()
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -49,13 +46,10 @@ export function RbacScreen({ session, onBack }: { session: Session; onBack?: () 
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reset', style: 'destructive', onPress: async () => {
         try {
-          const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/rbac`, {
+          const d = await request<{ temporaryPassword: string }>('/api/khobra-cleaning/rbac', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
             body: JSON.stringify({ userId: user.id })
-          })
-          const d = await res.json()
-          if (!res.ok) throw new Error(d.error || 'Password reset failed')
+          }, session.token)
           Alert.alert('Password Reset', `Temporary password for ${user.name}:\n\n${d.temporaryPassword}\n\nPlease copy this now.`)
         } catch (e: any) {
           Alert.alert('Error', e.message)
@@ -115,14 +109,14 @@ export function RbacScreen({ session, onBack }: { session: Session; onBack?: () 
       <View style={styles.overlay}>
         <View style={styles.optionsBox}>
           <Text style={styles.optionsTitle}>Select Role for {selectedUser?.name}</Text>
-          {roles.map(r => (
+          <ScrollView style={styles.optionsList}>{roles.map(r => (
             <Pressable key={r.id} style={styles.optionRow} onPress={() => {
               if (selectedUser) assignRole(selectedUser.id, r.id)
               setPickerOpen(false)
             }}>
               <Text style={styles.optionText}>{r.name}</Text>
             </Pressable>
-          ))}
+          ))}</ScrollView>
           <Pressable style={styles.optionCancel} onPress={() => setPickerOpen(false)}><Text style={styles.optionCancelText}>Cancel</Text></Pressable>
         </View>
       </View>
@@ -142,23 +136,24 @@ const styles = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.primarySoft, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 16, fontWeight: '800', color: palette.primaryDark },
   info: { flex: 1 },
-  name: { fontSize: 15, fontWeight: '700', color: palette.ink },
+  name: { fontSize: 16, fontWeight: '700', color: palette.ink },
   email: { fontSize: 12, color: palette.muted, marginTop: 2 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginLeft: 8 },
-  statusText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+  statusText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   
   actionsRow: { flexDirection: 'row', gap: 10 },
   roleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f9fafb', borderWidth: 1, borderColor: palette.border, borderRadius: 10, padding: 12 },
   roleBtnLabel: { fontSize: 12, color: palette.muted, fontWeight: '600' },
   roleBtnValBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  roleBtnVal: { fontSize: 13, fontWeight: '700', color: palette.ink, textTransform: 'capitalize' },
+  roleBtnVal: { fontSize: 14, fontWeight: '700', color: palette.ink, textTransform: 'capitalize' },
   
   resetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12 },
-  resetBtnText: { fontSize: 13, fontWeight: '600', color: palette.ink },
+  resetBtnText: { fontSize: 14, fontWeight: '600', color: palette.ink },
   
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: 20 },
-  optionsBox: { backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
-  optionsTitle: { padding: 20, fontSize: 15, fontWeight: '600', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
+  optionsBox: { maxHeight: '85%', backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
+  optionsList: { flexShrink: 1 },
+  optionsTitle: { padding: 20, fontSize: 16, fontWeight: '600', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
   optionRow: { padding: 18, borderBottomWidth: 1, borderBottomColor: palette.border },
   optionText: { fontSize: 16, textAlign: 'center', color: palette.ink, textTransform: 'capitalize' },
   optionCancel: { padding: 18, backgroundColor: '#f9fafb' },

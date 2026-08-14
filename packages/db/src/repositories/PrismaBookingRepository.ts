@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { IBookingRepository, Booking, BookingActor } from '@repo/application';
-import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, calendarDayRange } from '@repo/core';
+import { CreateBookingDTO, UpdateBookingDTO, RateEmployeeInput, calculateDurationHours, calculateEndTimeFromDuration, calculateMultiServicePricing, parseTimeToMinutes, isTimeSlotOverlapping, generateBookingOccurrenceDates, isValidStatusTransition, validateBookingConfirmationDTO, validateBookingHours, calendarDayRange, MIN_BOOKING_DURATION_HOURS, fillCleanerSlots, canCustomerEditBooking, canEditFinalizedBooking, invoiceAmountsFromBooking } from '@repo/core';
 import { deliverPushNotifications } from '../push-notifications';
 import { nextReference } from '../reference-sequence';
 
@@ -91,10 +91,12 @@ async function syncMaterialReservations(db: BookingDb, bookingId: string) {
 }
 
 async function consumeMaterialReservations(db: BookingDb, bookingId: string) {
+  const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { tenantId: true } });
   const reservations = await db.bookingMaterialReservation.findMany({ where: { bookingId, status: 'reserved' } });
   for (const reservation of reservations) {
-    await db.inventoryItem.update({ where: { id: reservation.inventoryItemId }, data: { currentStock: { decrement: reservation.requiredQuantity } } });
-    await db.stockMovement.create({ data: { tenantId: (await db.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { tenantId: true } })).tenantId, itemId: reservation.inventoryItemId, type: 'booking_consumption', quantity: -reservation.requiredQuantity, unitCost: reservation.unitCost, reference: bookingId } });
+    const changed = await db.inventoryItem.updateMany({ where: { id: reservation.inventoryItemId, tenantId: booking.tenantId, currentStock: { gte: reservation.requiredQuantity } }, data: { currentStock: { decrement: reservation.requiredQuantity } } });
+    if (!changed.count) throw new Error('Insufficient material stock to start this booking');
+    await db.stockMovement.create({ data: { tenantId: booking.tenantId, itemId: reservation.inventoryItemId, type: 'booking_consumption', quantity: -reservation.requiredQuantity, unitCost: reservation.unitCost, reference: bookingId } });
   }
   await db.bookingMaterialReservation.updateMany({ where: { bookingId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
 }
@@ -244,14 +246,14 @@ export class PrismaBookingRepository implements IBookingRepository {
     }
 
     const services = await this.db.service.findMany({
-      where: { tenantId, id: { in: serviceIds } },
+      where: { tenantId, id: { in: serviceIds }, deletedAt: null },
     });
 
     if (services.length !== serviceIds.length) {
       throw new Error('Selected service(s) not found');
     }
 
-    const inactiveService = services.find(s => s.status === 'inactive');
+    const inactiveService = services.find(s => s.status !== 'active');
     if (inactiveService) {
       throw new Error(`Selected service '${inactiveService.name}' is currently unavailable/unbookable`);
     }
@@ -263,15 +265,17 @@ export class PrismaBookingRepository implements IBookingRepository {
     if (duration <= 0) {
       throw new Error('To time must be later than From time');
     }
-    const minimumDuration = 2;
-    if (duration < minimumDuration) {
-      throw new Error('Bookings require at least 2 hours');
+    if (duration < MIN_BOOKING_DURATION_HOURS) {
+      throw new Error(`Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`);
     }
 
     const employeeCount = Math.max(1, data.employeeCount || 1);
     const preferredEmployeeIds = data.preferredEmployeeIds?.length
       ? data.preferredEmployeeIds
       : data.preferredEmployeeId ? [data.preferredEmployeeId] : [];
+    if (preferredEmployeeIds.length > employeeCount) {
+      throw new Error('Selected cleaners cannot exceed the assigned staff count');
+    }
     const discount = data.discount || 0;
     const taxRate = data.taxRate ?? Number(tenant?.taxRate ?? 0);
 
@@ -306,8 +310,6 @@ export class PrismaBookingRepository implements IBookingRepository {
     const isRecurring = data.bookingType !== 'one_time';
     const recurringGroupId = isRecurring ? `RG-${Date.now()}-${Math.floor(Math.random() * 1000)}` : undefined;
 
-    const createdBookings: Booking[] = [];
-
     const {
       serviceId: _a,
       serviceIds: _b,
@@ -333,7 +335,9 @@ export class PrismaBookingRepository implements IBookingRepository {
       ...rest
     } = data as any;
 
-    for (let index = 0; index < occurrenceDates.length; index++) {
+    const results = await this.db.$transaction(async tx => {
+      const createdBookings: Array<{ booking: Booking; transition: StatusTransition }> = [];
+      for (let index = 0; index < occurrenceDates.length; index++) {
       const occurrenceDate = occurrenceDates[index]!;
       const requestedDate = `${occurrenceDate.getFullYear()}-${String(occurrenceDate.getMonth() + 1).padStart(2, '0')}-${String(occurrenceDate.getDate()).padStart(2, '0')}`;
       const { start: scheduledDate, end: dateEnd } = calendarDayRange(requestedDate, tenant?.timezone || 'UTC');
@@ -341,11 +345,11 @@ export class PrismaBookingRepository implements IBookingRepository {
       // 4. Preferred Employee Availability Recheck FOR THIS SPECIFIC OCCURRENCE DATE (Prompt 10 & 11 Rules)
       let isPreferredAssignedForThisDate = false;
       if (preferredEmployeeIds.length) {
-        const preferredEmployees = await this.db.employee.findMany({ where: { id: { in: preferredEmployeeIds }, tenantId, status: 'active' } });
+        const preferredEmployees = await tx.employee.findMany({ where: { id: { in: preferredEmployeeIds }, tenantId, status: 'active' } });
         if (preferredEmployees.length !== preferredEmployeeIds.length) throw new Error('Selected cleaner is inactive or unavailable');
-        const onLeave = await this.db.leaveRecord.findFirst({ where: { employeeId: { in: preferredEmployeeIds }, status: 'approved', startDate: { lt: dateEnd }, endDate: { gte: dateStart } } });
+        const onLeave = await tx.leaveRecord.findFirst({ where: { employeeId: { in: preferredEmployeeIds }, status: 'approved', startDate: { lt: dateEnd }, endDate: { gte: dateStart } } });
         if (onLeave) throw new Error('Selected cleaner is unavailable for the requested slot');
-        const assignments = await this.db.assignment.findMany({
+        const assignments = await tx.assignment.findMany({
           where: { employeeId: { in: preferredEmployeeIds }, booking: { scheduledDate: { gte: dateStart, lt: dateEnd }, status: { notIn: ['cancelled', 'completed', 'no_show'] } } },
           include: { booking: { select: { startTime: true, endTime: true, duration: true } } },
         });
@@ -357,13 +361,13 @@ export class PrismaBookingRepository implements IBookingRepository {
         isPreferredAssignedForThisDate = true;
       }
       if (data.preferredEmployeeId) {
-        const preferredEmp = await this.db.employee.findUnique({
+        const preferredEmp = await tx.employee.findUnique({
           where: { id: data.preferredEmployeeId },
         });
 
         if (preferredEmp && preferredEmp.tenantId === tenantId && preferredEmp.status === 'active') {
           // Check approved leave for this specific date
-          const onLeave = await this.db.leaveRecord.findFirst({
+          const onLeave = await tx.leaveRecord.findFirst({
             where: {
               employeeId: data.preferredEmployeeId,
               status: 'approved',
@@ -374,7 +378,7 @@ export class PrismaBookingRepository implements IBookingRepository {
 
           if (!onLeave) {
             // Check overlapping bookings for this specific date
-            const existingAssignments = await this.db.assignment.findMany({
+            const existingAssignments = await tx.assignment.findMany({
               where: {
                 employeeId: data.preferredEmployeeId,
                 booking: {
@@ -406,19 +410,48 @@ export class PrismaBookingRepository implements IBookingRepository {
         }
       }
 
+      let assignedEmployeeIds = [...preferredEmployeeIds];
+      if (assignedEmployeeIds.length < employeeCount) {
+        const candidates = await tx.employee.findMany({
+          where: { tenantId, status: 'active', id: { notIn: assignedEmployeeIds } },
+          select: { id: true },
+          orderBy: { employeeCode: 'asc' },
+        });
+        const candidateIds = candidates.map(candidate => candidate.id);
+        const leaves = candidateIds.length ? await tx.leaveRecord.findMany({
+          where: { employeeId: { in: candidateIds }, status: 'approved', startDate: { lt: dateEnd }, endDate: { gte: dateStart } },
+          select: { employeeId: true },
+        }) : [];
+        const unavailableIds = new Set(leaves.map(leave => leave.employeeId));
+        const candidateAssignments = candidateIds.length ? await tx.assignment.findMany({
+          where: { employeeId: { in: candidateIds }, booking: { scheduledDate: { gte: dateStart, lt: dateEnd }, status: { notIn: ['cancelled', 'completed', 'no_show'] } } },
+          include: { booking: { select: { startTime: true, endTime: true, duration: true } } },
+        }) : [];
+        const requestedStart = parseTimeToMinutes(data.startTime);
+        const requestedEnd = parseTimeToMinutes(endTime);
+        candidateAssignments.forEach(assignment => {
+          const existingStart = parseTimeToMinutes(assignment.booking.startTime);
+          const existingEnd = assignment.booking.endTime ? parseTimeToMinutes(assignment.booking.endTime) : existingStart + Math.round(assignment.booking.duration * 60);
+          if (isTimeSlotOverlapping(existingStart, existingEnd, requestedStart, requestedEnd)) unavailableIds.add(assignment.employeeId);
+        });
+        assignedEmployeeIds = fillCleanerSlots(assignedEmployeeIds, candidates.filter(candidate => !unavailableIds.has(candidate.id)).map(candidate => candidate.id), employeeCount);
+      }
+      if (assignedEmployeeIds.length !== employeeCount) {
+        throw new Error(`Only ${assignedEmployeeIds.length} cleaner(s) are available; ${employeeCount} are required`);
+      }
+
       // A direct preferred assignment is assigned; confirmation moves it to scheduled.
       // A preferred cleaner is only a preference until an available driver is assigned.
       const initialStatus = 'pending_assignment';
 
-      const result = await this.db.$transaction(async tx => {
         const bookingNo = await nextReference(tx, tenantId, 'booking', 'BK', 5, 999);
-        if (preferredEmployeeIds.length) {
-          for (const employeeId of [...preferredEmployeeIds].sort()) {
+        if (assignedEmployeeIds.length) {
+          for (const employeeId of [...assignedEmployeeIds].sort()) {
             await tx.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id = ${employeeId} FOR UPDATE`);
           }
           const assignments = await tx.assignment.findMany({
             where: {
-              employeeId: { in: preferredEmployeeIds },
+              employeeId: { in: assignedEmployeeIds },
               booking: {
                 scheduledDate: { gte: dateStart, lt: dateEnd },
                 status: { notIn: ['cancelled', 'completed', 'no_show'] },
@@ -464,10 +497,10 @@ export class PrismaBookingRepository implements IBookingRepository {
               includesMaterials: it.includesMaterials || false,
             })),
           },
-          ...(isPreferredAssignedForThisDate && preferredEmployeeIds.length
+          ...(assignedEmployeeIds.length
             ? {
                 assignments: {
-                  create: preferredEmployeeIds.map(employeeId => ({
+                  create: assignedEmployeeIds.map(employeeId => ({
                       tenantId,
                       employeeId,
                       status: 'assigned',
@@ -501,14 +534,13 @@ export class PrismaBookingRepository implements IBookingRepository {
           reason: 'Initial booking creation',
         },
         });
-        return { booking: created, transition };
-      });
+        createdBookings.push({ booking: created, transition });
+      }
+      return createdBookings;
+    });
 
-    await notifyBookingStatusChange(this.db, result.booking.id, result.transition);
-      createdBookings.push(result.booking);
-    }
-
-    return createdBookings[0]!;
+    for (const result of results) await notifyBookingStatusChange(this.db, result.booking.id, result.transition);
+    return results[0]!.booking;
   }
 
   async update(tenantId: string, id: string, data: UpdateBookingDTO, actor?: BookingActor, requiredDriverId?: string, requiredEmployeeId?: string): Promise<Booking> {
@@ -529,13 +561,40 @@ export class PrismaBookingRepository implements IBookingRepository {
     if (requiredEmployeeId && !existing.assignments.some((assignment: any) => assignment.employeeId === requiredEmployeeId)) throw new Error('Only a cleaner assigned to this booking may update its status');
 
     const { id: _id, ...rest } = data;
-    const driverChanged = rest.driverId !== undefined && rest.driverId !== existing.driverId;
-    const targetDriverId = rest.driverId !== undefined ? rest.driverId : existing.driverId;
+    if (!canEditFinalizedBooking(existing.status, Object.keys(rest))) {
+      throw new Error(`The commercial details of a ${existing.status} booking cannot be edited`);
+    }
+    const tenantObj = await db.tenant.findUnique({ where: { id: existing.tenantId } });
+    if (actor?.role === 'customer' && rest.status !== 'cancelled') {
+      const timezone = tenantObj?.timezone || 'UTC';
+      if (!canCustomerEditBooking(existing.scheduledDate, existing.startTime, timezone)) throw new Error('Booking details can only be edited at least 6 hours before the booking time');
+      if (!canCustomerEditBooking(rest.scheduledDate || existing.scheduledDate, rest.startTime || existing.startTime, timezone)) throw new Error('The updated booking date and time must be at least 6 hours from now');
+    }
+    const customerCrewChanged = actor?.role === 'customer' && rest.employeeCount !== undefined && rest.employeeCount !== existing.employeeCount;
+    const driverChanged = rest.driverId !== undefined && rest.driverId !== existing.driverId || customerCrewChanged && Boolean(existing.driverId);
+    const targetDriverId = customerCrewChanged ? null : rest.driverId !== undefined ? rest.driverId : existing.driverId;
     if (driverChanged && ['on_the_way', 'in_progress', 'completed', 'cancelled', 'no_show'].includes(existing.status)) throw new Error(`Driver cannot be reassigned while booking is ${existing.status}`);
     const updateData: any = { ...rest };
     delete updateData.serviceOptions;
     if (rest.status === 'cancelled') updateData.cancelledBy = actor?.userId;
     let transition: StatusTransition | undefined;
+
+    if (customerCrewChanged && (existing.assignments.length || existing.driverId)) {
+      await db.assignment.deleteMany({ where: { bookingId: id } });
+      updateData.status = 'pending_assignment';
+      updateData.driverId = null;
+      transition = await db.bookingStatusHistory.create({
+        data: {
+          bookingId: id,
+          previousStatus: existing.status,
+          newStatus: 'pending_assignment',
+          changedBy: `${actor.role}: ${actor.name}`,
+          changedByUserId: actor.userId,
+          changedByRole: actor.role,
+          reason: `Customer changed requested cleaner count to ${rest.employeeCount}; team reassignment required`,
+        },
+      });
+    }
 
     if (rest.status && rest.status !== existing.status) {
       const statusChangedAt = new Date();
@@ -575,10 +634,8 @@ export class PrismaBookingRepository implements IBookingRepository {
                 customerId: existing.customerId,
                 status: 'issued',
                 issuedAt: new Date(),
-                subtotal: existing.netAmount,
-                totalAmount: existing.netAmount,
+                ...invoiceAmountsFromBooking(existing),
                 paidAmount: 0,
-                discount: existing.discount || 0,
               },
             });
           }
@@ -601,7 +658,6 @@ export class PrismaBookingRepository implements IBookingRepository {
       transition = history;
     }
 
-    const tenantObj = await db.tenant.findUnique({ where: { id: existing.tenantId } });
     const scheduledDate = rest.scheduledDate
       ? calendarDayRange(String(rest.scheduledDate).slice(0, 10), tenantObj?.timezone || 'UTC').start
       : new Date(existing.scheduledDate);
@@ -619,8 +675,8 @@ export class PrismaBookingRepository implements IBookingRepository {
       }
     }
 
-    if (duration <= 0) {
-      throw new Error('To time must be later than From time');
+    if (duration < MIN_BOOKING_DURATION_HOURS) {
+      throw new Error(`Bookings require at least ${MIN_BOOKING_DURATION_HOURS} hours`);
     }
 
     updateData.duration = duration;
@@ -641,7 +697,7 @@ export class PrismaBookingRepository implements IBookingRepository {
     }
 
     // Rescheduling Availability Validation (Prompt 09 Trigger 8 & 9)
-    if ((rest.scheduledDate || rest.startTime || rest.endTime) && existing.assignments && existing.assignments.length > 0) {
+    if (!customerCrewChanged && (rest.scheduledDate || rest.startTime || rest.endTime) && existing.assignments && existing.assignments.length > 0) {
       await db.$queryRaw(Prisma.sql`SELECT id FROM "Employee" WHERE id IN (${Prisma.join(existing.assignments.map((assignment: { employeeId: string }) => assignment.employeeId).sort())}) FOR UPDATE`);
       const { start: dateStart, end: dateEnd } = calendarDayRange(rest.scheduledDate ? String(rest.scheduledDate).slice(0, 10) : scheduledDate, tenantObj?.timezone || 'UTC');
 
@@ -707,9 +763,9 @@ export class PrismaBookingRepository implements IBookingRepository {
 
     if (serviceIds.length > 0) {
       const services = await db.service.findMany({
-        where: { tenantId: existing.tenantId, id: { in: serviceIds } },
+        where: { tenantId: existing.tenantId, id: { in: serviceIds }, deletedAt: null },
       });
-      if (services.length !== serviceIds.length || services.some((service: { status: string }) => service.status === 'inactive')) {
+      if (services.length !== serviceIds.length || services.some((service: { status: string }) => service.status !== 'active')) {
         throw new Error('Selected service(s) are unavailable');
       }
 
@@ -820,6 +876,11 @@ export class PrismaBookingRepository implements IBookingRepository {
     const startMins = parseTimeToMinutes(existing.startTime);
     const endMins = existing.endTime ? parseTimeToMinutes(existing.endTime) : startMins + Math.round(existing.duration * 60);
 
+    const neededCount = Math.max(1, existing.employeeCount || 1);
+    if (employeeIds.length > neededCount) {
+      throw new Error(`Assign exactly ${neededCount} cleaner(s), or update the requested cleaner count first`);
+    }
+
     let targetEmpIds: string[] = [];
 
     if (autoAssign) {
@@ -893,8 +954,7 @@ export class PrismaBookingRepository implements IBookingRepository {
           return b.completedCount - a.completedCount;
         });
 
-      const neededCount = Math.max(1, existing.employeeCount || 1);
-      targetEmpIds = availableCandidates.slice(0, neededCount).map(e => e.id);
+      targetEmpIds = fillCleanerSlots(employeeIds, availableCandidates.map(candidate => candidate.id), neededCount);
 
       if (targetEmpIds.length < neededCount) {
         throw new Error(`Only ${targetEmpIds.length} eligible cleaner(s) are available; ${neededCount} are required. Booking remains in Pending Assignment.`);
@@ -903,57 +963,59 @@ export class PrismaBookingRepository implements IBookingRepository {
       if (!employeeIds || employeeIds.length === 0) {
         throw new Error('A booking cannot transition to Assigned or Scheduled with zero assigned cleaners');
       }
-      if (employeeIds.length !== existing.employeeCount) {
-        throw new Error(`Assign exactly ${existing.employeeCount} cleaner(s), or update the requested cleaner count first`);
+      if (employeeIds.length !== neededCount) {
+        throw new Error(`Assign exactly ${neededCount} cleaner(s), or update the requested cleaner count first`);
+      }
+    }
+
+    // Revalidate manually selected employees, including those retained during auto-assignment.
+    for (const empId of employeeIds) {
+      const emp = await this.db.employee.findUnique({
+        where: { id: empId },
+        include: { user: { select: { name: true } } },
+      });
+
+      if (!emp || emp.tenantId !== existing.tenantId || emp.status !== 'active') {
+        throw new Error(`Employee ${emp?.user?.name || empId} is inactive or unavailable`);
+      }
+      const onLeave = await this.db.leaveRecord.findFirst({
+        where: {
+          employeeId: empId,
+          status: 'approved',
+          startDate: { lt: dateEnd },
+          endDate: { gte: dateStart },
+        },
+      });
+
+      if (onLeave) {
+        throw new Error(`Cleaner ${emp.user?.name || emp.employeeCode} is on approved leave for this date`);
       }
 
-      // Revalidate manually selected employees
-      for (const empId of employeeIds) {
-        const emp = await this.db.employee.findUnique({
-          where: { id: empId },
-          include: { user: { select: { name: true } } },
-        });
-
-        if (!emp || emp.tenantId !== existing.tenantId || emp.status !== 'active') {
-          throw new Error(`Employee ${emp?.user?.name || empId} is inactive or unavailable`);
-        }
-        const onLeave = await this.db.leaveRecord.findFirst({
-          where: {
-            employeeId: empId,
-            status: 'approved',
-            startDate: { lt: dateEnd },
-            endDate: { gte: dateStart },
+      const overlappingAssignments = await this.db.assignment.findMany({
+        where: {
+          employeeId: empId,
+          bookingId: { not: bookingId },
+          booking: {
+            scheduledDate: { gte: dateStart, lt: dateEnd },
+            status: { notIn: ['cancelled', 'completed', 'no_show'] },
           },
-        });
+        },
+        include: { booking: { select: { startTime: true, endTime: true, duration: true } } },
+      });
 
-        if (onLeave) {
-          throw new Error(`Cleaner ${emp.user?.name || emp.employeeCode} is on approved leave for this date`);
-        }
+      const hasConflict = overlappingAssignments.some(a => {
+        const b = a.booking;
+        const bStart = parseTimeToMinutes(b.startTime);
+        const bEnd = b.endTime ? parseTimeToMinutes(b.endTime) : bStart + Math.round(b.duration * 60);
+        return isTimeSlotOverlapping(bStart, bEnd, startMins, endMins);
+      });
 
-        const overlappingAssignments = await this.db.assignment.findMany({
-          where: {
-            employeeId: empId,
-            bookingId: { not: bookingId },
-            booking: {
-              scheduledDate: { gte: dateStart, lt: dateEnd },
-              status: { notIn: ['cancelled', 'completed', 'no_show'] },
-            },
-          },
-          include: { booking: { select: { startTime: true, endTime: true, duration: true } } },
-        });
-
-        const hasConflict = overlappingAssignments.some(a => {
-          const b = a.booking;
-          const bStart = parseTimeToMinutes(b.startTime);
-          const bEnd = b.endTime ? parseTimeToMinutes(b.endTime) : bStart + Math.round(b.duration * 60);
-          return isTimeSlotOverlapping(bStart, bEnd, startMins, endMins);
-        });
-
-        if (hasConflict) {
-          throw new Error(`Cleaner ${emp.user?.name || emp.employeeCode} has an overlapping booking in this time slot`);
-        }
+      if (hasConflict) {
+        throw new Error(`Cleaner ${emp.user?.name || emp.employeeCode} has an overlapping booking in this time slot`);
       }
+    }
 
+    if (!autoAssign) {
       targetEmpIds = employeeIds;
     }
 

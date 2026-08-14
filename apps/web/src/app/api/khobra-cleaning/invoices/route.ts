@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaInvoiceRepository } from '@repo/db'
 import { InvoiceService } from '@repo/application'
-import { CreateInvoiceSchema, UpdateInvoiceSchema } from '@repo/core'
+import { CreateInvoiceSchema, invoiceAmountsFromBooking, UpdateInvoiceSchema } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { apiErrorResponse } from '@/lib/api-error'
 
@@ -35,11 +35,17 @@ export async function POST(req: NextRequest) {
     const validatedData = CreateInvoiceSchema.parse(body)
     const customer = await db.customer.findFirst({ where: { id: validatedData.customerId, tenantId: auth.session.tenantId } })
     if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
-    if (validatedData.bookingId && !await db.booking.findFirst({ where: { id: validatedData.bookingId, tenantId: auth.session.tenantId, customerId: customer.id } }))
+    const booking = validatedData.bookingId
+      ? await db.booking.findFirst({
+          where: { id: validatedData.bookingId, tenantId: auth.session.tenantId, customerId: customer.id },
+          include: { items: { select: { totalAmount: true } } },
+        })
+      : null
+    if (validatedData.bookingId && !booking)
       return NextResponse.json({ error: 'Booking does not belong to this customer' }, { status: 400 })
     if (validatedData.bookingId && await db.invoice.findFirst({ where: { bookingId: validatedData.bookingId } }))
       return NextResponse.json({ error: 'This booking already has an invoice' }, { status: 409 })
-    const invoice = await invoiceService.createInvoice(auth.session.tenantId, validatedData)
+    const invoice = await invoiceService.createInvoice(auth.session.tenantId, validatedData, booking ? invoiceAmountsFromBooking(booking) : undefined)
     
     broadcast('invoice:created', { invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount }, auth.session.tenantId)
     return NextResponse.json(invoice, { status: 201 })

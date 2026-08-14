@@ -18,11 +18,6 @@ export class ComplaintService {
     const existing = await this.complaintRepository.findById(tenantId, data.id);
     if (!existing) throw new Error('Complaint not found');
     
-    // Set resolvedAt if status is resolved
-    if (data.status === 'resolved' && !data.resolvedAt) {
-      data.resolvedAt = new Date();
-    }
-    
     return this.complaintRepository.update(tenantId, data.id, data);
   }
 

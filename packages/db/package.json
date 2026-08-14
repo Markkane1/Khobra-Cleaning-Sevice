@@ -21,9 +21,9 @@
     "db:backup": "node scripts/database-backup.mjs",
     "db:rehearse-backup": "node scripts/database-backup.mjs --rehearse",
     "db:validate": "prisma validate",
-    "test:retention": "tsx scripts/test-operational-retention.ts",
-    "audit:actors": "tsx scripts/audit-actor-fields.ts",
-    "audit:timezones": "tsx scripts/audit-timezones.ts"
+    "test:retention": "node --require ./scripts/tsx-bootstrap.cjs ../../node_modules/tsx/dist/cli.mjs scripts/test-operational-retention.ts",
+    "audit:actors": "node --require ./scripts/tsx-bootstrap.cjs ../../node_modules/tsx/dist/cli.mjs scripts/audit-actor-fields.ts",
+    "audit:timezones": "node --require ./scripts/tsx-bootstrap.cjs ../../node_modules/tsx/dist/cli.mjs scripts/audit-timezones.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",

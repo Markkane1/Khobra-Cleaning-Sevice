@@ -22,6 +22,8 @@ export class PrismaServiceRepository implements IServiceRepository {
 
   async create(tenantId: string, data: CreateServiceDTO): Promise<Service> {
     const { materials = [], ...values } = data as CreateServiceDTO & { materials?: Array<{ inventoryItemId: string; quantityPerCleanerHour: number; unit?: string }> };
+    const materialIds = [...new Set(materials.map(item => item.inventoryItemId))];
+    if (materialIds.length && await this.db.inventoryItem.count({ where: { tenantId, id: { in: materialIds } } }) !== materialIds.length) throw new Error('Inventory item not found');
     return this.db.service.create({
       data: {
         tenantId,
@@ -34,6 +36,8 @@ export class PrismaServiceRepository implements IServiceRepository {
 
   async update(tenantId: string, id: string, data: UpdateServiceDTO): Promise<Service> {
     const { id: _id, materials, ...updateData } = data as UpdateServiceDTO & { materials?: Array<{ inventoryItemId: string; quantityPerCleanerHour: number; unit?: string }> };
+    const materialIds = [...new Set(materials?.map(item => item.inventoryItemId) || [])];
+    if (materialIds.length && await this.db.inventoryItem.count({ where: { tenantId, id: { in: materialIds } } }) !== materialIds.length) throw new Error('Inventory item not found');
     return this.db.service.update({
       where: { id, tenantId },
       data: { ...updateData, minDuration: 2, ...(materials ? { materials: { deleteMany: {}, create: materials.map(item => ({ ...item, unit: item.unit || 'pcs' })) } } : {}) },
@@ -43,7 +47,7 @@ export class PrismaServiceRepository implements IServiceRepository {
   async delete(tenantId: string, id: string): Promise<void> {
     await this.db.service.update({
       where: { id, tenantId },
-      data: { status: 'inactive', deletedAt: new Date() },
+      data: { status: 'inactive' },
     });
   }
 }

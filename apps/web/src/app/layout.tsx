@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { QueryProvider } from "./providers";
+import { GlobalBackNavigation } from "@/components/global-back-navigation";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -58,6 +59,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <QueryProvider>
+            <GlobalBackNavigation />
             <div id="main-content" tabIndex={-1}>{children}</div>
             <Toaster richColors position="top-right" />
           </QueryProvider>

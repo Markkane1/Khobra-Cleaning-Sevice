@@ -71,34 +71,29 @@ export class PrismaEmployeeRepository implements IEmployeeRepository {
 
 
   async update(tenantId: string, id: string, data: UpdateEmployeeDTO): Promise<Employee> {
-    const employee = await this.db.employee.findFirst({ where: { id, tenantId } });
-    
-    if (employee) {
+    const { id: _id, email, name, phone, ...empData } = data;
+    return this.db.$transaction(async tx => {
+      const employee = await tx.employee.findFirst({ where: { id, tenantId } });
+      if (!employee) throw new Error('Employee not found');
       const userUpdate: any = {};
-      if (data.name) userUpdate.name = data.name;
-      if (data.email) userUpdate.email = data.email;
-      if (data.phone) userUpdate.phone = data.phone;
+      if (name !== undefined) userUpdate.name = name;
+      if (email !== undefined) userUpdate.email = email;
+      if (phone !== undefined) userUpdate.phone = phone;
       
       if (Object.keys(userUpdate).length > 0) {
-        await this.db.user.update({
+        await tx.user.update({
           where: { id: employee.userId },
           data: userUpdate,
         });
       }
-    }
-
-    const { id: _id, email, name, phone, ...empData } = data;
-
-    return this.db.employee.update({
-      where: { id, tenantId },
-      data: empData,
-      include: { user: { select: { name: true, email: true, phone: true } } },
+      return tx.employee.update({ where: { id, tenantId }, data: empData, include: { user: { select: { name: true, email: true, phone: true } } } });
     }) as unknown as Employee;
   }
 
   async delete(tenantId: string, id: string): Promise<void> {
-    const employee = await this.db.employee.findFirst({ where: { id, tenantId }, select: { userId: true } });
+    const employee = await this.db.employee.findFirst({ where: { id, tenantId }, select: { userId: true, user: { select: { role: true } } } });
     if (!employee) return;
+    if (employee.user.role === 'admin') throw Object.assign(new Error('Remove the administrator role before deleting this cleaner profile'), { status: 409 });
 
     const now = new Date()
 

@@ -1,24 +1,30 @@
-import { PrismaClient } from '@prisma/client';
-import { ICustomerRepository, Customer } from '@repo/application';
-import { CreateCustomerDTO, UpdateCustomerDTO } from '@repo/core';
-import { hashPassword } from '../password';
+import type { PrismaClient } from '@prisma/client';
+import type { ICustomerRepository, Customer } from '@repo/application';
+import type { CreateCustomerDTO, UpdateCustomerDTO } from '@repo/core';
+import { hashPassword } from '../password.ts';
 
 export class PrismaCustomerRepository implements ICustomerRepository {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly db: PrismaClient;
+
+  constructor(db: PrismaClient) {
+    this.db = db;
+  }
 
   async findManyByTenant(tenantId: string): Promise<Customer[]> {
-    return this.db.customer.findMany({
+    const customers = await this.db.customer.findMany({
       where: { tenantId },
-      include: { user: { select: { name: true, email: true } }, _count: { select: { bookings: true } } },
+      include: { user: { select: { name: true, email: true, phone: true } }, _count: { select: { bookings: true } } },
       orderBy: { createdAt: 'desc' },
-    }) as unknown as Customer[];
+    });
+    return customers.map(customer => ({ ...customer, phone: customer.phone || customer.user.phone })) as unknown as Customer[];
   }
 
   async findById(tenantId: string, id: string): Promise<Customer | null> {
-    return this.db.customer.findFirst({
+    const customer = await this.db.customer.findFirst({
       where: { id, tenantId },
-      include: { user: { select: { name: true, email: true } } },
-    }) as unknown as Customer | null;
+      include: { user: { select: { name: true, email: true, phone: true } } },
+    });
+    return customer ? { ...customer, phone: customer.phone || customer.user.phone } as unknown as Customer : null;
   }
 
   async create(tenantId: string, data: CreateCustomerDTO): Promise<Customer> {
@@ -41,35 +47,32 @@ export class PrismaCustomerRepository implements ICustomerRepository {
         data: {
           tenantId,
           userId: user.id,
+          phone,
           ...custData,
         },
-        include: { user: { select: { name: true, email: true } } },
+        include: { user: { select: { name: true, email: true, phone: true } } },
       });
     }) as unknown as Customer;
   }
 
 
   async update(tenantId: string, id: string, data: UpdateCustomerDTO): Promise<Customer> {
-    const customer = await this.db.customer.findFirst({ where: { id, tenantId } });
-    if (customer) {
-      await this.db.user.update({
-        where: { id: customer.userId },
-        data: { name: data.name, email: data.email, phone: data.phone },
-      });
-    }
-
     const { id: _id, email, name, phone, ...custData } = data;
-
-    return this.db.customer.update({
-      where: { id, tenantId },
-      data: { ...custData, phone },
-      include: { user: { select: { name: true, email: true } } }
+    return this.db.$transaction(async tx => {
+      const customer = await tx.customer.findFirst({ where: { id, tenantId } });
+      if (!customer) throw new Error('Customer not found');
+      await tx.user.update({
+        where: { id: customer.userId },
+        data: { name, email, phone },
+      });
+      return tx.customer.update({ where: { id, tenantId }, data: { ...custData, phone }, include: { user: { select: { name: true, email: true, phone: true } } } });
     }) as unknown as Customer;
   }
 
   async delete(tenantId: string, id: string): Promise<void> {
-    const customer = await this.db.customer.findFirst({ where: { id, tenantId }, select: { userId: true } });
+    const customer = await this.db.customer.findFirst({ where: { id, tenantId }, select: { userId: true, user: { select: { role: true } } } });
     if (!customer) return;
+    if (customer.user.role === 'admin') throw Object.assign(new Error('Remove the administrator role before deleting this customer profile'), { status: 409 });
 
     const now = new Date()
 

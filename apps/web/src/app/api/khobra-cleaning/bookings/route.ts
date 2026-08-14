@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { broadcast } from '@/lib/broadcast'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, getPrimaryCustomerAddress, parseTimeToMinutes } from '@repo/core'
+import { CreateBookingSchema, UpdateBookingSchema, canCleanerStartWork, canDriverTransitionToOnTheWay, generateBookingOccurrenceDates, getPrimaryCustomerAddress, isBookingAtLeastHoursAhead } from '@repo/core'
 import { requireAuth } from '@/lib/auth'
 import { apiErrorResponse } from '@/lib/api-error'
 
@@ -38,7 +38,31 @@ export async function GET(req: NextRequest) {
       const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, userId: auth.session.userId } })
       bookings = bookings.filter(booking => booking.driverId === driver?.id)
     }
-    return NextResponse.json(bookings.map(booking => ({ ...booking, currency: tenant.currency })))
+    return NextResponse.json(bookings.map((booking: any) => {
+      if (auth.session.role === 'admin') return { ...booking, currency: tenant.currency }
+      const { materialReservations: _materialReservations, ...safe } = booking
+      safe.customer = booking.customer ? { id: booking.customer.id, userId: booking.customer.userId, phone: booking.customer.phone, user: booking.customer.user } : null
+      safe.driver = booking.driver ? { id: booking.driver.id, user: booking.driver.user } : null
+      safe.materials = booking.materials?.map(({ inventoryItem: _inventoryItem, ...material }: any) => material)
+      safe.assignments = booking.assignments?.map(({ id, employeeId, status, customerRating, employee }: any) => ({ id, employeeId, status, customerRating, employee: employee ? { id: employee.id, employeeCode: employee.employeeCode, user: employee.user } : null }))
+      safe.completionTimingResponses = booking.completionTimingResponses?.map(({ id, bookingId, employeeId, withinScheduledTime, createdAt, employee }: any) => ({ id, bookingId, employeeId, withinScheduledTime, createdAt, employee: employee ? { id: employee.id, employeeCode: employee.employeeCode, user: employee.user } : null }))
+      safe.pickupAlerts = []
+      safe.rating = booking.rating ? { overallRating: booking.rating.overallRating, comment: booking.rating.comment, submittedAt: booking.rating.submittedAt } : null
+      safe.statusHistory = booking.statusHistory?.map(({ id, previousStatus, newStatus, changedBy, changedByRole, reason, createdAt }: any) => ({ id, previousStatus, newStatus, changedBy, changedByRole, reason, createdAt }))
+      delete safe.tenantId
+      delete safe.createdBy
+      delete safe.cancelledBy
+      if (auth.session.role === 'driver') safe.invoices = []
+      else safe.invoices = booking.invoices?.map((invoice: any) => ({
+        id: invoice.id,
+        totalAmount: invoice.totalAmount,
+        paidAmount: invoice.paidAmount,
+        selectedPaymentMethod: invoice.selectedPaymentMethod,
+        paymentSelectedAt: invoice.paymentSelectedAt,
+        payments: invoice.payments?.map(({ id, method, status, reconciliationStatus, receivedAt, verifiedAt, createdAt }: any) => ({ id, method, status, reconciliationStatus, receivedAt, verifiedAt, createdAt })),
+      }))
+      return { ...safe, currency: tenant.currency }
+    }))
   } catch (error) {
     return bookingErrorResponse(error, 'Failed to fetch bookings')
   }
@@ -46,7 +70,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuth(req)
+    const auth = await requireAuth(req, ['admin', 'customer'])
     if ('response' in auth) return auth.response
 
     const tenant = await db.tenant.findUnique({ where: { id: auth.session.tenantId } })
@@ -55,15 +79,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const validatedData = CreateBookingSchema.parse(body)
     if (auth.session.role === 'customer') {
-      const minimumBookingAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
-      const startMinutes = parseTimeToMinutes(validatedData.startTime)
       const tooSoon = generateBookingOccurrenceDates({
         ...validatedData,
         selectedDates: validatedData.selectedDates ? validatedData.selectedDates.filter((d): d is string | Date => Boolean(d)) : undefined,
-      }).some(date => {
-        date.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0)
-        return date < minimumBookingAt
-      })
+      }).some(date => !isBookingAtLeastHoursAhead(date, validatedData.startTime, tenant.timezone || 'UTC'))
       if (tooSoon) return NextResponse.json({ error: 'Customer bookings must be scheduled at least two hours in advance' }, { status: 400 })
     }
     const customer = await db.customer.findFirst({ where: { id: validatedData.customerId, tenantId: tenant.id } })
@@ -116,8 +135,17 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Only an assigned cleaner may start work on an On the Way booking' }, { status: 403 })
     if (validatedData.status === 'completed')
       return NextResponse.json({ error: 'Assigned cleaners must use Complete Booking to finish an In Progress booking' }, { status: 403 })
-    if (role === 'customer' && (booking.customer.userId !== auth.session.userId || validatedData.status !== 'cancelled'))
-      return NextResponse.json({ error: 'Customers may only cancel their own bookings' }, { status: 403 })
+    if (role === 'customer') {
+      if (booking.customer.userId !== auth.session.userId)
+        return NextResponse.json({ error: 'Customers may only update their own bookings' }, { status: 403 })
+      const isCancellation = validatedData.status === 'cancelled'
+      if (validatedData.status && !isCancellation)
+        return NextResponse.json({ error: 'Customers cannot change booking status' }, { status: 403 })
+      if (!isCancellation) {
+        if (!['pending_assignment', 'pending', 'assigned', 'scheduled', 'confirmed'].includes(booking.status))
+          return NextResponse.json({ error: `Booking details cannot be edited while booking is '${booking.status}'` }, { status: 400 })
+      }
+    }
     if (role === 'driver') {
       const driver = await db.driver.findFirst({ where: { tenantId: booking.tenantId, userId: auth.session.userId } })
       if (!driver || booking.driverId !== driver.id)
@@ -140,7 +168,24 @@ export async function PUT(req: NextRequest) {
     const updateData = role === 'admin'
       ? validatedData
       : role === 'customer'
-        ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason }
+        ? validatedData.status === 'cancelled'
+          ? { id: validatedData.id, status: validatedData.status, cancellationReason: validatedData.cancellationReason }
+          : {
+              id: validatedData.id,
+              serviceId: validatedData.serviceId,
+              serviceIds: validatedData.serviceIds,
+              serviceOptions: validatedData.serviceOptions,
+              scheduledDate: validatedData.scheduledDate,
+              startTime: validatedData.startTime,
+              endTime: validatedData.endTime,
+              employeeCount: validatedData.employeeCount,
+              address: validatedData.address,
+              city: validatedData.city,
+              area: validatedData.area,
+              latitude: validatedData.latitude,
+              longitude: validatedData.longitude,
+              notes: validatedData.notes,
+            }
         : { id: validatedData.id, status: validatedData.status }
     const updated = await bookingRepository.update(auth.session.tenantId, updateData.id, updateData, { userId: auth.session.userId, role, name: auth.session.name }, authorizedDriverId, authorizedEmployeeId)
     

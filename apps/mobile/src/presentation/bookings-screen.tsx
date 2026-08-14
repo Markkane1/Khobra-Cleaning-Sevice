@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as Clipboard from 'expo-clipboard'
 import * as DocumentPicker from 'expo-document-picker'
@@ -8,7 +8,8 @@ import { loadBookings } from '../application/bookings'
 import type { Session } from '../domain/auth/types'
 import type { Booking, CompanyBankAccount, DriverTrip } from '../domain/bookings/types'
 import { khobraBookingGateway } from '../infrastructure/http/khobra-gateways'
-import { cardShadow, LoadingState, localDateValue, MessageState, PageHeading, palette } from './mobile-ui'
+import { subscribeRealtime } from '../infrastructure/realtime'
+import { cardShadow, Input, LoadingState, localDateValue, MessageState, PageHeading, palette } from './mobile-ui'
 
 export function BookingsScreen({ session, onNewBooking }: { session: Session; onNewBooking: () => void }) {
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -31,6 +32,10 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
       .catch((error) => Alert.alert('Could not load bookings', error instanceof Error ? error.message : 'Try again.'))
       .finally(() => setLoading(false))
   }, [session.token])
+
+  useEffect(() => subscribeRealtime(session.token, ['booking:created', 'booking:updated', 'booking:deleted', 'invoice:created', 'invoice:updated', 'payment:created', 'payment:updated'], () => {
+    loadBookings(khobraBookingGateway, session.token).then(setBookings).catch(() => undefined)
+  }), [session.token])
 
   useEffect(() => {
     if (session.user.role === 'driver') khobraBookingGateway.getTrips(session.token).then(setTrips).catch(() => undefined)
@@ -126,7 +131,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
   </Modal>
   <BankTransferModal booking={bankBooking} token={session.token} onClose={() => setBankBooking(null)} onSubmitted={async () => { setBookings(await loadBookings(khobraBookingGateway, session.token)); setBankBooking(null) }} />
   <Modal visible={Boolean(ratingBooking)} transparent animationType="slide" onRequestClose={() => setRatingBooking(null)}>
-    <View style={styles.modalBackdrop}>
+    <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.ratingModal}>
         <ScrollView contentContainerStyle={styles.ratingContent}>
           <Text style={styles.ratingTitle}>Rate Service & Cleaners</Text>
@@ -158,7 +163,7 @@ export function BookingsScreen({ session, onNewBooking }: { session: Session; on
           </View>
         </ScrollView>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   </Modal>
   </>
 }
@@ -170,7 +175,7 @@ function BankTransferModal({ booking, token, onClose, onSubmitted }: { booking: 
   const [customerBankName, setCustomerBankName] = useState('')
   const [accountHolderName, setAccountHolderName] = useState('')
   const [transferDate, setTransferDate] = useState(localDateValue)
-  const [transferAmount, setTransferAmount] = useState('')
+  const [transferAmount, setTransferAmount] = useState('0')
   const [remarks, setRemarks] = useState('')
   const [proof, setProof] = useState<{ uri: string; name: string; mimeType: string } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -199,7 +204,7 @@ function BankTransferModal({ booking, token, onClose, onSubmitted }: { booking: 
   return <Modal visible={Boolean(booking)} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.ratingModal}><ScrollView contentContainerStyle={styles.ratingContent} keyboardShouldPersistTaps="handled"><Text style={styles.ratingTitle}>Submit Bank Transfer</Text><Text style={styles.ratingSubtitle}>{booking?.bookingNo} · Payment remains unverified until Admin approval.</Text>
     {accounts.map(account => <Pressable key={account.id} onPress={() => setAccountId(account.id)} style={[styles.bankAccount, account.id === accountId && styles.bankAccountSelected]}><Text style={styles.ratingLabel}>{account.bankName} · {account.currency}</Text><CopyRow label="Account title" value={account.accountTitle} /><CopyRow label="Account number" value={account.accountNumber} />{account.iban ? <CopyRow label="IBAN" value={account.iban} /> : null}{account.branchName || account.branchCode ? <Text style={styles.bankMeta}>{[account.branchName, account.branchCode].filter(Boolean).join(' · ')}</Text> : null}{account.instructions ? <Text style={styles.bankMeta}>{account.instructions}</Text> : null}</Pressable>)}
     {accounts.length === 0 ? <Text style={styles.bankMeta}>No active company bank account is available.</Text> : null}
-    <TextInput placeholder="Transaction / reference number *" value={referenceNo} onChangeText={setReferenceNo} style={styles.bankInput} /><TextInput placeholder="Your bank name *" value={customerBankName} onChangeText={setCustomerBankName} style={styles.bankInput} /><TextInput placeholder="Account-holder name *" value={accountHolderName} onChangeText={setAccountHolderName} style={styles.bankInput} /><TextInput placeholder="Transfer date (YYYY-MM-DD) *" value={transferDate} onChangeText={setTransferDate} style={styles.bankInput} /><TextInput placeholder="Transfer amount *" value={transferAmount} onChangeText={setTransferAmount} keyboardType="decimal-pad" style={styles.bankInput} /><TextInput placeholder="Remarks (optional)" value={remarks} onChangeText={setRemarks} multiline style={[styles.bankInput, { minHeight: 70 }]} />
+    <TextInput placeholder="Transaction / reference number *" value={referenceNo} onChangeText={setReferenceNo} style={styles.bankInput} /><TextInput placeholder="Your bank name *" value={customerBankName} onChangeText={setCustomerBankName} style={styles.bankInput} /><TextInput placeholder="Account-holder name *" value={accountHolderName} onChangeText={setAccountHolderName} style={styles.bankInput} /><TextInput placeholder="Transfer date (YYYY-MM-DD) *" value={transferDate} onChangeText={setTransferDate} style={styles.bankInput} /><Input placeholder="Transfer amount *" value={transferAmount} onChangeText={setTransferAmount} keyboardType="number-pad" /><TextInput placeholder="Remarks (optional)" value={remarks} onChangeText={setRemarks} multiline style={[styles.bankInput, { minHeight: 70 }]} />
     <Pressable onPress={async () => { const result = await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf'], copyToCacheDirectory: true }); if (!result.canceled) { const asset = result.assets[0]; setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream' }) } }} style={styles.proofButton}><Ionicons name="cloud-upload-outline" size={18} color={palette.primaryDark} /><Text style={styles.proofText}>{proof?.name || 'Choose payment proof *'}</Text></Pressable>
     <View style={styles.ratingActions}><Pressable disabled={saving} onPress={onClose} style={styles.ratingCancel}><Text style={styles.ratingCancelText}>Cancel</Text></Pressable><Pressable disabled={saving || !selected || !proof || !referenceNo.trim() || !customerBankName.trim() || !accountHolderName.trim() || !(Number(transferAmount) > 0)} onPress={submit} style={[styles.ratingSubmit, (saving || !selected || !proof) && { opacity: 0.5 }]}><Text style={styles.ratingSubmitText}>{saving ? 'Submitting...' : 'Submit for Verification'}</Text></Pressable></View>
   </ScrollView></View></View></Modal>
@@ -271,25 +276,25 @@ const styles = StyleSheet.create({
   service: { color: palette.ink, fontSize: 16, fontWeight: '700' },
   number: { color: palette.muted, fontSize: 12, marginTop: 3 },
   status: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  statusText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
   divider: { height: 1, backgroundColor: '#edf2ef', marginVertical: 2 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  detail: { color: palette.muted, fontSize: 13 },
+  detail: { color: palette.muted, fontSize: 14 },
   statusAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: palette.primary, borderRadius: 11, paddingHorizontal: 14, marginTop: 2 },
   statusActionText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   directionsAction: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, paddingVertical: 8 },
   directionsText: { flex: 1 },
-  directionsTitle: { color: '#1d4ed8', fontWeight: '800', fontSize: 13 },
-  directionsAddress: { color: '#475569', fontSize: 11, marginTop: 2 },
+  directionsTitle: { color: '#1d4ed8', fontWeight: '800', fontSize: 14 },
+  directionsAddress: { color: '#475569', fontSize: 12, marginTop: 2 },
   actionPressed: { opacity: 0.72 },
   callAction: { minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#86efac', backgroundColor: '#f0fdf4', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  callActionText: { color: '#166534', fontSize: 13, fontWeight: '800' },
+  callActionText: { color: '#166534', fontSize: 14, fontWeight: '800' },
   timingAction: { alignSelf: 'stretch', minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: '#93c5fd', backgroundColor: '#eff6ff', borderRadius: 11, paddingHorizontal: 14, marginTop: 2 },
   timingActionText: { color: '#1d4ed8', fontWeight: '800', fontSize: 12, textAlign: 'center' },
   timingResult: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 11, gap: 3 },
-  timingResultTitle: { color: palette.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  timingResultText: { color: palette.ink, fontSize: 13, fontWeight: '700' },
-  timingResultMeta: { color: palette.muted, fontSize: 11 },
+  timingResultTitle: { color: palette.muted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  timingResultText: { color: palette.ink, fontSize: 14, fontWeight: '700' },
+  timingResultMeta: { color: palette.muted, fontSize: 12 },
   emptyAction: { minHeight: 44, justifyContent: 'center', backgroundColor: palette.primary, borderRadius: 12, paddingHorizontal: 18 },
   emptyActionText: { color: '#fff', fontWeight: '700' },
   ratingAction: { minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#f59e0b', backgroundColor: '#fffbeb', borderRadius: 11, paddingHorizontal: 14 },
@@ -297,12 +302,12 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'flex-end' },
   ratingModal: { maxHeight: '88%', backgroundColor: palette.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   ratingContent: { padding: 22, paddingBottom: 34, gap: 14 },
-  ratingTitle: { color: palette.ink, fontSize: 21, fontWeight: '800' },
-  ratingSubtitle: { color: palette.muted, fontSize: 13 },
+  ratingTitle: { color: palette.ink, fontSize: 20, fontWeight: '800' },
+  ratingSubtitle: { color: palette.muted, fontSize: 14 },
   ratingLabel: { color: palette.ink, fontSize: 14, fontWeight: '700' },
   stars: { flexDirection: 'row', gap: 8 },
   cleanerRating: { borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 13, gap: 9 },
-  ratingInput: { minHeight: 90, borderWidth: 1, borderColor: palette.border, borderRadius: 13, padding: 12, color: palette.ink, textAlignVertical: 'top' },
+  ratingInput: { minHeight: 90, borderWidth: 1, borderColor: palette.border, borderRadius: 13, padding: 12, color: palette.ink, fontSize: 14, textAlignVertical: 'top' },
   ratingActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
   ratingCancel: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: palette.border, borderRadius: 11, paddingHorizontal: 16 },
   ratingCancelText: { color: palette.ink, fontWeight: '700' },
@@ -313,22 +318,22 @@ const styles = StyleSheet.create({
   scopeTabActive: { backgroundColor: palette.primary, borderColor: palette.primary },
   driverScopeActive: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
   transportStops: { marginBottom: 14, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: '#ddd6fe', backgroundColor: '#f5f3ff', gap: 8 },
-  transportTitle: { color: '#5b21b6', fontSize: 13, fontWeight: '800' },
+  transportTitle: { color: '#5b21b6', fontSize: 14, fontWeight: '800' },
   transportEmpty: { color: palette.muted, fontSize: 12 },
   transportStop: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#ede9fe' },
   transportType: { color: palette.ink, fontSize: 12, fontWeight: '800', textTransform: 'capitalize' },
-  transportAddress: { color: palette.muted, fontSize: 11, marginTop: 2 },
+  transportAddress: { color: palette.muted, fontSize: 12, marginTop: 2 },
   scopeTabText: { color: palette.muted, fontSize: 12, fontWeight: '700' },
   scopeTabTextActive: { color: '#fff' },
   issueAction: { minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3', backgroundColor: '#fff1f2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 9 },
   issueActionText: { color: '#be123c', fontSize: 12, fontWeight: '800' },
-  issueInput: { minHeight: 120, borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, textAlignVertical: 'top', color: palette.ink, backgroundColor: palette.surfaceMuted },
+  issueInput: { minHeight: 120, borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, textAlignVertical: 'top', color: palette.ink, fontSize: 14, backgroundColor: palette.surfaceMuted },
   bankAccount: { borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 13, gap: 8, backgroundColor: palette.surfaceMuted },
   bankAccountSelected: { borderColor: palette.primary, backgroundColor: '#ecfdf5' },
-  bankMeta: { color: palette.muted, fontSize: 11 },
-  bankValue: { color: palette.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  bankMeta: { color: palette.muted, fontSize: 12 },
+  bankValue: { color: palette.ink, fontSize: 14, fontWeight: '700', marginTop: 2 },
   copyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bankInput: { minHeight: 48, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: palette.ink, backgroundColor: palette.surfaceMuted },
+  bankInput: { minHeight: 48, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, color: palette.ink, fontSize: 14, backgroundColor: palette.surfaceMuted },
   proofButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: palette.primary, borderRadius: 12, backgroundColor: palette.primarySoft },
   proofText: { color: palette.primaryDark, fontWeight: '700', fontSize: 12 },
 })

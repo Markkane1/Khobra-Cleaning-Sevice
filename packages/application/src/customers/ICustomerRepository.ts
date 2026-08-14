@@ -9,6 +9,8 @@ export interface Customer {
   address?: string | null;
   addresses?: Array<{ label?: string; address: string; city?: string; area?: string }> | null;
   area?: string | null;
+  notes?: string | null;
+  preferences?: string | null;
   status: string;
   user: {
     name: string | null;

@@ -119,12 +119,22 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 0.875rem;
+    line-height: 1.5;
     background: radial-gradient(circle at top left, oklch(0.98 0.03 200), transparent 50%),
                 radial-gradient(circle at bottom right, oklch(0.95 0.05 160), transparent 50%);
     background-color: var(--background);
     background-attachment: fixed;
     scroll-behavior: smooth;
     overscroll-behavior-y: none;
+  }
+
+  :where(input, select, textarea) {
+    font-size: 0.875rem !important;
+  }
+
+  [data-slot="label"] {
+    font-size: 0.875rem !important;
   }
 
   .dark body {
@@ -189,6 +199,20 @@
 }
 
 @media (max-width: 767px) {
+  html,
+  body,
+  #main-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+  }
+
   :where(button, [role="button"], [role="tab"], [role="menuitem"]) {
     min-width: 44px;
     min-height: 44px;
@@ -196,18 +220,54 @@
 
   :where(input, select, textarea) {
     min-height: 44px;
-    font-size: 16px;
+    font-size: 16px !important;
   }
 
   [data-slot="dialog-content"],
   [data-slot="alert-dialog-content"] {
-    max-height: calc(100dvh - 2rem);
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem);
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
     overflow-y: auto;
+  }
+
+  [data-slot="dialog-content"] [data-slot="dialog-close"] {
+    top: max(0.625rem, env(safe-area-inset-top));
+    right: max(0.625rem, env(safe-area-inset-right));
+  }
+
+}
+
+@layer base {
+  @media (max-width: 767px) {
+    body,
+    [data-slot="label"],
+    :where(input, select, textarea) {
+      font-size: 1rem !important;
+    }
   }
 }
 
 :where(a, button, input, select, textarea, [role="button"], [role="tab"]) {
   touch-action: manipulation;
+}
+
+/* Touch screens have no hover: keep card actions visible and comfortably tappable. */
+@media (hover: none), (pointer: coarse) {
+  [data-slot="card"] .group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+
+  [data-slot="card"] :where(button, [role="button"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Supporting text has one readable floor across legacy screens. */
+:where(.text-\[9px\], .text-\[10px\], .text-\[11px\]) {
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

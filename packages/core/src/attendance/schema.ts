@@ -5,7 +5,7 @@ export const CreateAttendanceSchema = z.object({
   date: z.coerce.date('Attendance date is invalid'),
   clockIn: z.coerce.date('Clock-in time is invalid').optional(),
   clockOut: z.coerce.date('Clock-out time is invalid').optional(),
-  status: z.string().default('present'),
+  status: z.enum(['present', 'absent', 'late', 'leave']).default('present'),
   notes: z.string().optional(),
 });
 
@@ -16,7 +16,7 @@ export const UpdateAttendanceSchema = z.object({
   date: z.coerce.date('Attendance date is invalid').optional(),
   clockIn: z.coerce.date('Clock-in time is invalid').optional(),
   clockOut: z.coerce.date('Clock-out time is invalid').optional(),
-  status: z.string().optional(),
+  status: z.enum(['present', 'absent', 'late', 'leave']).optional(),
   notes: z.string().optional(),
 });
 

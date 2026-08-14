@@ -28,6 +28,7 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { useRealtime } from '@/hooks/use-realtime'
 import { NativePushBridge, PushToggle } from '@/components/push-toggle'
 import { notificationTarget } from '@/lib/notification-target'
+import { apiRequest } from '@/lib/api-client'
 import { Capacitor } from '@capacitor/core'
 
 const Dashboard = dynamic(() => import('@/components/khobra-cleaning/dashboard').then(m => ({ default: m.Dashboard })), { loading: () => <PageSkeleton />, ssr: false })
@@ -336,20 +337,20 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 function NotificationPanel({ open, onOpenChange, onNavigate }: { open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (view: ViewId) => void }) {
   const qc = useQueryClient()
-  const { subscribe, onEvent } = useRealtime()
-  useEffect(() => { subscribe('booking:updated'); onEvent('booking:updated', () => qc.invalidateQueries({ queryKey: ['notifications'] })) }, [onEvent, qc, subscribe])
+  const { lastEvent } = useRealtime()
+  useEffect(() => { if (lastEvent) qc.invalidateQueries() }, [lastEvent, qc])
   const { data: notifications = [] } = useQuery<any[]>({
     queryKey: ['notifications', 'in_app', 'mine'],
-    queryFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app&scope=mine').then(r => r.json()),
+    queryFn: () => apiRequest<any[]>('/api/khobra-cleaning/notifications?channel=in_app&scope=mine'),
   })
 
   const markReadMut = useMutation({
-    mutationFn: (id: string) => fetch('/api/khobra-cleaning/notifications?scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest('/api/khobra-cleaning/notifications?scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   const markAllReadMut = useMutation({
-    mutationFn: () => fetch('/api/khobra-cleaning/notifications?channel=in_app&scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }).then(r => r.json()),
+    mutationFn: () => apiRequest('/api/khobra-cleaning/notifications?channel=in_app&scope=mine', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markAllRead: true }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
@@ -357,27 +358,27 @@ function NotificationPanel({ open, onOpenChange, onNavigate }: { open: boolean; 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0 gap-0">
+      <DialogContent className="grid h-[100dvh] max-h-[100dvh] w-screen max-w-none grid-rows-[auto_1fr] gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:w-full sm:max-w-md sm:grid-rows-none sm:rounded-lg sm:border [&_[data-slot=dialog-close]]:top-2.5 [&_[data-slot=dialog-close]]:right-2.5 [&_[data-slot=dialog-close]]:flex [&_[data-slot=dialog-close]]:h-11 [&_[data-slot=dialog-close]]:w-11 [&_[data-slot=dialog-close]]:items-center [&_[data-slot=dialog-close]]:justify-center [&_[data-slot=dialog-close]]:rounded-md sm:[&_[data-slot=dialog-close]]:top-2 sm:[&_[data-slot=dialog-close]]:right-2">
         <DialogTitle className="sr-only">Notifications</DialogTitle>
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-sm">Notifications</h3>
-          <div className="flex items-center gap-2">
+        <div className="border-b px-4 pb-3 pt-3 pr-16">
+          <h3 className="text-base font-semibold">Notifications</h3>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 sm:mt-1 [&>button]:min-h-11 [&>button]:rounded-md [&>button]:px-2 [&>button]:text-sm sm:[&>button]:min-h-8 sm:[&>button]:text-xs">
             <PushToggle />
             {unreadCount > 0 && (
               <>
                 <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 dark:border-emerald-700">
                   {unreadCount} new
                 </Badge>
-                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => markAllReadMut.mutate()}>
-                  Mark all read
+                <button type="button" disabled={markAllReadMut.isPending} className="min-h-11 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 sm:min-h-8 sm:text-xs" onClick={() => markAllReadMut.mutate()}>
+                  {markAllReadMut.isPending ? 'Working…' : 'Mark all read'}
                 </button>
               </>
             )}
           </div>
         </div>
-        <div className="max-h-[350px] overflow-y-auto">
+        <div className="min-h-0 overflow-y-auto overscroll-contain sm:max-h-[350px]">
           {notifications.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">No notifications</div>
+            <div className="grid min-h-48 place-items-center px-4 text-center text-sm text-muted-foreground">No notifications</div>
           ) : (
             notifications.map(n => (
               <button
@@ -387,13 +388,13 @@ function NotificationPanel({ open, onOpenChange, onNavigate }: { open: boolean; 
                   onOpenChange(false)
                   onNavigate(notificationTarget(n.type))
                 }}
-                className={`w-full text-left px-4 py-3 border-b last:border-0 hover:bg-muted/50 transition-colors ${!n.read ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}
+                className={`min-h-16 w-full border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/50 active:bg-muted ${!n.read ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}
               >
                 <div className="flex items-start gap-3">
-                  {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" />}
-                  <div className={`flex-1 min-w-0 ${n.read ? 'ml-5' : ''}`}>
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500 ${n.read ? 'invisible' : ''}`} />
+                  <div className="min-w-0 flex-1">
                     <p className={`text-sm ${n.read ? 'text-muted-foreground' : 'font-medium'}`}>{n.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{n.message || n.desc}</p>
+                    <p className="mt-1 break-words text-sm leading-5 text-muted-foreground">{n.message || n.desc}</p>
                   </div>
                 </div>
               </button>
@@ -535,8 +536,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!currentUser) { setStats(null); return }
-    fetch('/api/khobra-cleaning/dashboard')
-      .then((r) => r.json())
+    apiRequest<any>('/api/khobra-cleaning/dashboard')
       .then((data) => {
         if (data.stats) {
           setStats({
@@ -555,7 +555,7 @@ export default function HomePage() {
 
   const { data: rbacData } = useQuery({
     queryKey: ['rbac', currentRole, currentUser?.userId],
-    queryFn: () => fetch('/api/khobra-cleaning/rbac').then(r => r.json()),
+    queryFn: () => apiRequest<any>('/api/khobra-cleaning/rbac'),
     enabled: Boolean(currentUser),
   })
 

@@ -265,7 +265,7 @@ export function Attendance() {
       </motion.div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      {currentRole === 'admin' && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {[
           { icon: UserCheck, label: 'Present Today', value: presentToday, color: 'bg-emerald-600', sub: `of ${todayRecords.length} records` },
           { icon: AlertTriangle, label: 'Absent Today', value: absentToday, color: absentToday > 0 ? 'bg-red-500' : 'bg-emerald-600', sub: absentToday > 0 ? 'needs attention' : 'all present', pulse: absentToday > 0 },
@@ -291,13 +291,13 @@ export function Attendance() {
             </Card>
           </motion.div>
         ))}
-      </div>
+      </div>}
 
       {/* Clock In/Out + Date Filter */}
       <motion.div className="grid grid-cols-1 md:grid-cols-2 gap-4" {...fadeUp}>
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
                 <CalendarDays className="h-4 w-4 text-emerald-600" />
               </div>
@@ -314,7 +314,7 @@ export function Attendance() {
 
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
               <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
                 <Clock className="h-4 w-4 text-teal-600" />
               </div>
@@ -329,7 +329,7 @@ export function Attendance() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2 mt-5">
+              <div className="flex flex-wrap gap-2 sm:mt-5">
                 <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-9" onClick={handleClockIn} disabled={clockMut.isPending}>
                   <LogIn className="h-4 w-4 mr-1.5" />Clock In
                 </Button>

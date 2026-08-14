@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, LoadingState, MessageState, PageHeading, palette, SelectButton } from './mobile-ui'
-import { Modal } from 'react-native'
 
 type AttendanceRecord = { id: string; employeeId: string; date: string; clockIn: string; clockOut?: string; status: string; employee?: { user?: { name: string } } }
 type Employee = { id: string; user?: { name: string } }
@@ -21,8 +20,8 @@ export function AttendanceScreen({ session, onBack }: { session: Session; onBack
   const load = () => {
     setLoading(true)
     Promise.all([
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/attendance`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json()),
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/employees`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json())
+      request<AttendanceRecord[]>('/api/khobra-cleaning/attendance', {}, session.token),
+      request<Employee[]>('/api/khobra-cleaning/employees', {}, session.token)
     ]).then(([resAtt, resEmp]) => {
       setRecords(resAtt)
       setEmployees(resEmp)
@@ -44,12 +43,10 @@ export function AttendanceScreen({ session, onBack }: { session: Session; onBack
     if (!clockEmployeeId) return Alert.alert('Error', 'Select an employee first.')
     setActionLoading(true)
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/attendance`, {
+      await request('/api/khobra-cleaning/attendance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ employeeId: clockEmployeeId, date: formatToday(), clockIn: new Date().toISOString(), status: 'present' })
-      })
-      if (!res.ok) throw new Error('Failed to clock in')
+      }, session.token)
       load()
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -67,12 +64,10 @@ export function AttendanceScreen({ session, onBack }: { session: Session; onBack
 
     setActionLoading(true)
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/attendance`, {
+      await request('/api/khobra-cleaning/attendance', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ id: activeRecord.id, clockOut: new Date().toISOString(), status: 'present' })
-      })
-      if (!res.ok) throw new Error('Failed to clock out')
+      }, session.token)
       load()
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -134,7 +129,7 @@ export function AttendanceScreen({ session, onBack }: { session: Session; onBack
       <View style={styles.overlay}>
         <View style={styles.optionsBox}>
           <Text style={styles.optionsTitle}>Select Cleaner</Text>
-          {employees.map(e => <Pressable key={e.id} style={styles.optionRow} onPress={() => { setClockEmployeeId(e.id); setPickerVisible(false); }}><Text style={styles.optionText}>{e.user?.name || 'Unknown'}</Text></Pressable>)}
+          <ScrollView style={styles.optionsList}>{employees.map(e => <Pressable key={e.id} style={styles.optionRow} onPress={() => { setClockEmployeeId(e.id); setPickerVisible(false); }}><Text style={styles.optionText}>{e.user?.name || 'Unknown'}</Text></Pressable>)}</ScrollView>
           <Pressable style={styles.optionCancel} onPress={() => setPickerVisible(false)}><Text style={styles.optionCancelText}>Cancel</Text></Pressable>
         </View>
       </View>
@@ -156,18 +151,19 @@ const styles = StyleSheet.create({
   list: { padding: 20, gap: 12, paddingBottom: 100 },
   card: { backgroundColor: palette.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  employeeName: { fontSize: 16, fontWeight: '700', color: palette.ink },
+  employeeName: { flex: 1, minWidth: 0, fontSize: 16, fontWeight: '700', color: palette.ink },
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  badgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  dateText: { fontSize: 13, color: palette.muted, marginBottom: 12 },
+  badgeText: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  dateText: { fontSize: 14, color: palette.muted, marginBottom: 12 },
   timeRow: { flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 12 },
   timeBox: { flex: 1 },
-  timeLabel: { fontSize: 11, color: palette.muted, fontWeight: '600', marginBottom: 2 },
-  timeVal: { fontSize: 15, fontWeight: '700', color: palette.ink },
+  timeLabel: { fontSize: 12, color: palette.muted, fontWeight: '600', marginBottom: 2 },
+  timeVal: { fontSize: 16, fontWeight: '700', color: palette.ink },
   
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: 20 },
-  optionsBox: { backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
-  optionsTitle: { padding: 20, fontSize: 17, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
+  optionsBox: { maxHeight: '85%', backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
+  optionsList: { flexShrink: 1 },
+  optionsTitle: { padding: 20, fontSize: 18, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
   optionRow: { padding: 18, borderBottomWidth: 1, borderBottomColor: palette.border },
   optionText: { fontSize: 16, textAlign: 'center', color: palette.ink },
   optionCancel: { padding: 18, backgroundColor: '#f9fafb' },

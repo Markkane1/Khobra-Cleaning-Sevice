@@ -44,7 +44,10 @@ export class PrismaComplaintRepository implements IComplaintRepository {
     const { id: _id, ...updateData } = data;
     return this.db.complaint.update({
       where: { id, tenantId },
-      data: updateData,
+      data: {
+        ...updateData,
+        ...(data.status && { resolvedAt: ['resolved', 'closed'].includes(data.status) ? data.resolvedAt || new Date() : null }),
+      },
       include: { 
         customer: { include: { user: { select: { name: true } } } }, 
         booking: { select: { bookingNo: true } } 

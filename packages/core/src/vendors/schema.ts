@@ -7,7 +7,7 @@ export const CreateVendorSchema = z.object({
   phone: z.string().optional().nullable(),
   email: EmailSchema.optional().nullable().or(z.literal('')),
   address: z.string().optional().nullable(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
 });
 
 export const UpdateVendorSchema = CreateVendorSchema.partial().extend({

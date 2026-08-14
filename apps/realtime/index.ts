@@ -1,12 +1,9 @@
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import crypto from 'crypto'
+import { requiredEnv } from './config.ts'
+import { isSocketIoRequest } from './request-path.ts'
 
-const requiredEnv = (name: string) => {
-  const value = process.env[name]
-  if (!value) throw new Error(`${name} must be configured`)
-  return value
-}
 const AUTH_SECRET = requiredEnv('AUTH_SECRET')
 const REALTIME_SECRET = requiredEnv('REALTIME_SECRET')
 const MAX_BROADCAST_BYTES = 64 * 1024
@@ -48,7 +45,8 @@ const socketRooms = new Map<string, { tenantId?: string; userId?: string }>()
 let shuttingDown = false
 
 io.use((socket, next) => {
-  const session = verifyToken(socket.handshake.auth?.token)
+  const cookieToken = socket.handshake.headers.cookie?.match(/(?:^|;\s*)khobra_session=([^;]+)/)?.[1]
+  const session = verifyToken(socket.handshake.auth?.token || cookieToken)
   if (!session) return next(new Error('Unauthorized'))
   ;(socket as any).tenantId = session.tenantId
   ;(socket as any).userId = session.userId
@@ -74,7 +72,8 @@ io.on('connection', (socket) => {
 })
 
 // ---- HTTP bridge for API routes to trigger authenticated broadcasts ----
-httpServer.on('request', (req, res) => {
+httpServer.prependListener('request', (req, res) => {
+  if (isSocketIoRequest(req.url)) return
   if (req.method === 'POST' && req.url === '/broadcast') {
     const authHeader = req.headers['authorization'] || req.headers['x-internal-secret']
     const suppliedSecret = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader

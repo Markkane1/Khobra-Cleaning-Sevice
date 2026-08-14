@@ -101,37 +101,14 @@ export class PrismaPayrollRepository implements IPayrollRepository {
     const currentAllowances = data.allowances ?? 0;
     const currentNet = data.netSalary ?? (currentBase - currentDeductions + currentAllowances);
 
-    const existingRecord = await this.db.payrollRecord.findFirst({
-      where: { tenantId, employeeId: data.employeeId, year, month },
-    });
-
-    if (existingRecord) {
-      return this.db.payrollRecord.update({
-        where: { id: existingRecord.id },
-        data: {
-          status: data.status || 'approved',
-          baseSalary: currentBase,
-          deductions: currentDeductions,
-          allowances: currentAllowances,
-          netSalary: currentNet,
-          ...(data.status === 'paid' ? { paidAt: new Date() } : {}),
-        },
-      }) as unknown as PayrollRecord;
-    } else {
-      return this.db.payrollRecord.create({
-        data: {
-          tenantId,
-          employeeId: data.employeeId,
-          month,
-          year,
-          baseSalary: currentBase,
-          deductions: currentDeductions,
-          allowances: currentAllowances,
-          netSalary: currentNet,
-          status: data.status || 'approved',
-          ...(data.status === 'paid' ? { paidAt: new Date() } : {}),
-        },
-      }) as unknown as PayrollRecord;
-    }
+    const values = {
+      baseSalary: currentBase, deductions: currentDeductions, allowances: currentAllowances, netSalary: currentNet,
+      status: data.status || 'approved', paidAt: data.status === 'paid' ? new Date() : null,
+    };
+    return this.db.payrollRecord.upsert({
+      where: { tenantId_employeeId_month_year: { tenantId, employeeId: data.employeeId, month, year } },
+      update: values,
+      create: { tenantId, employeeId: data.employeeId, month, year, ...values },
+    }) as unknown as PayrollRecord;
   }
 }

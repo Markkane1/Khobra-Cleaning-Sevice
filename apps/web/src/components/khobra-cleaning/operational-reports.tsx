@@ -102,7 +102,7 @@ export function OperationalReports({ bookings, currency = 'AED' }: { bookings: a
     exportToCSV(rows, name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
   }
 
-  const actions = (name: string, rows: Row[]) => <div className="flex gap-2">
+  const actions = (name: string, rows: Row[]) => <div className="flex flex-wrap gap-2">
     <Button size="sm" variant="outline" onClick={() => download(name, rows)}><Download className="mr-1.5 h-4 w-4" />Excel (CSV)</Button>
     <Button size="sm" variant="outline" onClick={() => download(name, rows, true)}><FileText className="mr-1.5 h-4 w-4" />PDF</Button>
   </div>
@@ -122,12 +122,12 @@ export function OperationalReports({ bookings, currency = 'AED' }: { bookings: a
     </CardHeader>
     <CardContent>
       <Tabs defaultValue="bookings">
-        <TabsList className="mb-4"><TabsTrigger value="bookings" className="flex-none">All Bookings ({bookingRows.length})</TabsTrigger><TabsTrigger value="completed" className="flex-none">Completed ({completed.length})</TabsTrigger><TabsTrigger value="assignments" className="flex-none">Cleaner Assignments ({assignmentRows.length})</TabsTrigger></TabsList>
+        <TabsList className="mb-4 h-auto w-full flex-wrap justify-start gap-1"><TabsTrigger value="bookings" className="flex-none">All Bookings ({bookingRows.length})</TabsTrigger><TabsTrigger value="completed" className="flex-none">Completed ({completed.length})</TabsTrigger><TabsTrigger value="assignments" className="flex-none">Cleaner Assignments ({assignmentRows.length})</TabsTrigger></TabsList>
         <TabsContent value="bookings" className="space-y-3"><div className="flex justify-end">{actions(`Booking Record ${from} to ${to}`, bookingRows)}</div>{bookingTable(bookingRows)}</TabsContent>
         <TabsContent value="completed" className="space-y-3"><div className="flex justify-end">{actions(`Completed Bookings ${from} to ${to}`, completedRows)}</div>{bookingTable(completedRows)}</TabsContent>
         <TabsContent value="assignments" className="space-y-5">
           <div className="flex justify-end">{actions(`Cleaner Hours Summary ${from} to ${to}`, employeeSummary)}</div>
-          <Table><TableHeader><TableRow><TableHead>Cleaner</TableHead><TableHead>Assignments</TableHead><TableHead>Completed</TableHead><TableHead>Total Hours</TableHead><TableHead>Average Rating</TableHead></TableRow></TableHeader><TableBody>{employeeSummary.map(row => <TableRow key={String(row.Cleaner)}><TableCell>{row.Cleaner}</TableCell><TableCell>{row.Assignments}</TableCell><TableCell>{row['Completed Bookings']}</TableCell><TableCell>{row['Total Hours']}</TableCell><TableCell>{row['Average Rating']}</TableCell></TableRow>)}</TableBody></Table>
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Cleaner</TableHead><TableHead>Assignments</TableHead><TableHead>Completed</TableHead><TableHead>Total Hours</TableHead><TableHead>Average Rating</TableHead></TableRow></TableHeader><TableBody>{employeeSummary.map(row => <TableRow key={String(row.Cleaner)}><TableCell>{row.Cleaner}</TableCell><TableCell>{row.Assignments}</TableCell><TableCell>{row['Completed Bookings']}</TableCell><TableCell>{row['Total Hours']}</TableCell><TableCell>{row['Average Rating']}</TableCell></TableRow>)}</TableBody></Table></div>
           <div className="flex justify-end">{actions(`Cleaner Assignment History ${from} to ${to}`, assignmentRows)}</div>
           <div className="max-h-[360px] overflow-auto"><Table><TableHeader><TableRow><TableHead>Cleaner</TableHead><TableHead>Booking</TableHead><TableHead>Date</TableHead><TableHead>Hours</TableHead><TableHead>Rating</TableHead><TableHead>Customer Feedback</TableHead></TableRow></TableHeader><TableBody>{assignmentRows.map((row, index) => <TableRow key={`${row['Booking Reference']}-${row.Cleaner}-${index}`}><TableCell>{row.Cleaner}</TableCell><TableCell className="font-mono text-xs">{row['Booking Reference']}</TableCell><TableCell>{row.Date}</TableCell><TableCell>{row['Hours Worked']}</TableCell><TableCell>{row.Rating}</TableCell><TableCell className="max-w-xs whitespace-normal">{row.Feedback}</TableCell></TableRow>)}</TableBody></Table></div>
         </TabsContent>

@@ -58,30 +58,26 @@ export class PrismaDriverRepository implements IDriverRepository {
 
 
   async update(tenantId: string, id: string, data: UpdateDriverDTO): Promise<Driver> {
-    const driver = await this.db.driver.findFirst({ where: { id, tenantId } });
-    
-    if (driver && (data.name !== undefined || data.phone !== undefined)) {
-      await this.db.user.update({
+    const { id: _id, name, email, phone, vehicleNo, ...driverData } = data;
+    return this.db.$transaction(async tx => {
+      const driver = await tx.driver.findFirst({ where: { id, tenantId } });
+      if (!driver) throw new Error('Driver not found');
+      if (name !== undefined || email !== undefined || phone !== undefined) await tx.user.update({
         where: { id: driver.userId },
         data: { 
-          ...(data.name !== undefined && { name: data.name }),
-          ...(data.phone !== undefined && { phone: data.phone }),
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
         },
       });
-    }
-
-    const { id: _id, name, email, phone, vehicleNo, ...driverData } = data;
-
-    return this.db.driver.update({
-      where: { id, tenantId },
-      data: { ...driverData, ...(vehicleNo !== undefined && { vehicleInfo: vehicleNo }) },
-      include: { user: { select: { name: true, email: true, phone: true } } }
+      return tx.driver.update({ where: { id, tenantId }, data: { ...driverData, ...(vehicleNo !== undefined && { vehicleInfo: vehicleNo }) }, include: { user: { select: { name: true, email: true, phone: true } } } });
     }) as unknown as Driver;
   }
 
   async delete(tenantId: string, id: string): Promise<void> {
-    const driver = await this.db.driver.findFirst({ where: { id, tenantId }, select: { userId: true } });
+    const driver = await this.db.driver.findFirst({ where: { id, tenantId }, select: { userId: true, user: { select: { role: true } } } });
     if (!driver) return;
+    if (driver.user.role === 'admin') throw Object.assign(new Error('Remove the administrator role before deleting this driver profile'), { status: 409 });
 
     const now = new Date()
 

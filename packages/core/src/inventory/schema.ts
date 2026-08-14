@@ -8,7 +8,7 @@ export const CreateInventoryItemSchema = z.object({
   currentStock: z.coerce.number().nonnegative('Current stock cannot be negative').optional(),
   minStock: z.coerce.number().nonnegative('Minimum stock cannot be negative').optional(),
   costPrice: z.coerce.number().nonnegative('Cost price cannot be negative').optional(),
-  status: z.string().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
 });
 
 export const UpdateInventoryItemSchema = CreateInventoryItemSchema.partial().extend({
@@ -16,6 +16,9 @@ export const UpdateInventoryItemSchema = CreateInventoryItemSchema.partial().ext
   adjustQuantity: z.coerce.number().positive('Adjustment quantity must be greater than zero').optional(),
   adjustType: z.enum(['IN', 'OUT']).optional(),
   notes: z.string().optional(),
+}).refine(data => Boolean(data.adjustQuantity) === Boolean(data.adjustType), {
+  message: 'Adjustment quantity and type are both required',
+  path: ['adjustQuantity'],
 });
 
 export type CreateInventoryItemDTO = z.infer<typeof CreateInventoryItemSchema>;

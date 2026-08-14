@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 
-const env = { ...process.env, PLAYWRIGHT_EXTERNAL_SERVER: '1' }
-const server = spawn(process.execPath, [resolve('node_modules/next/dist/bin/next'), 'start', resolve('apps/web'), '-p', '3000'], {
+const port = '3100'
+const env = { ...process.env, PLAYWRIGHT_EXTERNAL_SERVER: '1', PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${port}` }
+const server = spawn(process.execPath, [resolve('node_modules/next/dist/bin/next'), 'start', resolve('apps/web'), '-p', port], {
   stdio: 'inherit',
   env,
 })
@@ -12,7 +13,7 @@ try {
   for (let attempt = 0; attempt < 40; attempt++) {
     if (server.exitCode !== null) throw new Error(`Web server exited with code ${server.exitCode}`)
     try {
-      if ((await fetch('http://127.0.0.1:3000/')).ok) break
+      if ((await fetch(env.PLAYWRIGHT_BASE_URL)).ok) break
     } catch {}
     if (attempt === 39) throw new Error('Web server did not become ready')
     await new Promise(resolveWait => setTimeout(resolveWait, 250))

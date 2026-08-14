@@ -89,7 +89,7 @@ export function PublicLanding() {
   const featured = useMemo(() => data?.services[0], [data])
   const currency = data?.business?.currency || 'AED'
   return <main className="min-h-screen overflow-hidden bg-[#f3fbf8] text-slate-950">
-    <header className="fixed inset-x-0 top-0 z-50 mx-auto mt-3 flex max-w-6xl items-center justify-between rounded-2xl border border-white/80 bg-white/75 px-4 py-3 shadow-xl shadow-emerald-950/5 backdrop-blur-xl sm:px-6">
+    <header className="fixed inset-x-0 top-14 z-50 mx-auto mt-3 flex max-w-6xl items-center justify-between rounded-2xl border border-white/80 bg-white/75 px-4 py-3 shadow-xl shadow-emerald-950/5 backdrop-blur-xl sm:px-6">
       <a href="/" className="flex min-h-11 items-center"><Logo size={40} textClassName="font-black text-sm text-slate-950" subtextClassName="text-[10px] text-emerald-600" /></a>
       <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-600 md:flex"><a href="#services">Services</a><a href="#why">Why Khobra</a><a href="#process">How it works</a><a href="/about">About us</a></nav>
       <div className="flex items-center gap-2"><a href="/login" className="hidden min-h-11 items-center px-4 py-2 text-sm font-bold sm:flex">Sign in</a><a href="/book" className="flex min-h-11 items-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/25">Book now</a></div>

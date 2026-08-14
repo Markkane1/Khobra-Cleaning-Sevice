@@ -36,6 +36,10 @@ Use `.github/workflows/mobile-release.yml` or run EAS from `apps/mobile`. The pr
 
 The supported native layout for the current release is portrait phones. Tablets and landscape are not claimed as supported until device QA is added. Before each store submission, test a small and large Android phone plus an iPhone for login/signup, booking creation, role workspaces, driver expenses, push/deep-link handling, logout/session expiry, dark mode, largest text size, and TalkBack/VoiceOver focus order. The browser smoke suite separately exercises 375 px responsive navigation.
 
+### Android push delivery
+
+`apps/mobilewrapper/android/app/google-services.json` is the Android client credential and must match `com.khobracleaning.web`; it is intentionally ignored by Git. The server sends FCM messages separately, so set `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` from a Firebase service-account JSON in the web service's secret store, then restart the web service. Without these three server values, devices can register but no Android push can be delivered.
+
 User email is intentionally a global identity across tenants. The same email cannot hold independent tenant-local accounts; changing that model requires a dedicated authentication migration and tenant-discovery design.
 
 ## Accepted dependency exception

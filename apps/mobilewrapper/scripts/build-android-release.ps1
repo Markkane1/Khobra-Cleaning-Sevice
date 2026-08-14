@@ -3,8 +3,14 @@ $ErrorActionPreference = 'Stop'
 $env:CAPACITOR_SERVER_URL = 'https://khobraapp.duckdns.org'
 $env:ANDROID_KEYSTORE_PATH = (Resolve-Path (Join-Path $PSScriptRoot '..\khobra-web-release.jks')).Path
 $env:ANDROID_KEY_ALIAS = 'khobra-web'
-$env:ANDROID_VERSION_CODE = '2'
-$env:ANDROID_VERSION_NAME = '1.0.1'
+$env:ANDROID_VERSION_CODE = '3'
+$env:ANDROID_VERSION_NAME = '1.0.2'
+$env:JAVA_HOME = 'C:\Users\Asif\Tools\jdk-21-capacitor'
+$env:ANDROID_HOME = 'C:\Android'
+$env:ANDROID_SDK_ROOT = 'C:\Android'
+$env:GRADLE_USER_HOME = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\.cache\gradle')).Path
+$gradle = 'C:\Users\Asif\Tools\gradle-8.14.3\gradle-8.14.3\bin\gradle.bat'
+if (-not (Test-Path $gradle)) { throw "Verified Gradle executable is missing: $gradle" }
 
 $securePassword = Read-Host 'Enter keystore password' -AsSecureString
 $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
@@ -23,7 +29,7 @@ try {
 
   Push-Location android
   try {
-    .\gradlew.bat bundleRelease assembleRelease --no-daemon
+    & $gradle bundleRelease assembleRelease --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'Android release build failed' }
   } finally {
     Pop-Location

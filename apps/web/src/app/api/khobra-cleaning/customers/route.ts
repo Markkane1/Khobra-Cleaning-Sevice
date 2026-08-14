@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
     if ('response' in auth) return auth.response
 
     const customers = await customerRepository.findManyByTenant(auth.session.tenantId)
-    return NextResponse.json(auth.session.role === 'customer' ? customers.filter(customer => customer.userId === auth.session.userId) : customers)
+    if (auth.session.role === 'admin') return NextResponse.json(customers)
+    return NextResponse.json(customers.filter(customer => customer.userId === auth.session.userId).map(({ notes: _notes, preferences: _preferences, ...customer }) => customer))
   } catch (error) {
     return apiErrorResponse(error, { fallback: 'Failed to fetch customers' })
   }
@@ -55,7 +56,10 @@ export async function PUT(req: NextRequest) {
     if (!existing) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
     if (auth.session.role === 'customer' && existing.userId !== auth.session.userId) return NextResponse.json({ error: 'You may only update your own profile' }, { status: 403 })
     
-    const updated = await customerRepository.update(auth.session.tenantId, validatedData.id, validatedData)
+    const customerData = auth.session.role === 'customer'
+      ? { id: validatedData.id, name: validatedData.name, email: validatedData.email, phone: validatedData.phone, city: validatedData.city, address: validatedData.address, area: validatedData.area, addresses: validatedData.addresses }
+      : validatedData
+    const updated = await customerRepository.update(auth.session.tenantId, validatedData.id, customerData)
     
     broadcast('customer:updated', { name: updated.user.name, city: updated.city }, auth.session.tenantId)
     return NextResponse.json(updated)

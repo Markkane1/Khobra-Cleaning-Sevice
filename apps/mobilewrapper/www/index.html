@@ -7,13 +7,16 @@
     <title>Khobra Cleaning — Offline</title>
     <style>
       * { box-sizing: border-box; }
+      html, body { width: 100%; max-width: 100%; overflow-x: clip; }
       body { margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: #f0fdf4; color: #14281d; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
-      main { max-width: 360px; }
+      main { width: min(100%, 360px); overflow-wrap: anywhere; }
       h1 { margin: 0 0 8px; font-size: 24px; }
       p { margin: 0 0 20px; color: #466153; }
+      .actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
       button { min-height: 48px; border: 0; border-radius: 12px; padding: 0 24px; background: #047857; color: white; font: inherit; font-weight: 700; }
+      button.secondary { border: 1px solid #a7cbbb; background: white; color: #047857; }
       button:focus-visible { outline: 3px solid #10b981; outline-offset: 3px; }
     </style>
   </head>
-  <body><main><h1>You're offline</h1><p>Khobra Cleaning needs an internet connection. Check your connection and try again.</p><button type="button" onclick="location.reload()">Try again</button></main></body>
+  <body><main><h1>You're offline</h1><p>Khobra Cleaning needs an internet connection. Check your connection and try again.</p><div class="actions"><button class="secondary" type="button" onclick="history.length > 1 ? history.back() : location.reload()" aria-label="Go back">&#8592; Back</button><button type="button" onclick="location.reload()">Try again</button></div></main></body>
 </html>

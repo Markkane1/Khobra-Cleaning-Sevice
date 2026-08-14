@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Eye, Calendar, Clock, MapPin, Navigation, Users, FileText, CheckCircle2, XCircle, TrendingUp, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning, Phone } from 'lucide-react'
-import { calculateBookingFinancials, CreateBookingSchema, getDirectionsUrl, isTerminalBookingStatus } from '@repo/core'
+import { Plus, Minus, Search, Eye, Calendar, Clock, MapPin, Navigation, Users, FileText, CheckCircle2, XCircle, ChevronLeft, ChevronRight, LayoutList, Download, Trash2, UserCheck, Star, ChevronsUpDown, Truck, Banknote, Building2, CreditCard, RotateCcw, Upload, ShieldCheck, Copy, MessageSquareWarning, Phone, TriangleAlert, Edit2 } from 'lucide-react'
+import { calculateBookingFinancials, canCustomerEditBooking, CreateBookingSchema, getDirectionsUrl, isTerminalBookingStatus, zonedDateTimeToUtc, MIN_BOOKING_DURATION_HOURS } from '@repo/core'
 import { Capacitor } from '@capacitor/core'
 import { format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns'
 import { toast } from 'sonner'
@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
@@ -129,9 +128,22 @@ const customerAddresses = (customer: any) => {
   return saved.length ? saved : customer?.address ? [{ label: 'Primary', address: customer.address, city: customer.city || '', area: customer.area || '' }] : []
 }
 
+const bookingAddressOptions = (savedAddresses: any[], booking: any) => {
+  if (!booking?.address || savedAddresses.some(address => address.address === booking.address && (address.area || '') === (booking.area || ''))) return savedAddresses
+  return [{ label: 'Current booking address', address: booking.address, city: booking.city || '', area: booking.area || '', latitude: booking.latitude, longitude: booking.longitude }, ...savedAddresses]
+}
+
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const canonicalStatus = (status: string) => status === 'pending' ? 'pending_assignment' : status === 'confirmed' ? 'scheduled' : status
 const isEndedStatus = (status: string) => ['cancelled', 'no_show'].includes(canonicalStatus(status))
+const overdueRecommendation = (status: string) => {
+  switch (canonicalStatus(status)) {
+    case 'in_progress': return 'Confirm completion or report an issue.'
+    case 'on_the_way': return 'Contact the driver and update the arrival status.'
+    case 'scheduled': return 'Contact the customer and team, then reschedule or mark no-show.'
+    default: return 'Assign or reschedule the team; cancel if service will not proceed.'
+  }
+}
 
 const openDirections = (booking: { bookingNo: string; latitude?: number | null; longitude?: number | null }) => {
   if (booking.latitude == null || booking.longitude == null) return
@@ -168,6 +180,8 @@ export function Bookings() {
   const [open, setOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<any>(null)
+  const [editingCustomerBooking, setEditingCustomerBooking] = useState<any | null>(null)
+  const [customerEditForm, setCustomerEditForm] = useState({ scheduledDate: '', startTime: '', endTime: '', employeeCount: 1, serviceIds: [] as string[], serviceOptions: {} as Record<string, boolean>, addressIndex: '0', notes: '' })
   const [form, setForm] = useState(emptyForm)
   const [bookingStep, setBookingStep] = useState(0)
   const [bookingError, setBookingError] = useState<string | null>(null)
@@ -179,12 +193,21 @@ export function Bookings() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [cleanerDateScope, setCleanerDateScope] = useState<'today' | 'all'>('today')
   const [driverScope, setDriverScope] = useState<'today' | 'completed' | 'pending' | 'upcoming'>('today')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('table')
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [popoverDay, setPopoverDay] = useState<Date | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<HTMLButtonElement | null>(null)
+  const [now, setNow] = useState<number | null>(null)
   const qc = useQueryClient()
+
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // Real-time updates
   const { subscribe, onEvent } = useRealtime()
@@ -232,6 +255,9 @@ export function Bookings() {
   const selectedCustomer = customers.find((customer: any) => customer.id === form.customerId)
   const selectedCustomerAddresses = customerAddresses(selectedCustomer)
   const requiresAddressSelection = selectedCustomerAddresses.length > 1
+  const customerRecord = customers.find((customer: any) => customer.userId === currentUser?.userId)
+  const customerEditAddresses = customerAddresses(customerRecord)
+  const customerEditAddressOptions = bookingAddressOptions(customerEditAddresses, editingCustomerBooking)
 
   const handleBookingOpenChange = (nextOpen: boolean) => {
     if (nextOpen && currentRole === 'customer') {
@@ -245,7 +271,7 @@ export function Bookings() {
       setSelectedCustomerAddressIndex('0')
       setCustomerPickerOpen(false)
     } else {
-      setCustomerPickerOpen(nextOpen)
+      setCustomerPickerOpen(false)
     }
     setOpen(nextOpen)
     if (!nextOpen) { setForm(emptyForm); setBookingStep(0); setBookingError(null); setCustomerSearch(''); setSelectedCustomerAddressIndex('') }
@@ -254,11 +280,27 @@ export function Bookings() {
   const { data: tenantSettings } = useQuery({
     queryKey: ['tenant-settings'],
     queryFn: () => apiRequest<any>('/api/khobra-cleaning/settings'),
-    enabled: currentRole === 'admin' || currentRole === 'customer',
   })
   const firstBookingTime = tenantSettings?.tenant?.firstBookingTime || '08:00'
   const lastWorkingTime = tenantSettings?.tenant?.lastWorkingTime || '20:00'
   const currency = tenantSettings?.tenant?.currency || 'AED'
+  const isBookingOverdue = useCallback((booking: any) => {
+    if (now === null || isTerminalBookingStatus(booking.status) || !booking.scheduledDate || !booking.startTime) return false
+    const endTime = booking.endTime || calculateEndTimeFromDuration(booking.startTime, booking.duration)
+    try {
+      return zonedDateTimeToUtc(booking.scheduledDate.slice(0, 10), endTime, tenantSettings?.tenant?.timezone || 'UTC').getTime() < now
+    } catch {
+      return false
+    }
+  }, [now, tenantSettings?.tenant?.timezone])
+  const customerCanEditBooking = useCallback((booking: any) => {
+    if (now === null || !['pending_assignment', 'pending', 'assigned', 'scheduled', 'confirmed'].includes(booking.status)) return false
+    try {
+      return canCustomerEditBooking(booking.scheduledDate, booking.startTime, tenantSettings?.tenant?.timezone || 'UTC', new Date(now))
+    } catch {
+      return false
+    }
+  }, [now, tenantSettings?.tenant?.timezone])
 
   const createMut = useMutation({
     mutationFn: (d: any) => fetch('/api/khobra-cleaning/bookings', { method: 'POST', headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(async r => {
@@ -350,6 +392,12 @@ export function Bookings() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash')
   const [paymentFields, setPaymentFields] = useState({ referenceNo: '', customerBankName: '', accountHolderName: '', transferDate: format(new Date(), 'yyyy-MM-dd'), transferAmount: '', proofUrl: '', remarks: '' })
   const [isUploadingProof, setIsUploadingProof] = useState(false)
+
+  useEffect(() => {
+    if (!paymentBooking) return
+    const refreshedBooking = items.find((booking: any) => booking.id === paymentBooking.id)
+    if (refreshedBooking && !calculateBookingFinancials(refreshedBooking).canSelectPaymentMethod) setPaymentBooking(null)
+  }, [items, paymentBooking])
 
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('')
   const [cleanerCompleteBookingConfirm, setCleanerCompleteBookingConfirm] = useState<any | null>(null)
@@ -558,7 +606,7 @@ export function Bookings() {
     return calculateDurationHours(form.startTime, form.endTime)
   }, [form.startTime, form.endTime])
 
-  const isTimeInvalid = Boolean(form.startTime && form.endTime && duration <= 0)
+  const isTimeInvalid = Boolean(form.startTime && form.endTime && duration < MIN_BOOKING_DURATION_HOURS)
   const minimumBookingAt = currentRole === 'customer' ? new Date(Date.now() + 2 * 60 * 60 * 1000) : new Date()
   const minimumBookingDate = format(minimumBookingAt, 'yyyy-MM-dd')
   const minimumBookingTime = format(minimumBookingAt, 'HH:mm')
@@ -595,21 +643,21 @@ export function Bookings() {
   const canContinueBooking = bookingStep === 0
     ? Boolean(form.customerId && form.serviceIds.length && (!requiresAddressSelection || selectedCustomerAddressIndex))
     : bookingStep === 1
-      ? Boolean(hasScheduleDates && form.startTime && form.endTime && duration > 0 && !isTimeInvalid && !isPastStartTime)
+      ? Boolean(hasScheduleDates && form.startTime && form.endTime && duration >= MIN_BOOKING_DURATION_HOURS && !isPastStartTime)
       : true
   const { data: availability, isLoading: isAvailLoading, error: availabilityError } = useQuery<any>({
     queryKey: ['employee-availability', form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate, form.startTime, form.endTime, form.serviceIds.join(',')],
     queryFn: async () => {
       const date = form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate
-      if (!date || !form.startTime || !form.endTime || duration <= 0) return null
+      if (!date || !form.startTime || !form.endTime || duration < MIN_BOOKING_DURATION_HOURS) return null
       return apiRequest(`/api/khobra-cleaning/employees/availability?date=${date}&startTime=${form.startTime}&endTime=${form.endTime}&serviceIds=${form.serviceIds.join(',')}`)
     },
-    enabled: Boolean((form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate) && form.startTime && form.endTime && duration > 0),
+    enabled: Boolean((form.bookingType === 'multiple_dates' ? form.selectedDates[0] || form.scheduledDate : form.scheduledDate) && form.startTime && form.endTime && duration >= MIN_BOOKING_DURATION_HOURS),
   })
 
   const canCreateBooking = Boolean(
-    form.customerId && form.serviceIds.length && (!requiresAddressSelection || selectedCustomerAddressIndex) && hasScheduleDates && form.startTime && form.endTime && duration > 0 && !isTimeInvalid && !isPastStartTime &&
-    (!form.hasPreferredEmployee || (form.preferredEmployeeIds.length === form.employeeCount && form.preferredEmployeeIds.every(id => availability?.allEmployeesStatus?.find((employee: any) => employee.id === id)?.isAvailable))) &&
+    form.customerId && form.serviceIds.length && (!requiresAddressSelection || selectedCustomerAddressIndex) && hasScheduleDates && form.startTime && form.endTime && duration >= MIN_BOOKING_DURATION_HOURS && !isPastStartTime && availability?.availableCount >= form.employeeCount &&
+    (!form.hasPreferredEmployee || (form.preferredEmployeeIds.length <= form.employeeCount && form.preferredEmployeeIds.every(id => availability?.allEmployeesStatus?.find((employee: any) => employee.id === id)?.isAvailable))) &&
     bookingValidation.success
   )
 
@@ -639,12 +687,6 @@ export function Bookings() {
     return counts
   }, [items])
 
-  // Completion rate
-  const completionRate = useMemo(() => {
-    if (statusCounts.total === 0) return 0
-    return Math.round((statusCounts.completed / statusCounts.total) * 100)
-  }, [statusCounts])
-
   const filtered = useMemo(() => items.filter((b: any) => {
     const bookingDate = format(parseISO(b.scheduledDate), 'yyyy-MM-dd')
     const today = format(new Date(), 'yyyy-MM-dd')
@@ -655,11 +697,13 @@ export function Bookings() {
       if (driverScope === 'pending' && (bookingDate !== today || !['pending_assignment', 'assigned', 'scheduled'].includes(canonicalStatus(b.status)))) return false
       if (driverScope === 'upcoming' && (bookingDate < today || ['completed', 'cancelled', 'no_show'].includes(canonicalStatus(b.status)))) return false
     }
+    if (currentRole === 'admin' && activeTab === 'table' && dateFrom && bookingDate < dateFrom) return false
+    if (currentRole === 'admin' && activeTab === 'table' && dateTo && bookingDate > dateTo) return false
     if (statusFilter !== 'all' && canonicalStatus(b.status) !== statusFilter) return false
     if (!search) return true
     const s = search.toLowerCase()
     return b.bookingNo?.toLowerCase().includes(s) || b.customer?.user?.name?.toLowerCase().includes(s) || b.service?.name?.toLowerCase().includes(s)
-  }), [items, currentRole, cleanerDateScope, driverScope, statusFilter, search])
+  }), [items, currentRole, cleanerDateScope, driverScope, activeTab, dateFrom, dateTo, statusFilter, search])
 
   const { sorted: sortedBookings, SortableHeader } = useSortable<any>(filtered, 'bookingNo')
 
@@ -716,6 +760,56 @@ export function Bookings() {
     updateMut.mutate({ id, status: newStatus })
   }
 
+  const openCustomerBookingEditor = (booking: any) => {
+    const serviceIds = booking.items?.length ? booking.items.map((item: any) => item.serviceId) : booking.serviceId ? [booking.serviceId] : []
+    const serviceOptions = Object.fromEntries((booking.items || []).map((item: any) => [item.serviceId, Boolean(item.includesMaterials)]))
+    const addresses = bookingAddressOptions(customerEditAddresses, booking)
+    const addressIndex = Math.max(0, addresses.findIndex((address: any) => address.address === booking.address && (address.area || '') === (booking.area || '')))
+    setCustomerEditForm({
+      scheduledDate: String(booking.scheduledDate).slice(0, 10),
+      startTime: booking.startTime,
+      endTime: booking.endTime || calculateEndTimeFromDuration(booking.startTime, booking.duration),
+      employeeCount: booking.employeeCount || 1,
+      serviceIds,
+      serviceOptions,
+      addressIndex: String(addressIndex),
+      notes: booking.notes || '',
+    })
+    setEditingCustomerBooking(booking)
+    setDetailOpen(false)
+  }
+
+  const customerEditDuration = calculateDurationHours(customerEditForm.startTime, customerEditForm.endTime)
+  const customerEditTimeAllowed = Boolean(customerEditForm.scheduledDate && customerEditForm.startTime && now !== null && (() => {
+    try {
+      return canCustomerEditBooking(customerEditForm.scheduledDate, customerEditForm.startTime, tenantSettings?.tenant?.timezone || 'UTC', new Date(now))
+    } catch {
+      return false
+    }
+  })())
+  const canSaveCustomerEdit = Boolean(customerEditForm.serviceIds.length && customerEditForm.employeeCount >= 1 && customerEditDuration >= MIN_BOOKING_DURATION_HOURS && customerEditTimeAllowed && customerEditAddressOptions[Number(customerEditForm.addressIndex)])
+
+  const saveCustomerBookingEdit = () => {
+    if (!editingCustomerBooking || !canSaveCustomerEdit) return
+    const address = customerEditAddressOptions[Number(customerEditForm.addressIndex)]
+    updateMut.mutate({
+      id: editingCustomerBooking.id,
+      scheduledDate: customerEditForm.scheduledDate,
+      startTime: customerEditForm.startTime,
+      endTime: customerEditForm.endTime,
+      employeeCount: customerEditForm.employeeCount,
+      serviceIds: customerEditForm.serviceIds,
+      serviceId: customerEditForm.serviceIds[0],
+      serviceOptions: customerEditForm.serviceIds.map(serviceId => ({ serviceId, withMaterials: Boolean(customerEditForm.serviceOptions[serviceId]) })),
+      address: address.address,
+      city: address.city || '',
+      area: address.area || '',
+      latitude: address.latitude,
+      longitude: address.longitude,
+      notes: customerEditForm.notes,
+    }, { onSuccess: () => setEditingCustomerBooking(null) })
+  }
+
   const handleRowClick = (b: any) => {
     setSelectedBooking(b)
     setDetailOpen(true)
@@ -727,22 +821,25 @@ export function Bookings() {
 
   const goToToday = useCallback(() => {
     setCurrentMonth(new Date())
+    setPopoverDay(null)
   }, [])
 
   const goToPrevMonth = useCallback(() => {
     setCurrentMonth(prev => subMonths(prev, 1))
+    setPopoverDay(null)
   }, [])
 
   const goToNextMonth = useCallback(() => {
     setCurrentMonth(prev => addMonths(prev, 1))
+    setPopoverDay(null)
   }, [])
 
-  const handleDayClick = useCallback((day: Date, el: HTMLButtonElement) => {
+  const handleDayClick = useCallback((day: Date, el?: HTMLButtonElement) => {
     const dateKey = format(day, 'yyyy-MM-dd')
     const dayBookings = bookingsByDate[dateKey]
     if (dayBookings && dayBookings.length > 0) {
       setPopoverDay(day)
-      setPopoverAnchor(el)
+      setPopoverAnchor(el || null)
     }
   }, [bookingsByDate])
 
@@ -765,17 +862,17 @@ export function Bookings() {
               </TooltipTrigger>
               <TooltipContent>Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">N</kbd></TooltipContent>
             </Tooltip>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="h-[100dvh] max-h-[100dvh] max-w-none rounded-none border-0 p-4 text-sm sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-lg sm:border sm:p-6 [&_[data-slot=label]]:text-sm">
             <DialogHeader>
               <DialogTitle>Create New Booking</DialogTitle>
               <div className="flex gap-1 pt-2" aria-label={`Step ${bookingStep + 1} of 4`}>
                 {[0, 1, 2, 3].map(step => <div key={step} className={`h-1 flex-1 rounded ${step <= bookingStep ? 'bg-emerald-600' : 'bg-muted'}`} />)}
               </div>
-              <p className="text-xs text-muted-foreground">Step {bookingStep + 1} of 4 — {['Customer & services', 'Schedule', 'Staff & address', 'Billing details'][bookingStep]}</p>
+              <p className="text-xs text-muted-foreground">Step {bookingStep + 1} of 4 — {[(currentRole === 'customer' ? 'Services' : 'Customer & services'), 'Schedule', 'Staff & address', 'Billing details'][bookingStep]}</p>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               {bookingStep === 0 && <>
-              <div className="grid gap-2"><Label>Customer</Label>
+              {currentRole === 'admin' && <div className="grid gap-2"><Label>Customer</Label>
                 <Popover open={customerPickerOpen} onOpenChange={setCustomerPickerOpen}>
                   <PopoverTrigger asChild>
                     <Button type="button" variant="outline" role="combobox" aria-expanded={customerPickerOpen} className="justify-between font-normal">
@@ -795,7 +892,7 @@ export function Bookings() {
                     </div>
                   </PopoverContent>
                 </Popover>
-              </div>
+              </div>}
               {requiresAddressSelection && <div className="grid gap-2">
                 <Label>Service Address</Label>
                 <Select value={selectedCustomerAddressIndex} onValueChange={value => { const address = selectedCustomerAddresses[Number(value)]; setSelectedCustomerAddressIndex(value); setForm({ ...form, city: address.city || '', area: address.area || '', address: address.address || '' }) }}>
@@ -841,15 +938,15 @@ export function Bookings() {
                   }) : <p className="col-span-full p-2 text-sm text-muted-foreground">No services available for this account.</p>}
                 </div>
                 {form.serviceIds.length === 0 && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">⚠️ Please select at least one service.</p>
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Please select at least one service.</p>
                 )}
                 {form.serviceIds.length > 0 && <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
                   <p className="text-xs font-semibold">Choose a price option for each service</p>
                   {services.filter((service: any) => form.serviceIds.includes(service.id)).map((service: any) => <div key={service.id} className="grid gap-2 rounded-md bg-background p-2 sm:grid-cols-[1fr_auto] sm:items-center">
                     <span className="text-xs font-semibold">{service.name}</span>
-                    <div className="grid grid-cols-2 gap-1" role="radiogroup" aria-label={`${service.name} materials option`}>
-                      <Button type="button" size="sm" variant={!form.serviceOptions[service.id] ? 'default' : 'outline'} className={!form.serviceOptions[service.id] ? 'min-h-11 bg-emerald-600 hover:bg-emerald-700' : 'min-h-11'} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: false } })}>Without · {currency} {service.baseRate}/hr</Button>
-                      <Button type="button" size="sm" variant={form.serviceOptions[service.id] ? 'default' : 'outline'} className={form.serviceOptions[service.id] ? 'min-h-11 bg-teal-600 hover:bg-teal-700' : 'min-h-11'} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: true } })}>With materials · {currency} {service.withMaterialsRate}/hr</Button>
+                    <div className="grid min-w-0 grid-cols-1 gap-2 min-[400px]:grid-cols-2" role="radiogroup" aria-label={`${service.name} materials option`}>
+                      <Button type="button" size="sm" variant={!form.serviceOptions[service.id] ? 'default' : 'outline'} className={`min-h-11 min-w-0 w-full whitespace-normal px-2 text-xs leading-tight ${!form.serviceOptions[service.id] ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: false } })}>Without materials<br />{currency} {service.baseRate}/hr</Button>
+                      <Button type="button" size="sm" variant={form.serviceOptions[service.id] ? 'default' : 'outline'} className={`min-h-11 min-w-0 w-full whitespace-normal px-2 text-xs leading-tight ${form.serviceOptions[service.id] ? 'bg-teal-600 hover:bg-teal-700' : ''}`} onClick={() => setForm({ ...form, serviceOptions: { ...form.serviceOptions, [service.id]: true } })}>With materials<br />{currency} {service.withMaterialsRate}/hr</Button>
                     </div>
                   </div>)}
                 </div>}
@@ -857,12 +954,11 @@ export function Bookings() {
               <div className="grid gap-3">
                 <div className="grid gap-2">
                   <Label>Assigned Staff Count</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form.employeeCount}
-                    onChange={e => { const employeeCount = Math.max(1, parseInt(e.target.value) || 1); setForm({ ...form, employeeCount, preferredEmployeeIds: form.preferredEmployeeIds.slice(0, employeeCount) }) }}
-                  />
+                  <div className="relative">
+                    <Input aria-label="Assigned staff count" inputMode="numeric" readOnly value={form.employeeCount} className="h-12 px-14 text-center text-base font-semibold" />
+                    <Button type="button" variant="ghost" size="icon" aria-label="Remove one assigned staff member" disabled={form.employeeCount <= 1} className="absolute inset-y-0 left-0 h-12 w-12 rounded-r-none" onClick={() => { const employeeCount = Math.max(1, form.employeeCount - 1); setForm({ ...form, employeeCount, preferredEmployeeIds: form.preferredEmployeeIds.slice(0, employeeCount) }) }}><Minus className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" aria-label="Add one assigned staff member" className="absolute inset-y-0 right-0 h-12 w-12 rounded-l-none" onClick={() => setForm({ ...form, employeeCount: form.employeeCount + 1 })}><Plus className="h-4 w-4" /></Button>
+                  </div>
                 </div>
               </div>
               </>}
@@ -891,16 +987,16 @@ export function Bookings() {
               ) : form.bookingType === 'multiple_dates' ? (
                 <div className="space-y-3 bg-muted/20 p-3 rounded-lg border border-border/40 text-xs">
                   <div className="flex gap-2 items-end">
-                    <div className="grid gap-1 flex-1"><Label className="text-[11px]">Add booking date</Label><Input type="date" min={minimumBookingDate} value={form.scheduledDate} onChange={e => setForm({ ...form, scheduledDate: e.target.value })} className="h-8 text-xs" /></div>
+                    <div className="grid flex-1 gap-1"><Label>Add booking date</Label><Input type="date" min={minimumBookingDate} value={form.scheduledDate} onChange={e => setForm({ ...form, scheduledDate: e.target.value })} className="h-11 sm:h-9" /></div>
                     <Button type="button" size="sm" className="h-8" disabled={!form.scheduledDate || form.scheduledDate < minimumBookingDate || form.selectedDates.includes(form.scheduledDate)} onClick={() => setForm({ ...form, selectedDates: [...form.selectedDates, form.scheduledDate], scheduledDate: '' })}>{form.selectedDates.includes(form.scheduledDate) ? 'Added' : 'Add'}</Button>
                   </div>
-                  {form.scheduledDate && form.selectedDates.includes(form.scheduledDate) && <p className="text-[11px] text-muted-foreground">This date is already added. Choose another date or remove it below.</p>}
+                  {form.scheduledDate && form.selectedDates.includes(form.scheduledDate) && <p className="text-xs text-muted-foreground">This date is already added. Choose another date or remove it below.</p>}
                   <div className="flex flex-wrap gap-1.5">
                     {form.selectedDates.length === 0 ? <span className="text-muted-foreground">Select one or more dates.</span> : form.selectedDates.map(date => <Button key={date} type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setForm({ ...form, selectedDates: form.selectedDates.filter(value => value !== date) })}>{date} ×</Button>)}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="grid gap-1"><Label className="text-[11px]">From Time</Label><Input type="time" min={earliestStartTime} max={lastWorkingTime} value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="h-8 text-xs" /></div>
-                    <div className="grid gap-1"><Label className="text-[11px]">To Time</Label><Input type="time" min={form.startTime || earliestStartTime} max={lastWorkingTime} value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="h-8 text-xs" /></div>
+                    <div className="grid gap-1"><Label>From Time</Label><Input type="time" min={earliestStartTime} max={lastWorkingTime} value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className="h-11 sm:h-9" /></div>
+                    <div className="grid gap-1"><Label>To Time</Label><Input type="time" min={form.startTime || earliestStartTime} max={lastWorkingTime} value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} className="h-11 sm:h-9" /></div>
                   </div>
                 </div>
               ) : (
@@ -915,7 +1011,7 @@ export function Bookings() {
                   </div>
                   {(form.bookingType === 'weekly_recurring' || form.bookingType === 'selected_weekdays_one_time' || form.bookingType === 'long_term') && (
                     <div className="space-y-1">
-                      <Label className="text-[11px]">Select Active Weekdays</Label>
+                      <Label>Select Active Weekdays</Label>
                       <div className="flex flex-wrap gap-1">
                         {WEEKDAY_LABELS.map((label, dayIdx) => {
                           const isChecked = form.selectedWeekdays.includes(dayIdx)
@@ -944,7 +1040,7 @@ export function Bookings() {
               )}
               {isTimeInvalid && (
                 <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 font-medium">
-                  ⚠️ To time must be later than From time. Please select a valid time window.
+                  Bookings require at least {MIN_BOOKING_DURATION_HOURS} hours. Choose a later end time.
                 </div>
               )}
               </>}
@@ -972,7 +1068,7 @@ export function Bookings() {
                       Select Cleaners Now (Optional)
                     </Label>
                   </div>
-                  <span className="text-[11px] text-muted-foreground">Directly assigns on confirmation</span>
+                  <span className="text-xs text-muted-foreground">Directly assigns on confirmation</span>
                 </div>
 
                 {form.hasPreferredEmployee && (
@@ -990,7 +1086,7 @@ export function Bookings() {
                           {(availability?.availableEmployees || []).filter((employee: any) => `${employee.name} ${employee.employeeCode}`.toLowerCase().includes(employeeSearch.trim().toLowerCase())).map((employee: any) => {
                             const selected = form.preferredEmployeeIds.includes(employee.id)
                             const atLimit = !selected && form.preferredEmployeeIds.length >= form.employeeCount
-                            return <button key={employee.id} type="button" role="option" aria-selected={selected} disabled={atLimit} className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setForm({ ...form, preferredEmployeeIds: selected ? form.preferredEmployeeIds.filter(id => id !== employee.id) : [...form.preferredEmployeeIds, employee.id] })}>
+                            return <button key={employee.id} type="button" role="option" aria-selected={selected} disabled={atLimit} className="flex min-h-11 w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" onClick={() => { setForm({ ...form, preferredEmployeeIds: selected ? form.preferredEmployeeIds.filter(id => id !== employee.id) : [...form.preferredEmployeeIds, employee.id] }); setEmployeePickerOpen(false) }}>
                               <input type="checkbox" checked={selected} readOnly className="h-4 w-4" />
                               <span className="flex-1">{employee.name} ({employee.employeeCode})</span>
                               <span className="text-xs text-muted-foreground">{employee.ratingFormatted}</span>
@@ -1000,7 +1096,7 @@ export function Bookings() {
                         </div>
                       </PopoverContent>
                     </Popover>
-                    <p className={`text-[11px] ${form.preferredEmployeeIds.length === form.employeeCount ? 'text-emerald-700' : 'text-muted-foreground'}`}>{form.preferredEmployeeIds.length} of {form.employeeCount} required cleaners selected.</p>
+                    <p className="text-xs text-muted-foreground">{form.preferredEmployeeIds.length} of {form.employeeCount} cleaners selected; the system can assign the remaining slots.</p>
                     {availabilityError && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{availabilityError instanceof Error ? availabilityError.message : 'Failed to check cleaner availability'}</div>}
                     {availability?.suggestedAlternatives?.length > 0 && (
                       <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
@@ -1023,7 +1119,7 @@ export function Bookings() {
                                     <span>✓ Same tenant</span><span>✓ Active</span><span>✓ Not on leave</span><span>✓ No schedule conflict</span>
                                   </div>
                                 </div>
-                                <Button type="button" size="sm" variant={selected ? 'secondary' : 'outline'} disabled={atLimit} className="h-7 shrink-0 text-[11px]" onClick={() => setForm({ ...form, preferredEmployeeIds: selected ? form.preferredEmployeeIds.filter(id => id !== employee.id) : [...form.preferredEmployeeIds, employee.id] })}>
+                                <Button type="button" size="sm" variant={selected ? 'secondary' : 'outline'} disabled={atLimit} className="min-h-11 shrink-0 text-xs" onClick={() => { setForm({ ...form, preferredEmployeeIds: selected ? form.preferredEmployeeIds.filter(id => id !== employee.id) : [...form.preferredEmployeeIds, employee.id] }); setEmployeePickerOpen(false) }}>
                                   {selected ? 'Selected' : 'Select'}
                                 </Button>
                               </div>
@@ -1118,22 +1214,22 @@ export function Bookings() {
               </div>
               </>}
 
-              {bookingStep === 3 && !isTimeInvalid && hasScheduleDates && form.startTime && form.endTime && duration > 0 && form.serviceIds.length > 0 && (
-                <div className="space-y-2 bg-muted/40 rounded-xl p-3.5 border border-border/50 text-xs">
-                  <div className="flex justify-between items-center">
+              {bookingStep === 3 && !isTimeInvalid && hasScheduleDates && form.startTime && form.endTime && duration >= MIN_BOOKING_DURATION_HOURS && form.serviceIds.length > 0 && (
+                <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-3 text-sm sm:p-4">
+                  <div className="grid gap-2 sm:flex sm:items-center sm:justify-between">
                     <span className="text-muted-foreground font-medium">Calculated Slot & Duration</span>
-                    <Badge variant="secondary" className="font-semibold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    <Badge variant="secondary" className="w-fit whitespace-normal bg-emerald-50 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                       {duration} {duration === 1 ? 'Hour' : 'Hours'} ({form.employeeCount} {form.employeeCount === 1 ? 'Cleaner' : 'Cleaners'})
                     </Badge>
                   </div>
-                  <div className="pt-2 border-t border-border/40 space-y-1.5">
+                  <div className="space-y-3 border-t border-border/40 pt-3">
                     <span className="text-muted-foreground font-medium block text-[11px] uppercase tracking-wider">Service Charges</span>
                     {multiPricing.items.map(it => (
-                      <div key={it.serviceId} className="flex justify-between items-center text-xs">
-                        <span className="text-muted-foreground">
+                      <div key={it.serviceId} className="grid gap-1 rounded-lg bg-background p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <span className="min-w-0 text-xs leading-5 text-muted-foreground">
                           • {it.serviceName} ({currency} {it.hourlyRate}/hr × {it.employeeCount} cleaner{it.employeeCount === 1 ? '' : 's'} × {it.hours}h)
                         </span>
-                        <span className="font-semibold">{currency} {it.totalAmount.toLocaleString()}</span>
+                        <span className="text-base font-bold sm:text-sm">{currency} {it.totalAmount.toLocaleString()}</span>
                       </div>
                     ))}
                     <div className="flex justify-between items-center font-medium pt-0.5 text-xs text-muted-foreground">
@@ -1164,17 +1260,17 @@ export function Bookings() {
                       </div>
                     )}
 
-                    <div className="flex justify-between items-center pt-2 border-t border-border/40 font-bold">
+                    <div className="flex items-end justify-between gap-3 border-t border-border/40 pt-3 font-bold">
                       <span>Final Booking Total</span>
-                      <span className="text-emerald-700 dark:text-emerald-400 text-sm">{currency} {multiPricing.netAmount.toLocaleString()}</span>
+                      <span className="text-xl text-emerald-700 dark:text-emerald-400">{currency} {multiPricing.netAmount.toLocaleString()}</span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-border/40">
+                  <div className="grid gap-2 border-t border-border/40 pt-3 sm:flex sm:items-center sm:justify-between">
                     <span className="text-muted-foreground">Staff Availability for Slot</span>
                     {isAvailLoading ? (
                       <span className="text-muted-foreground animate-pulse">Checking availability...</span>
                     ) : availability ? (
-                      <Badge variant={availability.availableCount >= form.employeeCount ? "outline" : "destructive"} className={availability.availableCount >= form.employeeCount ? "border-emerald-300 text-emerald-700 bg-emerald-50/50" : ""}>
+                      <Badge variant={availability.availableCount >= form.employeeCount ? "outline" : "destructive"} className={`w-fit whitespace-normal ${availability.availableCount >= form.employeeCount ? "border-emerald-300 text-emerald-700 bg-emerald-50/50" : ""}`}>
                         {availability.availableCount >= form.employeeCount ? `✓ ${availability.availableCount} of ${availability.totalEmployees} Available` : `⚠️ Only ${availability.availableCount} Cleaners Available (Need ${form.employeeCount})`}
                       </Badge>
                     ) : (
@@ -1189,11 +1285,11 @@ export function Bookings() {
               </div>
               <div className="grid gap-2"><Label>Address</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Preferred payment method</Label><Select value={form.preferredPaymentMethod} onValueChange={preferredPaymentMethod => setForm({ ...form, preferredPaymentMethod })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Pay Cash</SelectItem><SelectItem value="bank_transfer">Bank Transfer</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">Payment remains pending until cash is received or the bank transfer is verified.</p></div>
-              <div className="grid gap-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div></>}
+              <div className="grid gap-2"><Label htmlFor="booking-notes">Notes</Label><Textarea id="booking-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div></>}
               </>}
             </div>
             {(bookingError || (bookingStep === 3 && bookingValidationError)) && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{bookingError || bookingValidationError}</div>}
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_20px_-16px_rgba(0,0,0,.4)] [&_button]:min-h-11 [&_button]:w-full sm:static sm:mx-0 sm:mb-0 sm:border-0 sm:p-0 sm:shadow-none sm:[&_button]:w-auto">
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
               {bookingStep > 0 && <Button variant="outline" onClick={() => setBookingStep(bookingStep - 1)}>Back</Button>}
               {bookingStep < 3 ? (
@@ -1215,51 +1311,6 @@ export function Bookings() {
         </Dialog>
         </div>
       </div>
-
-      {/* Status Summary Bar + Completion Rate */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="text-xs font-semibold bg-muted/80">{statusCounts.total} Total</Badge>
-                <span className="text-muted-foreground">·</span>
-                  <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700 dark:border-yellow-600 dark:text-yellow-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 mr-1.5 inline-block" />{statusCounts.pending_assignment} Pending
-                  </Badge>
-                  <Badge variant="outline" className="text-xs border-blue-300 text-blue-700 dark:border-blue-600 dark:text-blue-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mr-1.5 inline-block" />{statusCounts.assigned} Assigned
-                  </Badge>
-                  <Badge variant="outline" className="text-xs border-teal-300 text-teal-700 dark:border-teal-600 dark:text-teal-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mr-1.5 inline-block" />{statusCounts.scheduled} Scheduled
-                </Badge>
-                <Badge variant="outline" className="text-xs border-cyan-300 text-cyan-700 dark:border-cyan-600 dark:text-cyan-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mr-1.5 inline-block" />{statusCounts.on_the_way} On the Way
-                </Badge>
-                <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 dark:border-orange-600 dark:text-orange-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mr-1.5 inline-block" />{statusCounts.in_progress} In Progress
-                </Badge>
-                <Badge variant="outline" className="text-xs border-emerald-300 text-emerald-700 dark:border-emerald-600 dark:text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 inline-block" />{statusCounts.completed} Completed
-                </Badge>
-                <Badge variant="outline" className="text-xs border-red-300 text-red-700 dark:border-red-600 dark:text-red-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mr-1.5 inline-block" />{statusCounts.cancelled} Cancelled
-                </Badge>
-              </div>
-              <div className="flex items-center gap-3 min-w-[200px]">
-                <div className="flex-1">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">Completion Rate</span>
-                    <span className="font-semibold text-emerald-600">{completionRate}%</span>
-                  </div>
-                  <Progress value={completionRate} className="h-2 [&>div]:bg-emerald-500" />
-                </div>
-                <TrendingUp className="h-4 w-4 text-emerald-500" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
 
       {/* Tabs: Table + Calendar */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1290,6 +1341,18 @@ export function Bookings() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search bookings..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
           </div>
+          {currentRole === 'admin' && activeTab === 'table' && <div className="grid w-full grid-cols-2 items-end gap-2 sm:flex sm:w-auto sm:flex-wrap" aria-label="Filter bookings by date">
+            <div className="grid min-w-0 gap-1">
+              <Label htmlFor="booking-date-from" className="text-xs text-muted-foreground">From</Label>
+              <Input id="booking-date-from" type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} className="h-11 w-full min-w-0 sm:h-9 sm:w-auto" />
+            </div>
+            <div className="grid min-w-0 gap-1">
+              <Label htmlFor="booking-date-to" className="text-xs text-muted-foreground">To</Label>
+              <Input id="booking-date-to" type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className="h-11 w-full min-w-0 sm:h-9 sm:w-auto" />
+            </div>
+            <Button type="button" variant="outline" size="sm" className="h-11 sm:h-9" onClick={() => { const today = format(new Date(), 'yyyy-MM-dd'); setDateFrom(today); setDateTo(today) }}>Today</Button>
+            {(dateFrom || dateTo) && <Button type="button" variant="ghost" size="sm" className="h-11 sm:h-9" onClick={() => { setDateFrom(''); setDateTo('') }}>Clear</Button>}
+          </div>}
           <TabsList className="ml-auto">
             <TabsTrigger value="table" className="gap-1.5 text-xs sm:text-sm">
               <LayoutList className="h-3.5 w-3.5" />
@@ -1360,8 +1423,17 @@ export function Bookings() {
                               <TableCell>
                                 {(() => {
                                   const fin = calculateBookingFinancials(b)
+                                  const overdue = isBookingOverdue(b)
                                   return (
                                     <div className="space-y-1">
+                                      {overdue && (
+                                        <div className="max-w-52 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                                          <Badge className="mb-1 bg-red-600 text-[10px] font-semibold text-white hover:bg-red-600">
+                                            <TriangleAlert className="mr-1 h-3 w-3" />Overdue
+                                          </Badge>
+                                          <p className="text-[11px] leading-4">{overdueRecommendation(b.status)}</p>
+                                        </div>
+                                      )}
                                       <div>
                                         {!isTerminalBookingStatus(b.status) && (b.status === 'pending_assignment' || !b.assignments || b.assignments.length < b.employeeCount || !b.driverId) ? (
                                           <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 font-semibold text-xs">
@@ -1518,23 +1590,22 @@ export function Bookings() {
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4 sm:p-6">
               {/* Calendar Header / Navigation */}
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={goToPrevMonth}>
+              <div className="mb-4 flex items-center justify-between gap-2 sm:mb-5">
+                <div className="grid w-full grid-cols-[44px_1fr_44px] items-center gap-2 sm:flex sm:w-auto">
+                  <Button variant="outline" size="icon" aria-label="Previous month" className="h-11 w-11 sm:h-8 sm:w-8" onClick={goToPrevMonth}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={goToNextMonth}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                  <h2 className="text-lg font-semibold ml-2 min-w-[160px]">
+                  <h2 className="text-center text-base font-semibold sm:ml-2 sm:min-w-[160px] sm:text-lg">
                     {format(currentMonth, 'MMMM yyyy')}
                   </h2>
-                  <Button variant="ghost" size="sm" className="text-xs ml-1 h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={goToToday}>
-                    Today
+                  <Button variant="outline" size="icon" aria-label="Next month" className="h-11 w-11 sm:h-8 sm:w-8" onClick={goToNextMonth}>
+                    <ChevronRight className="h-4 w-4" />
                   </Button>
+                  <Button variant="ghost" size="sm" className="col-span-3 mx-auto min-h-11 text-sm text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 sm:col-span-1 sm:ml-1 sm:h-7 sm:min-h-0 sm:px-2 sm:text-xs" onClick={goToToday}>Today</Button>
                 </div>
               </div>
 
+              <div className="hidden sm:block">
               {/* Weekday Headers */}
               <div className="grid grid-cols-7 mb-1">
                 {WEEKDAY_LABELS.map((label) => (
@@ -1580,9 +1651,8 @@ export function Bookings() {
                           ref={(el) => {
                             // We store ref for popover trigger manually
                           }}
-                          className={`
-                            w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-xs font-medium mx-auto
-                            ${isToday ? 'bg-emerald-600 text-white font-bold' : ''}
+                          className={`absolute inset-0 z-10 flex h-full w-full items-start justify-center rounded-none pt-2 text-sm font-medium
+                            ${isToday ? 'font-bold text-emerald-700 dark:text-emerald-300' : ''}
                             ${!inCurrentMonth ? 'text-muted-foreground/50' : ''}
                             ${inCurrentMonth && !isToday ? 'text-foreground' : ''}
                             ${hasBookings ? 'cursor-pointer' : 'cursor-default'}
@@ -1598,11 +1668,11 @@ export function Bookings() {
 
                         {/* Booking dots */}
                         {hasBookings && (
-                          <div className="flex items-center justify-center gap-0.5 mt-1">
+                          <div className="pointer-events-none absolute inset-x-1 bottom-2 z-20 flex items-center justify-center gap-1">
                             {dotStatuses.map((status, dotIdx) => (
                               <span
                                 key={dotIdx}
-                                className={`w-1.5 h-1.5 rounded-full ${calendarStatusDotColors [status] || 'bg-gray-400'}`}
+                                className={`h-2.5 w-2.5 rounded-full ring-2 ring-background ${calendarStatusDotColors [status] || 'bg-gray-400'}`}
                               />
                             ))}
                             {dayBookings.length > 3 && (
@@ -1617,9 +1687,47 @@ export function Bookings() {
                   })}
                 </motion.div>
               </AnimatePresence>
+              </div>
+
+              {/* Phone calendar: readable agenda instead of squeezed day cells */}
+              <div className="space-y-3 sm:hidden">
+                <div className="grid grid-cols-7 gap-1" aria-label={`Bookings calendar for ${format(currentMonth, 'MMMM yyyy')}`}>
+                  {WEEKDAY_LABELS.map(label => <span key={label} className="py-1 text-center text-xs font-semibold text-muted-foreground">{label.slice(0, 1)}</span>)}
+                  {calendarDays.map(day => {
+                    const dayBookings = bookingsByDate[format(day, 'yyyy-MM-dd')] || []
+                    const inMonth = isSameMonth(day, currentMonth)
+                    const selected = popoverDay && isSameDay(day, popoverDay)
+                    return <button key={day.toISOString()} type="button" disabled={!dayBookings.length} aria-label={`${format(day, 'MMMM d')}, ${dayBookings.length} bookings`} onClick={() => handleDayClick(day)} className={`relative flex min-h-14 flex-col items-center justify-center rounded-lg border text-sm transition-colors ${!inMonth ? 'opacity-30' : ''} ${selected ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-border/60'} disabled:cursor-default`}>
+                      <span className="font-semibold">{format(day, 'd')}</span>
+                      {dayBookings.length > 0 && <span className="mt-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-bold text-white">{dayBookings.length}</span>}
+                    </button>
+                  })}
+                </div>
+                {!popoverDay && <p className="rounded-lg bg-muted/40 px-3 py-2 text-center text-sm text-muted-foreground">Tap a numbered day to view its bookings.</p>}
+                {calendarDays.filter(day => popoverDay && isSameDay(day, popoverDay)).map(day => {
+                  const dayBookings = bookingsByDate[format(day, 'yyyy-MM-dd')] || []
+                  return <section key={day.toISOString()} className="overflow-hidden rounded-xl border bg-background">
+                    <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2.5">
+                      <h3 className="text-sm font-semibold">{format(day, 'EEEE, MMM d')}</h3>
+                      <span className="text-xs text-muted-foreground">{dayBookings.length} booking{dayBookings.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="divide-y">
+                      {dayBookings.map((booking: any) => <button key={booking.id} type="button" className="flex min-h-16 w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/40" onClick={() => handleRowClick(booking)}>
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${calendarStatusDotColors[booking.status] || 'bg-gray-400'}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{booking.customer?.user?.name || booking.bookingNo}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{booking.startTime} · {booking.service?.name || booking.items?.map((item: any) => item.service?.name).filter(Boolean).join(', ')}</span>
+                        </span>
+                        <Badge className={`${statusColors[booking.status] || ''} hidden shrink-0 text-xs min-[360px]:inline-flex`}>{statusDisplayLabels[booking.status] || booking.status.replace(/_/g, ' ')}</Badge>
+                      </button>)}
+                    </div>
+                  </section>
+                })}
+                {!calendarDays.some(day => isSameMonth(day, currentMonth) && (bookingsByDate[format(day, 'yyyy-MM-dd')] || []).length > 0) && <div className="rounded-xl border border-dashed px-4 py-12 text-center"><Calendar className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" /><p className="text-sm font-medium">No bookings this month</p></div>}
+              </div>
 
               {/* Legend */}
-              <div className="flex flex-wrap items-center gap-4 mt-5 pt-4 border-t border-border/40">
+              <div className="mt-5 hidden flex-wrap items-center gap-4 border-t border-border/40 pt-4 sm:flex">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status:</span>
                 {legendItems.map((item) => (
                   <div key={item.status} className="flex items-center gap-1.5">
@@ -1694,11 +1802,11 @@ export function Bookings() {
 
       {/* Detail View Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="h-[100dvh] max-h-[100dvh] max-w-none gap-3 rounded-none border-0 p-4 text-sm sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:gap-4 sm:rounded-lg sm:border sm:p-6">
           {selectedBooking && (
             <>
               <DialogHeader>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 pr-8 sm:gap-3">
                   <DialogTitle className="text-lg">{selectedBooking.bookingNo}</DialogTitle>
                   <Badge className={`${statusColors [selectedBooking.status] || ''} text-xs`}>
                     {statusDisplayLabels[selectedBooking.status] || selectedBooking.status.replace(/_/g, ' ')}
@@ -1707,9 +1815,11 @@ export function Bookings() {
               </DialogHeader>
 
               {/* Pipeline Visual */}
-              <div className="py-4">
+              <div className="py-2 sm:py-4">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Status Pipeline</p>
-                {isEndedStatus(selectedBooking.status) ? <div className={`flex min-h-16 items-center gap-3 rounded-xl border p-4 ${selectedBooking.status === 'no_show' ? 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-300' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300'}`}><XCircle className="h-6 w-6 shrink-0" /><div><p className="font-semibold">{statusDisplayLabels[canonicalStatus(selectedBooking.status)]}</p><p className="text-xs opacity-80">{selectedBooking.noShowReason || selectedBooking.cancellationReason || 'This booking is closed and requires no further action.'}</p></div></div> : <div className="flex items-center justify-between">
+                {isEndedStatus(selectedBooking.status) ? <div className={`flex min-h-16 items-center gap-3 rounded-xl border p-4 ${selectedBooking.status === 'no_show' ? 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-300' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300'}`}><XCircle className="h-6 w-6 shrink-0" /><div><p className="font-semibold">{statusDisplayLabels[canonicalStatus(selectedBooking.status)]}</p><p className="text-xs opacity-80">{selectedBooking.noShowReason || selectedBooking.cancellationReason || 'This booking is closed and requires no further action.'}</p></div></div> : <>
+                <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3 sm:hidden"><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /><div className="min-w-0"><p className="text-xs text-muted-foreground">Current status</p><p className="truncate text-sm font-semibold">{statusDisplayLabels[canonicalStatus(selectedBooking.status)] || selectedBooking.status.replace(/_/g, ' ')}</p></div></div>
+                <div className="hidden items-center justify-between sm:flex">
                   {pipelineSteps.map((step, idx) => {
                     const currentIndex = getPipelineIndex(selectedBooking.status)
                     const isCompleted = idx <= currentIndex
@@ -1739,7 +1849,7 @@ export function Bookings() {
                       </div>
                     )
                   })}
-                </div>}
+                </div></>}
               </div>
 
               <Separator />
@@ -1766,7 +1876,7 @@ export function Bookings() {
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-4">
+                  <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 sm:flex sm:items-center sm:gap-4">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <div>
@@ -1803,18 +1913,18 @@ export function Bookings() {
               {/* Itemized Price Breakdown */}
               <div className="py-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Itemized Price Breakdown</p>
-                <div className="bg-muted/40 rounded-xl p-4 space-y-3">
+                <div className="space-y-3 rounded-xl bg-muted/40 p-3 sm:p-4">
                   {/* Service Charges */}
                   <div className="space-y-1.5">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Service Charges</p>
                     {selectedBooking.items && selectedBooking.items.length > 0 ? (
                       selectedBooking.items.map((it: any) => (
-                        <div key={it.id} className="flex justify-between text-sm items-center">
-                          <div>
-                            <p className="font-medium text-sm">{it.service?.name} <Badge variant="outline" className="ml-1 text-[10px]">{it.includesMaterials ? 'With materials' : 'Without materials'}</Badge></p>
+                        <div key={it.id} className="grid gap-2 text-sm min-[360px]:grid-cols-[1fr_auto] min-[360px]:items-center">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{it.service?.name} <Badge variant="outline" className="mt-1 text-xs min-[360px]:ml-1 min-[360px]:mt-0">{it.includesMaterials ? 'With materials' : 'Without materials'}</Badge></p>
                             <p className="text-xs text-muted-foreground">{currency} {it.hourlyRate}/hr × {it.employeeCount || selectedBooking.employeeCount || 1} staff × {it.hours || selectedBooking.duration}h</p>
                           </div>
-                          <span className="font-semibold text-sm">{currency} {it.totalAmount.toLocaleString()}</span>
+                          <span className="text-sm font-semibold">{currency} {it.totalAmount.toLocaleString()}</span>
                         </div>
                       ))
                     ) : (
@@ -1937,7 +2047,10 @@ export function Bookings() {
               {!isTerminalBookingStatus(selectedBooking.status) && (
                 <>
                   <Separator />
-                  <DialogFooter className="flex-row gap-2 sm:justify-start pt-2">
+                  <DialogFooter className="gap-2 pt-2 [&_button]:min-h-11 [&_button]:w-full sm:flex-row sm:justify-start sm:[&_button]:w-auto">
+                    {currentRole === 'customer' && customerCanEditBooking(selectedBooking) && (
+                      <Button variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => openCustomerBookingEditor(selectedBooking)}><Edit2 className="mr-2 h-4 w-4" />Edit Booking</Button>
+                    )}
                     {selectedBooking.status === 'pending_assignment' && (currentRole === 'admin' || currentRole === 'customer') && (
                       <>
                         <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => { updateMut.mutate({ id: selectedBooking.id, status: 'cancelled', cancellationReason: `Cancelled by ${currentRole}` }); setDetailOpen(false) }}>Cancel Booking</Button>
@@ -1964,6 +2077,7 @@ export function Bookings() {
                       </Button>
                     )}
                   </DialogFooter>
+                  {currentRole === 'customer' && !customerCanEditBooking(selectedBooking) && <p className="pt-2 text-xs text-muted-foreground">Booking details can be edited until 6 hours before the scheduled date and time.</p>}
                 </>
               )}
               {selectedBooking.status === 'completed' && (currentRole === 'customer' || (currentRole === 'admin' && selectedBooking.rating)) && (
@@ -1975,30 +2089,78 @@ export function Bookings() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(editingCustomerBooking)} onOpenChange={(value) => { if (!value) setEditingCustomerBooking(null) }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Booking — {editingCustomerBooking?.bookingNo}</DialogTitle>
+            <p className="text-xs text-muted-foreground">Changes are available until 6 hours before the scheduled date and time.</p>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-1.5 sm:col-span-1"><Label htmlFor="customer-edit-date">Date</Label><Input id="customer-edit-date" type="date" min={format(new Date(), 'yyyy-MM-dd')} value={customerEditForm.scheduledDate} onChange={event => setCustomerEditForm(current => ({ ...current, scheduledDate: event.target.value }))} /></div>
+              <div className="grid gap-1.5"><Label htmlFor="customer-edit-start">From</Label><Input id="customer-edit-start" type="time" min={firstBookingTime} max={lastWorkingTime} value={customerEditForm.startTime} onChange={event => setCustomerEditForm(current => ({ ...current, startTime: event.target.value }))} /></div>
+              <div className="grid gap-1.5"><Label htmlFor="customer-edit-end">To</Label><Input id="customer-edit-end" type="time" min={firstBookingTime} max={lastWorkingTime} value={customerEditForm.endTime} onChange={event => setCustomerEditForm(current => ({ ...current, endTime: event.target.value }))} /></div>
+            </div>
+            {!customerEditTimeAllowed && customerEditForm.scheduledDate && <p role="alert" className="text-xs text-destructive">Choose a date and start time at least 6 hours from now.</p>}
+            {customerEditDuration < MIN_BOOKING_DURATION_HOURS && <p role="alert" className="text-xs text-destructive">Bookings require at least {MIN_BOOKING_DURATION_HOURS} hours.</p>}
+
+            <div className="space-y-2">
+              <Label>Services</Label>
+              <div className="space-y-2">
+                {services.filter((service: any) => service.status !== 'inactive').map((service: any) => {
+                  const selected = customerEditForm.serviceIds.includes(service.id)
+                  return <div key={service.id} className={`rounded-lg border p-3 ${selected ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}>
+                    <label className="flex min-h-11 cursor-pointer items-center gap-3"><input type="checkbox" checked={selected} onChange={() => setCustomerEditForm(current => ({ ...current, serviceIds: selected ? current.serviceIds.filter(id => id !== service.id) : [...current.serviceIds, service.id] }))} className="h-4 w-4" /><span className="flex-1 text-sm font-medium">{service.name}</span></label>
+                    {selected && <div className="grid grid-cols-2 gap-2 pt-2"><Button type="button" size="sm" variant={!customerEditForm.serviceOptions[service.id] ? 'default' : 'outline'} onClick={() => setCustomerEditForm(current => ({ ...current, serviceOptions: { ...current.serviceOptions, [service.id]: false } }))}>Without materials</Button><Button type="button" size="sm" variant={customerEditForm.serviceOptions[service.id] ? 'default' : 'outline'} onClick={() => setCustomerEditForm(current => ({ ...current, serviceOptions: { ...current.serviceOptions, [service.id]: true } }))}>With materials</Button></div>}
+                  </div>
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label>Cleaner count</Label>
+              <div className="relative max-w-44">
+                <Input readOnly value={customerEditForm.employeeCount} className="h-11 px-12 text-center font-semibold" aria-label="Cleaner count" />
+                <Button type="button" variant="ghost" size="icon" className="absolute inset-y-0 left-0 h-11 w-11" disabled={customerEditForm.employeeCount <= 1} onClick={() => setCustomerEditForm(current => ({ ...current, employeeCount: Math.max(1, current.employeeCount - 1) }))}><Minus className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="icon" className="absolute inset-y-0 right-0 h-11 w-11" onClick={() => setCustomerEditForm(current => ({ ...current, employeeCount: current.employeeCount + 1 }))}><Plus className="h-4 w-4" /></Button>
+              </div>
+              {editingCustomerBooking?.assignments?.length > 0 && customerEditForm.employeeCount !== editingCustomerBooking.employeeCount && <p className="text-xs text-amber-700">Changing the cleaner count returns this booking to Pending Assignment so the team can be reassigned.</p>}
+            </div>
+
+            <div className="grid gap-1.5"><Label>Service address</Label><Select value={customerEditForm.addressIndex} onValueChange={addressIndex => setCustomerEditForm(current => ({ ...current, addressIndex }))}><SelectTrigger className="min-h-11"><SelectValue placeholder="Select a saved address" /></SelectTrigger><SelectContent>{customerEditAddressOptions.map((address: any, index: number) => <SelectItem key={index} value={String(index)}>{address.label || `Address ${index + 1}`} — {[address.area, address.city, address.address].filter(Boolean).join(', ')}</SelectItem>)}</SelectContent></Select><p className="text-xs text-muted-foreground">Manage saved addresses in Profile.</p></div>
+            <div className="grid gap-1.5"><Label htmlFor="customer-edit-notes">Booking notes</Label><Textarea id="customer-edit-notes" value={customerEditForm.notes} onChange={event => setCustomerEditForm(current => ({ ...current, notes: event.target.value }))} maxLength={1000} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCustomerBooking(null)}>Cancel</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveCustomerBookingEdit} disabled={!canSaveCustomerEdit || updateMut.isPending}>{updateMut.isPending ? 'Saving...' : 'Save Booking Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Assign Staff Modal Dialog (Prompt 07) */}
       <Dialog open={Boolean(assigningBooking)} onOpenChange={(v) => { if (!v) { setAssigningBooking(null); setSelectedAssignEmpIds([]); setSelectedAssignDriverId('') } }}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="h-[100dvh] max-h-[100dvh] max-w-none grid-rows-[auto_1fr_auto] gap-0 rounded-none border-0 p-0 sm:h-auto sm:max-h-[90dvh] sm:max-w-lg sm:gap-4 sm:rounded-lg sm:border sm:p-6">
+          <DialogHeader className="border-b px-4 py-4 pr-12 text-left sm:border-0 sm:p-0">
+            <DialogTitle className="flex items-start gap-2 text-base leading-6 sm:text-lg">
               <UserCheck className="h-5 w-5 text-emerald-600" />
               Assign Team & Driver — {assigningBooking?.bookingNo}
             </DialogTitle>
           </DialogHeader>
 
           {assigningBooking && (
-            <div className="space-y-4 py-2">
-              <div className="bg-muted/40 p-3 rounded-lg border border-border/50 text-xs space-y-1">
-                <div className="flex justify-between">
+            <div className="min-h-0 space-y-5 overflow-y-auto px-4 py-4 sm:space-y-4 sm:p-0 sm:py-2">
+              <div className="space-y-2 rounded-lg border border-border/50 bg-muted/40 p-3 text-sm sm:text-xs">
+                <div className="grid gap-1 min-[380px]:grid-cols-[auto_1fr]">
                   <span className="text-muted-foreground">Customer:</span>
-                  <span className="font-semibold">{assigningBooking.customer?.user?.name}</span>
+                  <span className="font-semibold min-[380px]:text-right">{assigningBooking.customer?.user?.name}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="grid gap-1 min-[380px]:grid-cols-[auto_1fr]">
                   <span className="text-muted-foreground">Slot & Duration:</span>
-                  <span className="font-medium">{format(parseISO(assigningBooking.scheduledDate), 'dd MMM')} · {assigningBooking.startTime} - {assigningBooking.endTime || 'End'} ({assigningBooking.duration}h)</span>
+                  <span className="font-medium min-[380px]:text-right">{format(parseISO(assigningBooking.scheduledDate), 'dd MMM')} · {assigningBooking.startTime} - {assigningBooking.endTime || 'End'} ({assigningBooking.duration}h)</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="grid gap-1 min-[380px]:grid-cols-[auto_1fr]">
                   <span className="text-muted-foreground">Requested Team Size:</span>
-                  <span className="font-bold text-emerald-700 dark:text-emerald-400">{assigningBooking.employeeCount || 1} Cleaner{(assigningBooking.employeeCount || 1) === 1 ? '' : 's'} Requested</span>
+                  <span className="font-bold text-emerald-700 min-[380px]:text-right dark:text-emerald-400">{assigningBooking.employeeCount || 1} Cleaner{(assigningBooking.employeeCount || 1) === 1 ? '' : 's'} Requested</span>
                 </div>
               </div>
 
@@ -2011,57 +2173,58 @@ export function Bookings() {
                 <p className="text-xs text-muted-foreground">The server checks tenant, active status, and overlapping bookings before assignment.</p>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="grid gap-2 min-[380px]:grid-cols-[1fr_auto] min-[380px]:items-center">
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select Cleaners</Label>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="text-xs h-7 border-emerald-500 text-emerald-700 hover:bg-emerald-600 hover:text-white"
-                  onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, driverId: selectedAssignDriverId, autoAssign: true })}
+                  className="min-h-11 w-full border-emerald-500 text-xs text-emerald-700 hover:bg-emerald-600 hover:text-white min-[380px]:w-auto"
+                  onClick={() => assignMut.mutate({ bookingId: assigningBooking.id, driverId: selectedAssignDriverId, employeeIds: selectedAssignEmpIds, autoAssign: true })}
                   disabled={!selectedAssignDriverId || assignMut.isPending}
                 >
-                  Auto assign cleaners
+                  Auto-assign remaining
                 </Button>
               </div>
 
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="space-y-2 sm:max-h-56 sm:overflow-y-auto sm:pr-1">
                 {assignAvailabilityError && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{assignAvailabilityError instanceof Error ? assignAvailabilityError.message : 'Failed to check cleaner availability'}</div>}
                 {assignAvailability?.allEmployeesStatus ? (
                   assignAvailability.allEmployeesStatus.map((emp: any) => {
                     const isSelected = selectedAssignEmpIds.includes(emp.id)
+                    const atCleanerLimit = !isSelected && selectedAssignEmpIds.length >= (assigningBooking.employeeCount || 1)
                     return (
                       <div
                         key={emp.id}
                         onClick={() => {
-                          if (!emp.isAvailable && !isSelected) return
+                          if ((!emp.isAvailable && !isSelected) || atCleanerLimit) return
                           const next = isSelected
                             ? selectedAssignEmpIds.filter(id => id !== emp.id)
                             : [...selectedAssignEmpIds, emp.id]
                           setSelectedAssignEmpIds(next)
                         }}
-                        className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                        className={`grid min-h-16 grid-cols-[1fr_auto] items-center gap-2 rounded-lg border p-3 text-xs transition-all ${
                           isSelected
                             ? 'border-emerald-600 bg-emerald-50/80 text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-200 font-medium'
-                            : !emp.isAvailable
+                            : !emp.isAvailable || atCleanerLimit
                               ? 'border-border/40 opacity-60 bg-muted/20 cursor-not-allowed'
                               : 'border-border/60 hover:bg-muted/40'
                         }`}
                       >
-                        <div className="flex items-center gap-2 truncate">
+                        <div className="flex min-w-0 items-center gap-3">
                           <input
                             type="checkbox"
-                            disabled={!emp.isAvailable && !isSelected}
+                            disabled={(!emp.isAvailable && !isSelected) || atCleanerLimit}
                             checked={isSelected}
                             onChange={() => {}}
-                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            className="h-5 w-5 shrink-0 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                           />
                           <div className="truncate">
                             <p className="font-semibold truncate">{emp.name} ({emp.employeeCode})</p>
                             <p className="text-[11px] text-muted-foreground">{emp.detailText}</p>
                           </div>
                         </div>
-                        <Badge variant={emp.isAvailable ? "outline" : "destructive"} className={`text-[10px] shrink-0 ml-2 ${emp.isAvailable ? "border-emerald-300 text-emerald-700 bg-emerald-50/50" : ""}`}>
+                        <Badge variant={emp.isAvailable ? "outline" : "destructive"} className={`max-w-24 shrink-0 whitespace-normal text-center text-[10px] ${emp.isAvailable ? "border-emerald-300 text-emerald-700 bg-emerald-50/50" : ""}`}>
                           {emp.isAvailable ? '✓ Available' : emp.reason}
                         </Badge>
                       </div>
@@ -2073,15 +2236,16 @@ export function Bookings() {
               </div>
 
               {selectedAssignEmpIds.length > 0 && (
-                <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs flex justify-between items-center font-medium text-emerald-800 dark:text-emerald-300">
+                <div className="grid gap-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 min-[380px]:grid-cols-[auto_1fr]">
                   <span>{selectedAssignEmpIds.length} Staff Selected</span>
-                  <span>Recalculated Labour: {selectedAssignEmpIds.length} × Services Rate × {assigningBooking.duration}h</span>
+                  <span className="min-[380px]:text-right">Recalculated Labour: {selectedAssignEmpIds.length} × Services Rate × {assigningBooking.duration}h</span>
                 </div>
               )}
+              <p className="text-xs text-muted-foreground">Select any cleaners you want, then auto-assign the remaining {Math.max(0, (assigningBooking.employeeCount || 1) - selectedAssignEmpIds.length)} slot(s).</p>
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] [&_button]:min-h-11 [&_button]:w-full sm:border-0 sm:p-0 sm:[&_button]:w-auto">
             <Button variant="outline" onClick={() => { setAssigningBooking(null); setSelectedAssignDriverId('') }}>Cancel</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700"
@@ -2487,11 +2651,11 @@ export function Bookings() {
                         </div>
                         <div>
                           <span className="text-xs">Transfer Amount ({currency}) *</span>
-                          <input
+                          <Input
                             type="number"
                             min="0.01"
                             step="0.01"
-                            className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-xs"
+                            className="text-xs"
                             value={paymentFields.transferAmount}
                             onChange={e => setPaymentFields({ ...paymentFields, transferAmount: e.target.value })}
                           />

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as DocumentPicker from 'expo-document-picker'
 import * as Location from 'expo-location'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl, request, upload } from '../infrastructure/http/api-client'
+import { request, upload } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, PageHeading, palette, PrimaryButton } from './mobile-ui'
 
 export function ProfileScreen({ session, onBack }: { session: Session; onBack?: () => void }) {
@@ -28,17 +28,18 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
   const [savingSec, setSavingSec] = useState(false)
 
   useEffect(() => {
-    request<{ user?: { avatarUrl?: string } }>('/api/khobra-cleaning/auth/me', {}, session.token)
-      .then(result => setAvatarUrl(result.user?.avatarUrl || ''))
+    request<{ user?: { avatarUrl?: string; phone?: string } }>('/api/khobra-cleaning/auth/me', {}, session.token)
+      .then(result => {
+        setAvatarUrl(result.user?.avatarUrl || '')
+        if (session.user.role !== 'customer') setPhone(result.user?.phone || '')
+      })
       .catch(() => undefined)
   }, [session.token])
 
   useEffect(() => {
     if (session.user.role !== 'customer') return
-    fetch(`${apiBaseUrl}/api/khobra-cleaning/customers`, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then(async response => {
-        const records = await response.json()
-        if (!response.ok) throw new Error(records.error || 'Could not load profile')
+    request<any[]>('/api/khobra-cleaning/customers', {}, session.token)
+      .then(records => {
         const record = records[0]
         if (!record) return
         const primary = Array.isArray(record.addresses) ? record.addresses[0] : undefined
@@ -59,6 +60,10 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
     setSavingProfile(true)
     try {
       if (session.user.role !== 'customer') {
+        await request('/api/khobra-cleaning/auth/me', {
+          method: 'PUT',
+          body: JSON.stringify({ name: name.trim(), email: email.trim().toLowerCase(), ...(phone.trim() ? { phone: phone.trim() } : {}) }),
+        }, session.token)
         Alert.alert('Success', 'Profile updated.')
         return
       }
@@ -68,13 +73,10 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
       if (!hasPin && !area.trim()) throw new Error('Area is required for a manually entered address')
       const primary = { label: 'Primary', address: address.trim() || 'Pinned GPS location', city: city.trim(), area: area.trim(), latitude, longitude }
       const remaining = Array.isArray(customer.addresses) ? customer.addresses.slice(1) : []
-      const response = await fetch(`${apiBaseUrl}/api/khobra-cleaning/customers`, {
+      const saved = await request<any>('/api/khobra-cleaning/customers', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ id: customer.id, name: name.trim(), email: email.trim().toLowerCase(), phone: phone.trim(), addresses: [primary, ...remaining], address: primary.address, city: primary.city, area: primary.area }),
-      })
-      const saved = await response.json()
-      if (!response.ok) throw new Error(saved.error || 'Could not save profile')
+      }, session.token)
       setCustomer(saved)
       Alert.alert('Success', 'Profile and primary address updated.')
     } catch (error) {
@@ -117,12 +119,10 @@ export function ProfileScreen({ session, onBack }: { session: Session; onBack?: 
     }
     setSavingSec(true)
     try {
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/auth/password`, {
+      await request('/api/khobra-cleaning/auth/password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ currentPassword, newPassword })
-      })
-      if (!res.ok) throw new Error('Could not change password')
+      }, session.token)
       Alert.alert('Success', 'Password changed successfully!')
       setCurrentPassword('')
       setNewPassword('')
@@ -247,13 +247,13 @@ const styles = StyleSheet.create({
   cameraBadge: { position: 'absolute', right: 5, bottom: 5, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: palette.border },
   heroName: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 6 },
   roleBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  roleText: { color: '#fff', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  roleText: { color: '#fff', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
 
   section: { gap: 10 },
   secTitle: { fontSize: 16, fontWeight: '700', color: palette.ink },
   card: { backgroundColor: palette.surface, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: palette.border, ...cardShadow },
   spacer: { height: 16 },
-  addressTitle: { color: palette.primaryDark, fontSize: 15, fontWeight: '800', marginBottom: 12 },
+  addressTitle: { color: palette.primaryDark, fontSize: 16, fontWeight: '800', marginBottom: 12 },
   locationMethodLabel: { color: palette.inkSoft, fontSize: 12, fontWeight: '700', marginBottom: 8 },
   locationMethods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   locationMethod: { flex: 1, minWidth: 135, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 8, backgroundColor: palette.surface },
@@ -263,8 +263,8 @@ const styles = StyleSheet.create({
   methodPressed: { opacity: 0.72 },
   methodDisabled: { opacity: 0.55 },
   pinCard: { marginBottom: 12, borderWidth: 1, borderColor: '#a7f3d0', backgroundColor: '#ecfdf5', borderRadius: 12, padding: 12, gap: 8 },
-  pinTitle: { color: palette.primaryDark, fontWeight: '800', fontSize: 13 },
-  pinCoordinates: { color: palette.primaryDark, fontSize: 11, marginTop: 2 },
+  pinTitle: { color: palette.primaryDark, fontWeight: '800', fontSize: 14 },
+  pinCoordinates: { color: palette.primaryDark, fontSize: 12, marginTop: 2 },
   mapLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, backgroundColor: '#fff' },
   mapLinkText: { color: palette.primaryDark, fontSize: 12, fontWeight: '800' },
 })

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View, SafeAreaView } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import type { Session } from '../domain/auth/types'
-import { apiBaseUrl } from '../infrastructure/http/api-client'
+import { request } from '../infrastructure/http/api-client'
 import { cardShadow, FormLabel, Input, LoadingState, MessageState, PageHeading, palette, PrimaryButton, SelectButton } from './mobile-ui'
 
 type Complaint = { id: string; complaintNo: string; customer?: { user?: { name: string } }; category: string; priority: string; description: string; status: string; createdAt: string; resolution?: string; booking?: { bookingNo: string } }
@@ -29,8 +29,8 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
   const load = () => {
     setLoading(true)
     Promise.all([
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/complaints`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json()),
-      fetch(`${apiBaseUrl}/api/khobra-cleaning/customers`, { headers: { Authorization: `Bearer ${session.token}` } }).then(r => r.json())
+      request<Complaint[]>('/api/khobra-cleaning/complaints', {}, session.token),
+      request<Customer[]>('/api/khobra-cleaning/customers', {}, session.token)
     ]).then(([resCmp, resCust]) => {
       setComplaints(resCmp)
       setCustomers(resCust)
@@ -45,12 +45,10 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
     setSaving(true)
     try {
       const payload = editId ? { id: editId, status: formStatus, resolution: formResolution } : { customerId: formCustomer, category: formCategory, priority: formPriority, description: formDescription, status: 'open' }
-      const res = await fetch(`${apiBaseUrl}/api/khobra-cleaning/complaints`, {
+      await request('/api/khobra-cleaning/complaints', {
         method: editId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify(payload)
-      })
-      if (!res.ok) throw new Error('Failed to save')
+      }, session.token)
       setFormOpen(false)
       load()
     } catch (e: any) {
@@ -65,7 +63,7 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${apiBaseUrl}/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } })
+          await request(`/api/khobra-cleaning/complaints?id=${id}`, { method: 'DELETE' }, session.token)
           load()
         } catch (e) { Alert.alert('Error', 'Failed to delete.') }
       }}
@@ -104,7 +102,7 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
   return <View style={styles.screen}>
     <View style={styles.header}>
       {onBack && <Pressable onPress={onBack} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.ink} /></Pressable>}
-      <PageHeading title="Complaints" subtitle="Track and resolve customer issues" action={<Pressable onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
+      <PageHeading title="Complaints" subtitle="Track and resolve customer issues" action={<Pressable accessibilityRole="button" accessibilityLabel="Add complaint" onPress={openNew} style={styles.addButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
     </View>
 
     {loading ? <LoadingState label="Loading complaints..." /> : <FlatList
@@ -130,7 +128,7 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
 
         <View style={styles.actions}>
           <Pressable style={styles.actionBtn} onPress={() => openEdit(c)}><Ionicons name="create-outline" size={16} color={palette.primaryDark} /><Text style={styles.actionBtnText}>Manage</Text></Pressable>
-          <Pressable style={styles.iconBtn} onPress={() => remove(c.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete complaint ${c.complaintNo}`} style={styles.iconBtn} onPress={() => remove(c.id)}><Ionicons name="trash" size={16} color={palette.danger} /></Pressable>
         </View>
       </View>}
     />}
@@ -139,7 +137,7 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
       <SafeAreaView style={styles.modalScreen}>
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{editId ? 'Manage Complaint' : 'File Complaint'}</Text>
-          <Pressable onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close complaint form" onPress={() => setFormOpen(false)} style={styles.closeBtn}><Ionicons name="close" size={24} color={palette.ink} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.formBody}>
           {!editId ? <>
@@ -167,7 +165,7 @@ export function ComplaintsScreen({ session, onBack }: { session: Session; onBack
         <View style={styles.overlay}>
           <View style={styles.optionsBox}>
             <Text style={styles.optionsTitle}>Select</Text>
-            <ScrollView style={{maxHeight: 300}}>
+            <ScrollView style={styles.optionsList}>
               {pickerType === 'customer' && customers.map(c => <Pressable key={c.id} style={styles.optionRow} onPress={() => { setFormCustomer(c.id); setPickerType(null); }}><Text style={styles.optionText}>{c.user?.name || 'Unknown'}</Text></Pressable>)}
               {pickerType === 'category' && categories.map(c => <Pressable key={c} style={styles.optionRow} onPress={() => { setFormCategory(c); setPickerType(null); }}><Text style={styles.optionText}>{c}</Text></Pressable>)}
               {pickerType === 'priority' && priorities.map(c => <Pressable key={c} style={styles.optionRow} onPress={() => { setFormPriority(c); setPickerType(null); }}><Text style={styles.optionText}>{c}</Text></Pressable>)}
@@ -189,30 +187,31 @@ const styles = StyleSheet.create({
   list: { padding: 20, gap: 12, paddingBottom: 100 },
   card: { backgroundColor: palette.surface, borderRadius: 16, padding: 16, ...cardShadow },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardTitle: { fontSize: 13, fontWeight: '800', fontFamily: 'Courier New', color: palette.muted },
+  cardTitle: { fontSize: 14, fontWeight: '800', fontFamily: 'Courier New', color: palette.muted },
   badge: { backgroundColor: palette.surfaceMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  badgeText: { fontSize: 10, fontWeight: '700', color: palette.muted, textTransform: 'uppercase' },
+  badgeText: { fontSize: 12, fontWeight: '700', color: palette.muted, textTransform: 'uppercase' },
   customerName: { fontSize: 16, fontWeight: '700', color: palette.ink, marginBottom: 8 },
-  description: { fontSize: 13, color: palette.ink, lineHeight: 19, marginBottom: 12 },
-  metaRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 14 },
-  metaText: { fontSize: 11, color: palette.muted, fontWeight: '600', textTransform: 'capitalize' },
+  description: { fontSize: 14, color: palette.ink, lineHeight: 20, marginBottom: 12 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 14 },
+  metaText: { fontSize: 12, color: palette.muted, fontWeight: '600', textTransform: 'capitalize' },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 12 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: palette.primarySoft, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  actionBtn: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: palette.primarySoft, paddingHorizontal: 12, borderRadius: 8 },
   actionBtnText: { fontSize: 12, fontWeight: '700', color: palette.primaryDark },
-  iconBtn: { padding: 6 },
+  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   
   modalScreen: { flex: 1, backgroundColor: palette.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border, backgroundColor: palette.surface },
-  modalTitle: { fontSize: 19, fontWeight: '700', color: palette.ink },
-  closeBtn: { padding: 4 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: palette.ink },
+  closeBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   formBody: { padding: 20, gap: 16 },
   formGroup: {},
-  row: { flexDirection: 'row', gap: 14 },
+  row: { gap: 14 },
   modalFooter: { padding: 20, backgroundColor: palette.surface, borderTopWidth: 1, borderTopColor: palette.border },
   
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: 20 },
-  optionsBox: { backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
-  optionsTitle: { padding: 20, fontSize: 17, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
+  optionsBox: { maxHeight: '85%', backgroundColor: palette.surface, borderRadius: 16, overflow: 'hidden' },
+  optionsList: { flexShrink: 1 },
+  optionsTitle: { padding: 20, fontSize: 18, fontWeight: '700', textAlign: 'center', borderBottomWidth: 1, borderBottomColor: palette.border },
   optionRow: { padding: 18, borderBottomWidth: 1, borderBottomColor: palette.border },
   optionText: { fontSize: 16, textAlign: 'center', color: palette.ink },
   optionCancel: { padding: 18, backgroundColor: '#f9fafb' },

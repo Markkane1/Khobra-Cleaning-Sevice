@@ -278,10 +278,6 @@ model Employee {
   tenantId     String
   userId       String    @unique
   employeeCode String
-  phone        String?
-  address      String?
-  city         String?
-  area         String?
   skills       String?
   baseSalary   Decimal   @default(0) @db.Decimal(14, 2)
   status       String    @default("active")

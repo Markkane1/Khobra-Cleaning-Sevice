@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, PrismaBookingRepository } from '@repo/db'
-import { CreateBookingSchema, parseTimeToMinutes, PublicBookingSchema, zonedDateTimeToUtc } from '@repo/core'
+import { CreateBookingSchema, isBookingAtLeastHoursAhead, parseTimeToMinutes, PublicBookingSchema } from '@repo/core'
 import { broadcast } from '@/lib/broadcast'
 import { getAuthSession } from '@/lib/auth'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -21,18 +21,17 @@ export async function POST(req: NextRequest) {
       : await getPublicTenant()
     if (!tenant || tenant.status !== 'active') return NextResponse.json({ error: 'Booking is temporarily unavailable' }, { status: 503 })
 
-    const service = await db.service.findFirst({ where: { id: input.serviceId, tenantId: tenant.id, status: 'active' } })
+    const service = await db.service.findFirst({ where: { id: input.serviceId, tenantId: tenant.id, status: 'active', deletedAt: null } })
     if (!service) return NextResponse.json({ error: 'This service is no longer available' }, { status: 400 })
 
     const startMinutes = parseTimeToMinutes(input.startTime)
     const endMinutes = startMinutes + input.duration * 60
     const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
-    const bookingAt = zonedDateTimeToUtc(input.scheduledDate, input.startTime, tenant.timezone || 'UTC')
     if (endMinutes >= 24 * 60) return NextResponse.json({ error: 'Choose an earlier start time' }, { status: 400 })
     if (startMinutes < parseTimeToMinutes(tenant.firstBookingTime || '08:00') || endMinutes > parseTimeToMinutes(tenant.lastWorkingTime || '20:00')) {
       return NextResponse.json({ error: `Bookings are available from ${tenant.firstBookingTime || '08:00'} to ${tenant.lastWorkingTime || '20:00'}` }, { status: 400 })
     }
-    if (bookingAt.getTime() < Date.now() + 2 * 60 * 60 * 1000) {
+    if (!isBookingAtLeastHoursAhead(input.scheduledDate, input.startTime, tenant.timezone || 'UTC')) {
       return NextResponse.json({ error: 'Bookings require at least two hours notice' }, { status: 400 })
     }
 
